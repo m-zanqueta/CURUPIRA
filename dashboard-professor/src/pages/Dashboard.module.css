@@ -629,10 +629,121 @@
 @media (max-width: 900px) {
   .statsRow { grid-template-columns: repeat(2, 1fr); }
   .grid2    { grid-template-columns: 1fr; }
+  .petsGrid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (max-width: 640px) {
-  .sidebar  { display: none; }
-  .main     { padding: 1rem; }
-  .statsRow { grid-template-columns: repeat(2, 1fr); }
+  .layout {
+    flex-direction: column;
+    overflow-x: hidden;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    z-index: 100;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    width: 240px;
+  }
+
+  .sidebarOpen {
+    transform: translateX(0);
+  }
+
+  .overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 99;
+  }
+
+  .main {
+    padding: 0.75rem;
+    margin-left: 0;
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  .topBar {
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 1rem;
+  }
+
+  .topBarLogo { width: 36px; height: 36px; }
+  .pageTitle  { font-size: 15px; }
+  .pageSub    { font-size: 11px; }
+
+  .btnNew {
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
+  .statsRow {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .statNum  { font-size: 18px; }
+  .statCard { padding: 0.7rem; }
+  .statIcon { width: 30px; height: 30px; font-size: 14px; }
+
+  .petsGrid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .petCard  { padding: 0.75rem; }
+  .petAvatar { width: 65px; height: 65px; font-size: 30px; }
+  .petChapeu { width: 50px; top: -20px; }
+
+  .hortaBanner {
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .hortaTitle { font-size: 16px; }
+
+  .recompensaCard {
+    flex-direction: row;
+    min-width: unset;
+    width: 100%;
+    justify-content: center;
+    gap: 12px;
+  }
+  .recompensaImg { width: 50px; height: 50px; }
+
+  .grid2 { grid-template-columns: 1fr; }
+
+  .panel { padding: 0.85rem; }
+  .panelTitle { font-size: 13px; }
+
+  .missionName { font-size: 12px; }
+  .missionMeta { font-size: 10px; }
+
+  .rankName  { font-size: 11px; }
+  .rankClass { font-size: 10px; }
+
+  .hamburguer { display: flex; }
 }
+
+.hamburguer {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  cursor: pointer;
+  padding: 4px;
+  background: none;
+  border: none;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.hamburguer span {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: var(--dark);
+  border-radius: 2px;
+}
+
+.overlay { display: none; }

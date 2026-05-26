@@ -43,11 +43,14 @@ const MEDALS = ['🥇', '🥈', '🥉', '4']
 
 export default function Dashboard({ onLogout }) {
   const [activeNav, setActiveNav] = useState('overview')
+  const [menuOpen, setMenuOpen] = useState(false)
 
   return (
     <div className={styles.layout}>
+      {menuOpen && <div className={styles.overlay} onClick={() => setMenuOpen(false)} />}
+
       {/* Sidebar */}
-      <aside className={styles.sidebar}>
+      <aside className={`${styles.sidebar} ${menuOpen ? styles.sidebarOpen : ''}`}>
         <div className={styles.sidebarLogo}>
           <img src="./logo.png" alt="Curupira" className={styles.sidebarLogoImg} />
           <span className={styles.sidebarLogoText}>CURUPIRA</span>
@@ -58,7 +61,7 @@ export default function Dashboard({ onLogout }) {
             <button
               key={item.id}
               className={`${styles.navItem} ${activeNav === item.id ? styles.navActive : ''}`}
-              onClick={() => setActiveNav(item.id)}
+              onClick={() => { setActiveNav(item.id); setMenuOpen(false) }}
             >
               <span className={styles.navIcon}>{item.icon}</span>
               {item.label}
@@ -83,7 +86,14 @@ export default function Dashboard({ onLogout }) {
       {/* Main */}
       <main className={styles.main}>
         <div className={styles.topBar}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              className={styles.hamburguer}
+              onClick={() => setMenuOpen(true)}
+              style={{ display: 'flex' }}
+            >
+              <span /><span /><span />
+            </button>
             <img src="./logo.png" alt="Curupira" className={styles.topBarLogo} />
             <div>
               <h2 className={styles.pageTitle}>Seja bem-vindo(a), Professor(a)! 👋</h2>

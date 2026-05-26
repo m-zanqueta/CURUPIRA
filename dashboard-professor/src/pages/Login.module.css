@@ -203,6 +203,8 @@
 
 @media (max-width: 700px) {
   .page { flex-direction: column; }
-  .left { width: 100%; padding: 2rem 1.5rem; }
+  .left { width: 100%; padding: 2rem 1.5rem; min-height: auto; }
+  .logoImg { width: 110px; height: 110px; }
   .right { padding: 2rem 1.5rem; max-width: 100%; }
+  .title { font-size: 20px; }
 }
