@@ -5,7 +5,7 @@ import {
 } from 'react-native'
 import { buscarUsuario } from '../services/storage'
 
-export default function Login({ onLogin, onCriarPerfil }) {
+export default function Login({ onLogin, onCriarPerfil, onSouProfessor }) {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [mostrarSenha, setMostrarSenha] = useState(false)
@@ -69,6 +69,11 @@ export default function Login({ onLogin, onCriarPerfil }) {
               <Text style={styles.mostrar}>{mostrarSenha ? 'Ocultar' : 'Mostrar'}</Text>
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity onPress={onSouProfessor}>
+            <Text style={styles.souProfessor}>Sou professor</Text>
+          </TouchableOpacity>
+
           {erro ? <Text style={styles.erro}>{erro}</Text> : null}
         </View>
 
@@ -95,6 +100,7 @@ const styles = StyleSheet.create({
   senhaWrap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ddd', borderRadius: 10, paddingHorizontal: 14 },
   inputSenha: { flex: 1, paddingVertical: 14, fontSize: 15, color: '#000' },
   mostrar: { color: '#22A45D', fontWeight: '500', fontSize: 14 },
+  souProfessor: { fontSize: 12, color: '#aaa', textAlign: 'left' },
   erro: { color: 'red', fontSize: 13, marginTop: 4 },
   btnLogar: { backgroundColor: '#22A45D', borderRadius: 30, paddingVertical: 16, alignItems: 'center', marginBottom: 16 },
   btnLogarTxt: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
