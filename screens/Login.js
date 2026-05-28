@@ -1,15 +1,11 @@
 import { useState } from 'react'
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
+  View, Text, TextInput, TouchableOpacity,
+  StyleSheet, KeyboardAvoidingView, Platform,
 } from 'react-native'
+import { buscarUsuario } from '../services/storage'
 
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, onCriarPerfil }) {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [mostrarSenha, setMostrarSenha] = useState(false)
@@ -19,11 +15,7 @@ export default function Login({ onLogin }) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
   }
 
-  function validarSenha(senha) {
-    return senha.length >= 8 && /[A-Z]/.test(senha) && /[0-9]/.test(senha)
-  }
-
-  function handleLogin() {
+  async function handleLogin() {
     if (!email || !senha) {
       setErro('Preencha e-mail e senha para continuar.')
       return
@@ -32,8 +24,9 @@ export default function Login({ onLogin }) {
       setErro('Informe um e-mail válido.')
       return
     }
-    if (!validarSenha(senha)) {
-      setErro('A senha deve ter mínimo 8 caracteres, 1 maiúscula e 1 número.')
+    const encontrado = await buscarUsuario(email)
+    if (!encontrado || encontrado.senha !== senha) {
+      setErro('Email ou senha incorretos.')
       return
     }
     setErro('')
@@ -46,10 +39,9 @@ export default function Login({ onLogin }) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.inner}>
-
         <View style={styles.header}>
           <Text style={styles.titulo}>Entrar</Text>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={onCriarPerfil}>
             <Text style={styles.criarPerfil}>Criar Perfil</Text>
           </TouchableOpacity>
         </View>
@@ -87,7 +79,6 @@ export default function Login({ onLogin }) {
         <TouchableOpacity>
           <Text style={styles.esqueceu}>Esqueceu sua senha?</Text>
         </TouchableOpacity>
-
       </View>
     </KeyboardAvoidingView>
   )
