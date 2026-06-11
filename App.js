@@ -1,20 +1,34 @@
-import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react'
+import Login from './screens/Login'
+import CriarPerfil from './screens/CriarPerfil'
+import LoginProfessor from './screens/LoginProfessor'
+import Home from './screens/Home'
 
 export default function App() {
-  return (
-    <View style={styles.container}>
-      <Text>Open up App.js to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
-  );
-}
+  const [tela, setTela] = useState('login')
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+  if (tela === 'criarPerfil') {
+    return <CriarPerfil onVoltar={() => setTela('login')} />
+  }
+
+  if (tela === 'loginProfessor') {
+    return (
+      <LoginProfessor
+        onLogin={() => setTela('home')}
+        onSouAluno={() => setTela('login')}
+      />
+    )
+  }
+
+  if (tela === 'home') {
+    return <Home />
+  }
+
+  return (
+    <Login
+      onLogin={() => setTela('home')}
+      onCriarPerfil={() => setTela('criarPerfil')}
+      onSouProfessor={() => setTela('loginProfessor')}
+    />
+  )
+}
