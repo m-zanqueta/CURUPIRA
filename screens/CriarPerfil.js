@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, KeyboardAvoidingView, Platform, ScrollView,
+  StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Image,
 } from 'react-native'
 import { salvarUsuario, buscarUsuario } from '../services/storage'
+import { cores } from '../constants/cores'
 
 export default function CriarPerfil({ onVoltar }) {
   const [usuario, setUsuario] = useState('')
@@ -52,14 +53,39 @@ export default function CriarPerfil({ onVoltar }) {
   if (sucesso) {
     return (
       <View style={styles.sucessoContainer}>
-        <Text style={styles.sucessoIcon}>✅</Text>
-        <Text style={styles.sucessoTitulo}>Conta criada!</Text>
-        <Text style={styles.sucessoTexto}>
-          Seu perfil foi criado com sucesso. Faça login para continuar.
-        </Text>
-        <TouchableOpacity style={styles.btnCriar} onPress={onVoltar}>
-          <Text style={styles.btnCriarTxt}>Login</Text>
-        </TouchableOpacity>
+        <View style={styles.sucessoTopo}>
+          <Image
+            source={require('../assets/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.sucessoAppNome}>CURUPIRA</Text>
+          <Text style={styles.sucessoTagline}>Atividades extracurriculares gamificadas</Text>
+        </View>
+        <View style={styles.sucessoCard}>
+          <Text style={styles.sucessoBadge}>🎖️ Nova conquista desbloqueada!</Text>
+          <Text style={styles.sucessoTitulo}>Bem-vindo(a),{'\n'}{usuario}!</Text>
+          <Text style={styles.sucessoTexto}>
+            Sua jornada começa agora. Complete missões, ganhe XP e faça seu pet evoluir!
+          </Text>
+          <View style={styles.sucessoItens}>
+            <View style={styles.sucessoItem}>
+              <Text style={styles.sucessoItemIcon}>🏆</Text>
+              <Text style={styles.sucessoItemTxt}>Missões te esperam</Text>
+            </View>
+            <View style={styles.sucessoItem}>
+              <Text style={styles.sucessoItemIcon}>⭐</Text>
+              <Text style={styles.sucessoItemTxt}>Ganhe XP e suba no ranking</Text>
+            </View>
+            <View style={styles.sucessoItem}>
+              <Text style={styles.sucessoItemIcon}>🐾</Text>
+              <Text style={styles.sucessoItemTxt}>Evolua seu pet</Text>
+            </View>
+          </View>
+          <TouchableOpacity style={styles.btnCriar} onPress={onVoltar}>
+            <Text style={styles.btnCriarTxt}>Começar agora →</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     )
   }
@@ -69,95 +95,122 @@ export default function CriarPerfil({ onVoltar }) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={styles.inner} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <Text style={styles.titulo}>Criar Perfil</Text>
-          <TouchableOpacity onPress={onVoltar}>
-            <Text style={styles.entrar}>Entrar</Text>
-          </TouchableOpacity>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+
+        {/* Topo verde */}
+        <View style={styles.topo}>
+          <Image
+            source={require('../assets/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.topoNome}>CURUPIRA</Text>
+          <Text style={styles.tagline}>Atividades extracurriculares gamificadas</Text>
+          <Text style={styles.portalLabel}>Criar Perfil</Text>
         </View>
 
-        <View style={styles.campos}>
-          <TextInput
-            style={styles.input}
-            placeholder="Usuário"
-            placeholderTextColor="#aaa"
-            autoCapitalize="none"
-            value={usuario}
-            onChangeText={setUsuario}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#aaa"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <View style={styles.senhaWrap}>
-            <TextInput
-              style={styles.inputSenha}
-              placeholder="Senha"
-              placeholderTextColor="#aaa"
-              secureTextEntry={!mostrarSenha}
-              value={senha}
-              onChangeText={setSenha}
-            />
-            <TouchableOpacity onPress={() => setMostrarSenha(!mostrarSenha)}>
-              <Text style={styles.mostrar}>{mostrarSenha ? 'Ocultar' : 'Mostrar'}</Text>
+        {/* Formulário */}
+        <View style={styles.form}>
+          <View style={styles.header}>
+            <Text style={styles.titulo}>Crie sua conta</Text>
+            <TouchableOpacity onPress={onVoltar}>
+              <Text style={styles.entrar}>Já tenho conta</Text>
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.checkRow}
-            onPress={() => setReceberInfo(!receberInfo)}
-          >
-            <View style={[styles.checkbox, receberInfo && styles.checkboxAtivo]}>
-              {receberInfo && <Text style={styles.checkmark}>✓</Text>}
+          <View style={styles.campos}>
+            <TextInput
+              style={styles.input}
+              placeholder="Usuário"
+              placeholderTextColor="#bbb"
+              autoCapitalize="none"
+              value={usuario}
+              onChangeText={setUsuario}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#bbb"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+            />
+            <View style={styles.senhaWrap}>
+              <TextInput
+                style={styles.inputSenha}
+                placeholder="Senha"
+                placeholderTextColor="#bbb"
+                secureTextEntry={!mostrarSenha}
+                value={senha}
+                onChangeText={setSenha}
+              />
+              <TouchableOpacity onPress={() => setMostrarSenha(!mostrarSenha)}>
+                <Text style={styles.mostrar}>{mostrarSenha ? 'Ocultar' : 'Mostrar'}</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.checkLabel}>
-              Eu gostaria de receber mais informações sobre o projeto por email
-            </Text>
-          </TouchableOpacity>
 
-          {erro ? <Text style={styles.erro}>{erro}</Text> : null}
+            <TouchableOpacity
+              style={styles.checkRow}
+              onPress={() => setReceberInfo(!receberInfo)}
+            >
+              <View style={[styles.checkbox, receberInfo && styles.checkboxAtivo]}>
+                {receberInfo && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <Text style={styles.checkLabel}>
+                Eu gostaria de receber mais informações sobre o projeto por email
+              </Text>
+            </TouchableOpacity>
+
+            {erro ? <Text style={styles.erro}>{erro}</Text> : null}
+          </View>
+
+          <TouchableOpacity style={styles.btnCriar} onPress={handleCriar}>
+            <Text style={styles.btnCriarTxt}>Criar</Text>
+          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.btnCriar} onPress={handleCriar}>
-          <Text style={styles.btnCriarTxt}>Criar</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={onVoltar}>
-          <Text style={styles.esqueceu}>Esqueceu sua senha?</Text>
-        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  inner: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 60, paddingBottom: 40 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 },
-  titulo: { fontSize: 24, fontWeight: 'bold', color: '#000' },
-  entrar: { fontSize: 15, color: '#22A45D', fontWeight: '500' },
+  container: { flex: 1, backgroundColor: cores.verde },
+  scroll: { flexGrow: 1 },
+  topo: { backgroundColor: cores.verde, alignItems: 'center', paddingTop: 60, paddingBottom: 40, paddingHorizontal: 28 },
+  logo: { width: 90, height: 90, borderRadius: 45, marginBottom: 8 },
+  topoNome: { fontSize: 28, fontWeight: 'bold', color: cores.branco, letterSpacing: 2, marginBottom: 6 },
+  tagline: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginBottom: 16, textAlign: 'center' },
+  portalLabel: { color: cores.branco, fontSize: 20, fontWeight: '600', textAlign: 'center', backgroundColor: 'rgba(0,0,0,0.15)', paddingHorizontal: 20, paddingVertical: 6, borderRadius: 20 },
+  form: { backgroundColor: cores.branco, flex: 1, paddingHorizontal: 24, paddingTop: 36, paddingBottom: 40 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 },
+  titulo: { fontSize: 22, fontWeight: 'bold', color: cores.preto },
+  entrar: { fontSize: 14, color: cores.verde, fontWeight: '500' },
   campos: { gap: 14, marginBottom: 32 },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 14, fontSize: 15, color: '#000' },
-  senhaWrap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ddd', borderRadius: 10, paddingHorizontal: 14 },
-  inputSenha: { flex: 1, paddingVertical: 14, fontSize: 15, color: '#000' },
-  mostrar: { color: '#22A45D', fontWeight: '500', fontSize: 14 },
+  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 14, fontSize: 15, color: cores.preto, backgroundColor: '#fff' },
+  senhaWrap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 14, backgroundColor: '#fff' },
+  inputSenha: { flex: 1, paddingVertical: 14, fontSize: 15, color: cores.preto },
+  mostrar: { color: cores.verde, fontWeight: '500', fontSize: 14 },
   checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   checkbox: { width: 18, height: 18, borderWidth: 1, borderColor: '#aaa', borderRadius: 3, marginTop: 2, alignItems: 'center', justifyContent: 'center' },
-  checkboxAtivo: { backgroundColor: '#22A45D', borderColor: '#22A45D' },
-  checkmark: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
+  checkboxAtivo: { backgroundColor: cores.verde, borderColor: cores.verde },
+  checkmark: { color: cores.branco, fontSize: 12, fontWeight: 'bold' },
   checkLabel: { flex: 1, fontSize: 13, color: '#555', lineHeight: 20 },
   erro: { color: 'red', fontSize: 13, marginTop: 4 },
-  btnCriar: { backgroundColor: '#22A45D', borderRadius: 30, paddingVertical: 16, alignItems: 'center', marginBottom: 16 },
-  btnCriarTxt: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  esqueceu: { textAlign: 'center', color: '#22A45D', fontSize: 14 },
-  sucessoContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, backgroundColor: '#fff' },
-  sucessoIcon: { fontSize: 64, marginBottom: 16 },
-  sucessoTitulo: { fontSize: 28, fontWeight: 'bold', color: '#000', marginBottom: 12 },
-  sucessoTexto: { fontSize: 15, color: '#555', textAlign: 'center', marginBottom: 32, lineHeight: 22 },
+  btnCriar: { backgroundColor: cores.verde, borderRadius: 30, paddingVertical: 16, alignItems: 'center', marginBottom: 16 },
+  btnCriarTxt: { color: cores.branco, fontSize: 16, fontWeight: 'bold' },
+  esqueceu: { textAlign: 'center', color: cores.verde, fontSize: 14 },
+  sucessoContainer: { flex: 1, backgroundColor: cores.branco },
+  sucessoTopo: { backgroundColor: cores.verde, alignItems: 'center', paddingTop: 70, paddingBottom: 40, paddingHorizontal: 24 },
+  sucessoAppNome: { fontSize: 28, fontWeight: 'bold', color: cores.branco, letterSpacing: 2, marginBottom: 6 },
+  sucessoTagline: { fontSize: 13, color: 'rgba(255,255,255,0.8)', textAlign: 'center' },
+  sucessoCard: { flex: 1, paddingHorizontal: 24, paddingTop: 32, paddingBottom: 40 },
+  sucessoBadge: { backgroundColor: cores.amarelo, color: cores.preto, fontSize: 13, fontWeight: 'bold', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, alignSelf: 'flex-start', marginBottom: 20, overflow: 'hidden' },
+  sucessoTitulo: { fontSize: 26, fontWeight: 'bold', color: cores.preto, marginBottom: 12, lineHeight: 34 },
+  sucessoTexto: { fontSize: 14, color: '#555', lineHeight: 22, marginBottom: 28 },
+  sucessoItens: { gap: 14, marginBottom: 36 },
+  sucessoItem: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  sucessoItemIcon: { fontSize: 24 },
+  sucessoItemTxt: { fontSize: 15, color: cores.preto, fontWeight: '500' },
 })

@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, KeyboardAvoidingView, Platform,
+  StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Image,
 } from 'react-native'
 import { buscarUsuario } from '../services/storage'
+import { cores } from '../constants/cores'
 
 export default function Login({ onLogin, onCriarPerfil, onSouProfessor }) {
   const [email, setEmail] = useState('')
@@ -38,29 +39,42 @@ export default function Login({ onLogin, onCriarPerfil, onSouProfessor }) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.inner}>
-        <View style={styles.header}>
-          <Text style={styles.titulo}>Entrar</Text>
-          <TouchableOpacity onPress={onCriarPerfil}>
-            <Text style={styles.criarPerfil}>Criar Perfil</Text>
-          </TouchableOpacity>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+
+        {/* Topo verde */}
+        <View style={styles.topo}>
+          <Image
+            source={require('../assets/logo.png')}
+            style={styles.logo}
+            resizeMode="contain"
+          />
+          <Text style={styles.topoNome}>CURUPIRA</Text>
+          <Text style={styles.tagline}>Atividades extracurriculares gamificadas</Text>
+          <Text style={styles.portalAluno}>Portal do Aluno</Text>
         </View>
 
-        <View style={styles.campos}>
+        {/* Formulário */}
+        <View style={styles.form}>
+          <Text style={styles.titulo}>Bem-vindo(a) de volta!</Text>
+          <Text style={styles.subtitulo}>Portal exclusivo para alunos</Text>
+
+          <Text style={styles.label}>E-mail</Text>
           <TextInput
             style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#aaa"
+            placeholder="seu@email.com"
+            placeholderTextColor="#bbb"
             keyboardType="email-address"
             autoCapitalize="none"
             value={email}
             onChangeText={setEmail}
           />
+
+          <Text style={styles.label}>Senha</Text>
           <View style={styles.senhaWrap}>
             <TextInput
               style={styles.inputSenha}
-              placeholder="Senha"
-              placeholderTextColor="#aaa"
+              placeholder="••••••••"
+              placeholderTextColor="#bbb"
               secureTextEntry={!mostrarSenha}
               value={senha}
               onChangeText={setSenha}
@@ -75,34 +89,45 @@ export default function Login({ onLogin, onCriarPerfil, onSouProfessor }) {
           </TouchableOpacity>
 
           {erro ? <Text style={styles.erro}>{erro}</Text> : null}
+
+          <TouchableOpacity>
+            <Text style={styles.esqueceu}>Esqueci minha senha</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.btnLogar} onPress={handleLogin}>
+            <Text style={styles.btnLogarTxt}>Entrar →</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={onCriarPerfil}>
+            <Text style={styles.criarPerfil}>Não tem conta? Criar perfil</Text>
+          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.btnLogar} onPress={handleLogin}>
-          <Text style={styles.btnLogarTxt}>Logar</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity>
-          <Text style={styles.esqueceu}>Esqueceu sua senha?</Text>
-        </TouchableOpacity>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  inner: { flex: 1, paddingHorizontal: 24, paddingTop: 60 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 },
-  titulo: { fontSize: 24, fontWeight: 'bold', color: '#000' },
-  criarPerfil: { fontSize: 15, color: '#22A45D', fontWeight: '500' },
-  campos: { gap: 14, marginBottom: 32 },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 14, fontSize: 15, color: '#000' },
-  senhaWrap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ddd', borderRadius: 10, paddingHorizontal: 14 },
-  inputSenha: { flex: 1, paddingVertical: 14, fontSize: 15, color: '#000' },
-  mostrar: { color: '#22A45D', fontWeight: '500', fontSize: 14 },
-  souProfessor: { fontSize: 12, color: '#aaa', textAlign: 'left' },
-  erro: { color: 'red', fontSize: 13, marginTop: 4 },
-  btnLogar: { backgroundColor: '#22A45D', borderRadius: 30, paddingVertical: 16, alignItems: 'center', marginBottom: 16 },
-  btnLogarTxt: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  esqueceu: { textAlign: 'center', color: '#22A45D', fontSize: 14 },
+  container: { flex: 1, backgroundColor: cores.verde },
+  scroll: { flexGrow: 1 },
+  topo: { backgroundColor: cores.verde, alignItems: 'center', paddingTop: 60, paddingBottom: 40, paddingHorizontal: 28 },
+  logo: { width: 90, height: 90, borderRadius: 45, marginBottom: 12 },
+  topoNome: { fontSize: 28, fontWeight: 'bold', color: cores.branco, letterSpacing: 2, marginBottom: 6 },
+  tagline: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginBottom: 16, textAlign: 'center' },
+  portalAluno: { color: cores.branco, fontSize: 20, fontWeight: '600', textAlign: 'center', backgroundColor: 'rgba(0,0,0,0.15)', paddingHorizontal: 20, paddingVertical: 6, borderRadius: 20 },
+  form: { backgroundColor: cores.branco, flex: 1, paddingHorizontal: 24, paddingTop: 36, paddingBottom: 40 },
+  titulo: { fontSize: 22, fontWeight: 'bold', color: cores.preto, marginBottom: 4 },
+  subtitulo: { fontSize: 13, color: '#888', marginBottom: 28 },
+  label: { fontSize: 13, color: '#444', marginBottom: 6, fontWeight: '500' },
+  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 14, fontSize: 15, color: cores.preto, backgroundColor: '#fff', marginBottom: 16 },
+  senhaWrap: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 14, backgroundColor: '#fff', marginBottom: 8 },
+  inputSenha: { flex: 1, paddingVertical: 14, fontSize: 15, color: cores.preto },
+  mostrar: { color: cores.verde, fontWeight: '500', fontSize: 14 },
+  souProfessor: { fontSize: 12, color: '#aaa', textAlign: 'left', marginBottom: 8 },
+  erro: { color: 'red', fontSize: 13, marginBottom: 8 },
+  esqueceu: { textAlign: 'right', color: cores.verde, fontSize: 13, marginBottom: 24, fontWeight: '500' },
+  btnLogar: { backgroundColor: cores.verde, borderRadius: 30, paddingVertical: 16, alignItems: 'center', marginBottom: 16 },
+  btnLogarTxt: { color: cores.branco, fontSize: 16, fontWeight: 'bold' },
+  criarPerfil: { textAlign: 'center', color: cores.verde, fontSize: 14 },
 })

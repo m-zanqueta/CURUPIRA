@@ -1,4 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native'
+import { cores } from '../constants/cores'
 
 export default function Home() {
   return (
@@ -9,15 +10,6 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-  },
-  texto: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#22A45D',
-  },
+  container: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: cores.branco },
+  texto: { fontSize: 32, fontWeight: 'bold', color: cores.verde },
 })
