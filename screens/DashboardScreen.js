@@ -135,15 +135,37 @@ export default function DashboardScreen({ navigation }) {
   const [modalAtribuir, setModalAtribuir] = useState(false)
   const [turmaAtribuir, setTurmaAtribuir] = useState(null)
 
+  // Modal de alunos da turma
+  const [modalAlunosTurma, setModalAlunosTurma] = useState(false)
+  const [novoAlunoNome, setNovoAlunoNome]       = useState('')
+
   // Modal de alunos da missão
   const [modalAlunos, setModalAlunos]   = useState(false)
   const [missaoAlunos, setMissaoAlunos] = useState(null)
-  const [novoAluno, setNovoAluno]       = useState('')
 
   // Modal de dar XP
   const [modalXP, setModalXP]     = useState(false)
   const [alunoXP, setAlunoXP]     = useState(null)
   const [xpValor, setXpValor]     = useState('')
+
+  // Modal de editar aluno
+  const [modalEditAluno, setModalEditAluno] = useState(false)
+  const [alunoEditando, setAlunoEditando]   = useState(null)
+  const [alunoNomeEdit, setAlunoNomeEdit]   = useState('')
+  const [alunoTurmaEdit, setAlunoTurmaEdit] = useState(null)
+
+  // Status de missão por aluno { missaoId_alunoId: 'pendente' | 'entregue' | 'aprovado' }
+  const [statusMissao, setStatusMissao] = useState({})
+
+  // Histórico de XP { alunoId: [{xp, missao, data}] }
+  const [historicoXP, setHistoricoXP] = useState({})
+
+  // Modal histórico de XP
+  const [modalHistorico, setModalHistorico] = useState(false)
+  const [alunoHistorico, setAlunoHistorico] = useState(null)
+
+  // Busca de aluno
+  const [buscaAluno, setBuscaAluno] = useState('')
 
   const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })
 
@@ -268,13 +290,66 @@ export default function DashboardScreen({ navigation }) {
     return alunosDaMissao(missao).length
   }
 
-  function adicionarAlunoMissao() {
-    if (!novoAluno.trim()) return
-    const turmaId = turmas[0]?.id || 1
-    const initials = novoAluno.trim().split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2)
-    const novo = { id: Date.now(), nome: novoAluno.trim(), turmaId, xp: 0, initials, cor: colors.green }
+  function abrirEditAluno(aluno) {
+    setAlunoEditando(aluno)
+    setAlunoNomeEdit(aluno.nome)
+    setAlunoTurmaEdit(turmas.find(t => t.id === aluno.turmaId) || null)
+    setModalEditAluno(true)
+  }
+
+  function salvarEditAluno() {
+    if (!alunoNomeEdit.trim()) { Alert.alert('Atenção', 'Digite o nome do aluno!'); return }
+    const turmaDestino = alunoTurmaEdit
+    const initials = alunoNomeEdit.trim().split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2)
+    setAlunos(prev => prev.map(a => a.id === alunoEditando.id ? {
+      ...a,
+      nome: alunoNomeEdit.trim(),
+      initials,
+      turmaId: turmaDestino?.id || a.turmaId,
+      cor: turmaDestino?.cor || a.cor,
+    } : a))
+    setModalEditAluno(false)
+    setAlunoEditando(null)
+  }
+
+  function getStatusAluno(missaoId, alunoId) {
+    return statusMissao[`${missaoId}_${alunoId}`] || 'pendente'
+  }
+
+  function setStatusAluno(missaoId, alunoId, status) {
+    setStatusMissao(prev => ({ ...prev, [`${missaoId}_${alunoId}`]: status }))
+  }
+
+  function ciclarStatus(missaoId, alunoId) {
+    const atual = getStatusAluno(missaoId, alunoId)
+    const proximo = atual === 'pendente' ? 'entregue' : atual === 'entregue' ? 'aprovado' : 'pendente'
+    setStatusAluno(missaoId, alunoId, proximo)
+  }
+
+  function adicionarAlunoTurma() {
+    if (!novoAlunoNome.trim() || !turmaAtribuir) return
+    const initials = novoAlunoNome.trim().split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2)
+    const novo = {
+      id: Date.now(),
+      nome: novoAlunoNome.trim(),
+      turmaId: turmaAtribuir.id,
+      xp: 0,
+      initials,
+      cor: turmaAtribuir.cor,
+    }
     setAlunos(prev => [...prev, novo])
-    setNovoAluno('')
+    setNovoAlunoNome('')
+  }
+
+  function removerAluno(alunoId) {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Remover aluno da turma?')) setAlunos(prev => prev.filter(a => a.id !== alunoId))
+    } else {
+      Alert.alert('Remover aluno', 'Tem certeza?', [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Remover', style: 'destructive', onPress: () => setAlunos(prev => prev.filter(a => a.id !== alunoId)) },
+      ])
+    }
   }
 
   function removerAlunoMissao(alunoId) {
@@ -291,10 +366,39 @@ export default function DashboardScreen({ navigation }) {
   function darXP() {
     const val = parseInt(xpValor)
     if (!val || val <= 0) { Alert.alert('Atenção', 'Digite um valor de XP válido!'); return }
+    const dataHora = new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    const missaoAtual = missaoAlunos?.name || 'Manual'
+
+    // Atualiza XP do aluno
     setAlunos(prev => prev.map(a => a.id === alunoXP.id ? { ...a, xp: a.xp + val } : a))
+
+    // Atualiza XP da turma do aluno em tempo real
+    setTurmas(prev => prev.map(t => {
+      if (t.id !== alunoXP.turmaId) return t
+      const novoXP = t.xp + val
+      // Atualiza estágio e emoção baseado no XP acumulado
+      const estagio = novoXP >= 3000 ? 'Lendário' : novoXP >= 2000 ? 'Adulto' : novoXP >= 1000 ? 'Jovem' : 'Filhote'
+      const emocao  = novoXP >= 2000 ? '🤩' : novoXP >= 1000 ? '😄' : novoXP >= 500 ? '😊' : '😐'
+      const progresso = Math.min(100, Math.round((novoXP % 1000) / 10))
+      return { ...t, xp: novoXP, estagio, emocao, progresso }
+    }))
+
+    // Registra histórico
+    setHistoricoXP(prev => ({
+      ...prev,
+      [alunoXP.id]: [{ xp: val, missao: missaoAtual, data: dataHora }, ...(prev[alunoXP.id] || [])]
+    }))
+
     setXpValor('')
     setModalXP(false)
     Alert.alert('✅ XP atribuído!', `+${val} XP para ${alunoXP.nome}`)
+  }
+
+  function progressoRealMissao(missao) {
+    const lista = alunosDaMissao(missao)
+    if (lista.length === 0) return 0
+    const aprovados = lista.filter(a => getStatusAluno(missao.id, a.id) === 'aprovado').length
+    return Math.round((aprovados / lista.length) * 100)
   }
 
   function editarAlunos(id, valor) {
@@ -335,6 +439,35 @@ export default function DashboardScreen({ navigation }) {
               </View>
               <View style={[s.petXpBgFull, { marginTop: 10 }]}>
                 <View style={[s.petXpFillFull, { width: t.progresso + '%', backgroundColor: t.cor }]} />
+              </View>
+
+              {/* Alunos da turma */}
+              <View style={{ marginTop: 12, gap: 6 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={s.formLabel}>
+                    Alunos ({alunos.filter(a => a.turmaId === t.id).length})
+                  </Text>
+                  <TouchableOpacity
+                    style={[s.btnNew, { paddingVertical: 5, paddingHorizontal: 10, backgroundColor: colors.purple }]}
+                    onPress={() => { setTurmaAtribuir(t); setModalAlunosTurma(true) }}
+                  >
+                    <Text style={[s.btnNewText, { fontSize: 11 }]}>👤 Ver alunos</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {alunos.filter(a => a.turmaId === t.id).slice(0, 5).map(a => (
+                    <View key={a.id} style={[s.badge, { backgroundColor: colors.cream }]}>
+                      <Text style={[s.badgeText, { color: t.cor }]}>{a.nome.split(' ')[0]}</Text>
+                    </View>
+                  ))}
+                  {alunos.filter(a => a.turmaId === t.id).length > 5 && (
+                    <View style={[s.badge, { backgroundColor: colors.cream }]}>
+                      <Text style={[s.badgeText, { color: colors.muted }]}>
+                        +{alunos.filter(a => a.turmaId === t.id).length - 5} mais
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
 
               {/* Missões da turma */}
@@ -441,10 +574,16 @@ export default function DashboardScreen({ navigation }) {
             </View>
             {m.active && (
               <View style={{ marginTop: 10 }}>
-                <View style={s.missionProgressBgFull}>
-                  <View style={[s.missionProgressFillFull, { width: m.progress + '%' }]} />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <Text style={[s.missionProgressTxt, { color: colors.muted }]}>Progresso real</Text>
+                  <Text style={s.missionProgressTxt}>{progressoRealMissao(m)}% aprovados</Text>
                 </View>
-                <Text style={[s.missionProgressTxt, { marginTop: 4 }]}>{m.progress}% concluído</Text>
+                <View style={s.missionProgressBgFull}>
+                  <View style={[s.missionProgressFillFull, { width: progressoRealMissao(m) + '%' }]} />
+                </View>
+                <Text style={[s.missionProgressTxt, { marginTop: 4, color: colors.muted, fontSize: 10 }]}>
+                  {alunosDaMissao(m).filter(a => getStatusAluno(m.id, a.id) === 'aprovado').length} de {qtdAlunosMissao(m)} alunos aprovados
+                </Text>
               </View>
             )}
 
@@ -773,6 +912,203 @@ export default function DashboardScreen({ navigation }) {
         </View>
       </Modal>
 
+      {/* ── Modal Histórico XP ── */}
+      <Modal visible={modalHistorico} transparent animationType="fade" onRequestClose={() => setModalHistorico(false)}>
+        <View style={s.modalOverlay}>
+          <View style={[s.modalBox, { maxHeight: '80%' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <View style={[s.rankAvatar, { backgroundColor: alunoHistorico?.cor, width: 44, height: 44, borderRadius: 22 }]}>
+                <Text style={[s.rankInitials, { fontSize: 14 }]}>{alunoHistorico?.initials}</Text>
+              </View>
+              <View>
+                <Text style={s.modalTitle}>{alunoHistorico?.nome}</Text>
+                <Text style={[s.formLabel, { marginBottom: 0 }]}>Total: {alunoHistorico?.xp} XP</Text>
+              </View>
+            </View>
+
+            <Text style={[s.panelTitle, { marginBottom: 10 }]}>📋 Histórico de XP</Text>
+
+            <ScrollView style={{ maxHeight: 300 }}>
+              {(historicoXP[alunoHistorico?.id] || []).length === 0 ? (
+                <View style={{ alignItems: 'center', paddingVertical: 24, gap: 6 }}>
+                  <Text style={{ fontSize: 32 }}>⭐</Text>
+                  <Text style={{ fontSize: 13, fontFamily: fonts.regular, color: colors.muted, textAlign: 'center' }}>
+                    Nenhum XP atribuído ainda.{'\n'}Use o botão ⭐ para dar XP ao aluno.
+                  </Text>
+                </View>
+              ) : (
+                (historicoXP[alunoHistorico?.id] || []).map((h, i) => (
+                  <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#f0edd8' }}>
+                    <View style={[s.statIconWrap, { backgroundColor: colors.yellowLight, width: 32, height: 32, borderRadius: 8 }]}>
+                      <Text style={{ fontSize: 14 }}>⭐</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.rankName}>{h.missao}</Text>
+                      <Text style={s.rankClass}>{h.data}</Text>
+                    </View>
+                    <Text style={{ fontSize: 14, fontFamily: fonts.bold, color: colors.green }}>+{h.xp} XP</Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            <TouchableOpacity style={[s.btnConfirm, { marginTop: 12 }]} onPress={() => setModalHistorico(false)}>
+              <Text style={s.btnConfirmText}>Fechar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Modal Editar Aluno ── */}
+      <Modal visible={modalEditAluno} transparent animationType="fade" onRequestClose={() => setModalEditAluno(false)}>
+        <View style={s.modalOverlay}>
+          <View style={s.modalBox}>
+            <Text style={s.modalTitle}>✏️ Editar Aluno</Text>
+
+            <Text style={s.formLabel}>Nome do aluno</Text>
+            <TextInput
+              style={s.formInput}
+              placeholder="Nome completo..."
+              placeholderTextColor="#aaa"
+              value={alunoNomeEdit}
+              onChangeText={setAlunoNomeEdit}
+            />
+
+            <Text style={s.formLabel}>Turma</Text>
+            <View style={s.turmaPickerWrap}>
+              {turmas.map(t => (
+                <TouchableOpacity
+                  key={t.id}
+                  style={[s.turmaPill, alunoTurmaEdit?.id === t.id && s.turmaPillActive]}
+                  onPress={() => setAlunoTurmaEdit(t)}
+                >
+                  <Text style={[s.turmaPillText, alunoTurmaEdit?.id === t.id && s.turmaPillTextActive]}>
+                    {t.pet} {t.nome}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {alunoTurmaEdit && alunoEditando && alunoTurmaEdit.id !== alunoEditando.turmaId && (
+              <View style={{ backgroundColor: colors.yellowLight, borderRadius: 8, padding: 10, marginTop: 4 }}>
+                <Text style={{ fontSize: 12, fontFamily: fonts.semibold, color: '#7a5f00' }}>
+                  ⚠️ O aluno será movido para a turma {alunoTurmaEdit.nome}
+                </Text>
+              </View>
+            )}
+
+            <View style={s.modalBtns}>
+              <TouchableOpacity style={s.btnCancel} onPress={() => setModalEditAluno(false)}>
+                <Text style={s.btnCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.btnConfirm} onPress={salvarEditAluno}>
+                <Text style={s.btnConfirmText}>Salvar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Modal Alunos da Turma ── */}
+      <Modal visible={modalAlunosTurma} transparent animationType="slide" onRequestClose={() => setModalAlunosTurma(false)}>
+        <View style={s.modalOverlay}>
+          <View style={[s.modalBox, { maxHeight: '90%' }]}>
+            <Text style={s.modalTitle}>👥 {turmaAtribuir?.nome}</Text>
+            <Text style={[s.formLabel, { marginBottom: 10 }]}>
+              {alunos.filter(a => a.turmaId === turmaAtribuir?.id).length} aluno(s)
+            </Text>
+
+            {/* Busca */}
+            <TextInput
+              style={[s.formInput, { marginBottom: 10 }]}
+              placeholder="🔍 Buscar aluno..."
+              placeholderTextColor="#aaa"
+              value={buscaAluno}
+              onChangeText={setBuscaAluno}
+            />
+
+            {/* Adicionar novo aluno */}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+              <TextInput
+                style={[s.formInput, { flex: 1, marginBottom: 0 }]}
+                placeholder="Nome do aluno..."
+                placeholderTextColor="#aaa"
+                value={novoAlunoNome}
+                onChangeText={setNovoAlunoNome}
+                onSubmitEditing={adicionarAlunoTurma}
+              />
+              <TouchableOpacity style={[s.btnConfirm, { paddingHorizontal: 16 }]} onPress={adicionarAlunoTurma}>
+                <Text style={s.btnConfirmText}>+</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 340 }}>
+              {alunos
+                .filter(a => a.turmaId === turmaAtribuir?.id)
+                .filter(a => a.nome.toLowerCase().includes(buscaAluno.toLowerCase()))
+                .length === 0 ? (
+                <Text style={{ color: colors.muted, fontFamily: fonts.regular, fontSize: 13, textAlign: 'center', paddingVertical: 20 }}>
+                  {buscaAluno ? 'Nenhum aluno encontrado.' : 'Nenhum aluno cadastrado nesta turma.'}
+                </Text>
+              ) : (
+                alunos
+                  .filter(a => a.turmaId === turmaAtribuir?.id)
+                  .filter(a => a.nome.toLowerCase().includes(buscaAluno.toLowerCase()))
+                  .sort((a, b) => b.xp - a.xp)
+                  .map((a, i) => (
+                    <View key={a.id} style={[s.rankRow, { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0edd8' }]}>
+                      <Text style={{ fontSize: 12, width: 20, color: colors.muted, fontFamily: fonts.semibold }}>{i + 1}</Text>
+                      <View style={[s.rankAvatar, { backgroundColor: a.cor, width: 36, height: 36, borderRadius: 18 }]}>
+                        <Text style={[s.rankInitials, { fontSize: 12 }]}>{a.initials}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.rankName}>{a.nome}</Text>
+                        <Text style={s.rankClass}>{a.xp} XP · {(historicoXP[a.id] || []).length} recebimentos</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[s.btnToggle, { marginTop: 0, backgroundColor: '#f0f0f0', paddingHorizontal: 8 }]}
+                        onPress={() => {
+                          setAlunoHistorico(a)
+                          setModalAlunosTurma(false)
+                          setTimeout(() => setModalHistorico(true), 300)
+                        }}
+                      >
+                        <Text style={[s.btnToggleText, { color: colors.muted }]}>📋</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[s.btnToggle, { marginTop: 0, backgroundColor: colors.purpleLight, paddingHorizontal: 8 }]}
+                        onPress={() => {
+                          setModalAlunosTurma(false)
+                          setTimeout(() => abrirEditAluno(a), 300)
+                        }}
+                      >
+                        <Text style={[s.btnToggleText, { color: colors.purple }]}>✏️</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[s.btnToggle, { marginTop: 0, backgroundColor: colors.yellowLight, paddingHorizontal: 8 }]}
+                        onPress={() => {
+                          setAlunoXP(a)
+                          setModalAlunosTurma(false)
+                          setTimeout(() => setModalXP(true), 300)
+                        }}
+                      >
+                        <Text style={[s.btnToggleText, { color: '#7a5f00' }]}>⭐</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => removerAluno(a.id)} style={[s.btnRemove, { marginLeft: 2 }]}>
+                        <Text style={s.btnRemoveText}>🗑️</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))
+              )}
+            </ScrollView>
+
+            <TouchableOpacity style={[s.btnConfirm, { marginTop: 12 }]} onPress={() => { setModalAlunosTurma(false); setNovoAlunoNome(''); setBuscaAluno('') }}>
+              <Text style={s.btnConfirmText}>Concluído</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* ── Modal Atribuir Missão ── */}
       <Modal visible={modalAtribuir} transparent animationType="slide" onRequestClose={() => setModalAtribuir(false)}>
         <View style={s.modalOverlay}>
@@ -818,55 +1154,94 @@ export default function DashboardScreen({ navigation }) {
         <View style={s.modalOverlay}>
           <View style={[s.modalBox, { maxHeight: '85%' }]}>
             <Text style={s.modalTitle}>👥 {missaoAlunos?.name}</Text>
-            <Text style={[s.formLabel, { marginBottom: 8 }]}>Alunos participantes</Text>
 
-            {/* Adicionar novo aluno */}
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-              <TextInput
-                style={[s.formInput, { flex: 1, marginBottom: 0 }]}
-                placeholder="Nome do aluno..."
-                placeholderTextColor="#aaa"
-                value={novoAluno}
-                onChangeText={setNovoAluno}
-              />
-              <TouchableOpacity style={[s.btnConfirm, { paddingHorizontal: 14 }]} onPress={adicionarAlunoMissao}>
-                <Text style={s.btnConfirmText}>+</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ maxHeight: 320 }}>
-              {alunosDaMissao(missaoAlunos).length === 0 ? (
-                <Text style={{ color: colors.muted, fontFamily: fonts.regular, fontSize: 13, textAlign: 'center', paddingVertical: 20 }}>
-                  Nenhum aluno encontrado para esta missão.
+            {alunosDaMissao(missaoAlunos).length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 24, gap: 8 }}>
+                <Text style={{ fontSize: 32 }}>👥</Text>
+                <Text style={{ fontSize: 14, fontFamily: fonts.semibold, color: colors.dark }}>Nenhum aluno encontrado</Text>
+                <Text style={{ fontSize: 12, fontFamily: fonts.regular, color: colors.muted, textAlign: 'center' }}>
+                  Atribua esta missão a uma turma para ver os alunos participantes.
                 </Text>
-              ) : (
-                alunosDaMissao(missaoAlunos).map(a => {
-                  const turmaAluno = turmas.find(t => t.id === a.turmaId)
-                  return (
-                    <View key={a.id} style={[s.rankRow, { paddingVertical: 10 }]}>
-                      <View style={[s.rankAvatar, { backgroundColor: a.cor, width: 36, height: 36, borderRadius: 18 }]}>
-                        <Text style={[s.rankInitials, { fontSize: 12 }]}>{a.initials}</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={s.rankName}>{a.nome}</Text>
-                        <Text style={s.rankClass}>{turmaAluno?.nome} · {a.xp} XP</Text>
-                      </View>
-                      <TouchableOpacity
-                        style={[s.btnToggle, { marginTop: 0, backgroundColor: colors.yellowLight, paddingHorizontal: 10 }]}
-                        onPress={() => { setAlunoXP(a); setModalXP(true) }}
-                      >
-                        <Text style={[s.btnToggleText, { color: '#7a5f00' }]}>⭐ +XP</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => removerAlunoMissao(a.id)} style={[s.btnRemove, { marginLeft: 4 }]}>
-                        <Text style={s.btnRemoveText}>🗑️</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )
-                })
-              )}
-            </ScrollView>
+                <TouchableOpacity
+                  style={[s.btnNew, { marginTop: 8 }]}
+                  onPress={() => { setModalAlunos(false); setActiveNav('missoes') }}
+                >
+                  <Text style={s.btnNewText}>Ir para Missões →</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <>
+                <Text style={[s.formLabel, { marginBottom: 10 }]}>
+                  {qtdAlunosMissao(missaoAlunos)} aluno(s) · {missaoAlunos?.turma}
+                </Text>
 
-            <TouchableOpacity style={[s.btnConfirm, { marginTop: 12 }]} onPress={() => setModalAlunos(false)}>
+                {/* Busca */}
+                <TextInput
+                  style={[s.formInput, { marginBottom: 10 }]}
+                  placeholder="🔍 Buscar aluno..."
+                  placeholderTextColor="#aaa"
+                  value={buscaAluno}
+                  onChangeText={setBuscaAluno}
+                />
+
+                <ScrollView style={{ maxHeight: 360 }}>
+                  {alunosDaMissao(missaoAlunos)
+                    .filter(a => a.nome.toLowerCase().includes(buscaAluno.toLowerCase()))
+                    .sort((a, b) => b.xp - a.xp)
+                    .map((a, i) => {
+                      const turmaAluno = turmas.find(t => t.id === a.turmaId)
+                      const status = getStatusAluno(missaoAlunos?.id, a.id)
+                      const statusColor = status === 'aprovado' ? colors.green : status === 'entregue' ? colors.yellow : '#ddd'
+                      const statusLabel = status === 'aprovado' ? '✅ Aprovado' : status === 'entregue' ? '📬 Entregue' : '⏳ Pendente'
+                      return (
+                        <View key={a.id} style={[s.rankRow, { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0edd8', flexWrap: 'wrap', gap: 4 }]}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                            <Text style={{ fontSize: 12, width: 20, color: colors.muted, fontFamily: fonts.semibold }}>{i + 1}</Text>
+                            <View style={[s.rankAvatar, { backgroundColor: a.cor, width: 34, height: 34, borderRadius: 17 }]}>
+                              <Text style={[s.rankInitials, { fontSize: 11 }]}>{a.initials}</Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={s.rankName}>{a.nome}</Text>
+                              <Text style={s.rankClass}>{turmaAluno?.nome} · {a.xp} XP</Text>
+                            </View>
+                          </View>
+                          <View style={{ flexDirection: 'row', gap: 6, marginLeft: 28 }}>
+                            <TouchableOpacity
+                              style={[s.btnToggle, { marginTop: 0, backgroundColor: '#f0f0f0', paddingHorizontal: 8 }]}
+                              onPress={() => {
+                                setAlunoHistorico(a)
+                                setModalAlunos(false)
+                                setTimeout(() => setModalHistorico(true), 300)
+                              }}
+                            >
+                              <Text style={[s.btnToggleText, { color: colors.muted }]}>📋</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[s.btnToggle, { marginTop: 0, backgroundColor: statusColor + '30', paddingHorizontal: 8, borderWidth: 1, borderColor: statusColor }]}
+                              onPress={() => ciclarStatus(missaoAlunos?.id, a.id)}
+                            >
+                              <Text style={[s.btnToggleText, { color: statusColor === '#ddd' ? colors.muted : statusColor, fontSize: 11 }]}>{statusLabel}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[s.btnToggle, { marginTop: 0, backgroundColor: colors.yellowLight, paddingHorizontal: 8 }]}
+                              onPress={() => {
+                                setAlunoXP(a)
+                                setModalAlunos(false)
+                                setTimeout(() => setModalXP(true), 300)
+                              }}
+                            >
+                              <Text style={[s.btnToggleText, { color: '#7a5f00' }]}>⭐ +XP</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      )
+                    })
+                  }
+                </ScrollView>
+              </>
+            )}
+
+            <TouchableOpacity style={[s.btnConfirm, { marginTop: 12 }]} onPress={() => { setModalAlunos(false); setBuscaAluno('') }}>
               <Text style={s.btnConfirmText}>Concluído</Text>
             </TouchableOpacity>
           </View>
