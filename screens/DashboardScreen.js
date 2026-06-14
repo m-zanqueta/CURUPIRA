@@ -125,7 +125,7 @@ export default function DashboardScreen({ navigation }) {
 
   // Modal de criar turma
   const [modalTurma, setModalTurma]   = useState(false)
-  const [novaTurma, setNovaTurma]     = useState({ nome: '', pet: '🐉', cor: colors.green })
+  const [novaTurma, setNovaTurma]     = useState({ nome: '', pet: '🐉', cor: colors.green, alunosNomes: '' })
 
   // Modal de criar missão
   const [modalMissao, setModalMissao] = useState(false)
@@ -192,9 +192,25 @@ export default function DashboardScreen({ navigation }) {
 
   function adicionarTurma() {
     if (!novaTurma.nome.trim()) { Alert.alert('Atenção', 'Digite o nome da turma!'); return; }
-    const nova = { id: Date.now(), nome: novaTurma.nome, pet: novaTurma.pet, estagio: 'Filhote', xp: 0, progresso: 0, emocao: '😊', cor: novaTurma.cor, cosmetico: false }
-    setTurmas([...turmas, nova])
-    setNovaTurma({ nome: '', pet: '🐉', cor: colors.green })
+    const novaId = Date.now()
+    const nova = { id: novaId, nome: novaTurma.nome, pet: novaTurma.pet, estagio: 'Filhote', xp: 0, progresso: 0, emocao: '😊', cor: novaTurma.cor, cosmetico: false }
+    setTurmas(prev => [...prev, nova])
+
+    // Adiciona alunos se foram informados
+    if (novaTurma.alunosNomes.trim()) {
+      const nomes = novaTurma.alunosNomes.split('\n').map(n => n.trim()).filter(n => n.length > 0)
+      const novosAlunos = nomes.map((nome, i) => ({
+        id: novaId + i + 1,
+        nome,
+        turmaId: novaId,
+        xp: 0,
+        initials: nome.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2),
+        cor: novaTurma.cor,
+      }))
+      setAlunos(prev => [...prev, ...novosAlunos])
+    }
+
+    setNovaTurma({ nome: '', pet: '🐉', cor: colors.green, alunosNomes: '' })
     setModalTurma(false)
     Alert.alert('✅ Turma criada!', `A turma "${nova.nome}" foi adicionada com sucesso.`)
   }
@@ -642,40 +658,60 @@ export default function DashboardScreen({ navigation }) {
       {/* ── Modal Criar Turma ── */}
       <Modal visible={modalTurma} transparent animationType="slide" onRequestClose={() => setModalTurma(false)}>
         <View style={s.modalOverlay}>
-          <View style={s.modalBox}>
-            <Text style={s.modalTitle}>+ Nova Turma</Text>
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 20 }}>
+            <View style={s.modalBox}>
+              <Text style={s.modalTitle}>+ Nova Turma</Text>
 
-            <Text style={s.formLabel}>Nome da turma</Text>
-            <TextInput style={s.formInput} placeholder="Ex: 3º A, Turma B..." placeholderTextColor="#aaa"
-              value={novaTurma.nome} onChangeText={t => setNovaTurma({ ...novaTurma, nome: t })} />
+              <Text style={s.formLabel}>Nome da turma</Text>
+              <TextInput style={s.formInput} placeholder="Ex: 3º A, Turma B..." placeholderTextColor="#aaa"
+                value={novaTurma.nome} onChangeText={t => setNovaTurma({ ...novaTurma, nome: t })} />
 
-            <Text style={s.formLabel}>Escolha o pet</Text>
-            <View style={s.petPicker}>
-              {PETS.map(p => (
-                <TouchableOpacity key={p} style={[s.petOption, novaTurma.pet === p && s.petOptionActive]}
-                  onPress={() => setNovaTurma({ ...novaTurma, pet: p })}>
-                  <Text style={{ fontSize: 22 }}>{p}</Text>
+              <Text style={s.formLabel}>Escolha o pet</Text>
+              <View style={s.petPicker}>
+                {PETS.map(p => (
+                  <TouchableOpacity key={p} style={[s.petOption, novaTurma.pet === p && s.petOptionActive]}
+                    onPress={() => setNovaTurma({ ...novaTurma, pet: p })}>
+                    <Text style={{ fontSize: 22 }}>{p}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={s.formLabel}>Cor da turma</Text>
+              <View style={s.colorPicker}>
+                {CORES.map(c => (
+                  <TouchableOpacity key={c} style={[s.colorOption, { backgroundColor: c }, novaTurma.cor === c && s.colorOptionActive]}
+                    onPress={() => setNovaTurma({ ...novaTurma, cor: c })} />
+                ))}
+              </View>
+
+              <Text style={s.formLabel}>Alunos da turma (um por linha)</Text>
+              <Text style={{ fontSize: 11, color: colors.muted, fontFamily: fonts.regular, marginBottom: 6 }}>
+                Opcional — você pode adicionar depois
+              </Text>
+              <TextInput
+                style={[s.formInput, { height: 120, textAlignVertical: 'top' }]}
+                placeholder={'Ex:\nMaria Fernanda\nJoão Pedro\nLetícia S.'}
+                placeholderTextColor="#aaa"
+                multiline
+                value={novaTurma.alunosNomes}
+                onChangeText={t => setNovaTurma({ ...novaTurma, alunosNomes: t })}
+              />
+              {novaTurma.alunosNomes.trim().length > 0 && (
+                <Text style={{ fontSize: 12, color: colors.green, fontFamily: fonts.semibold, marginTop: -8 }}>
+                  {novaTurma.alunosNomes.split('\n').filter(n => n.trim()).length} aluno(s) serão adicionados
+                </Text>
+              )}
+
+              <View style={s.modalBtns}>
+                <TouchableOpacity style={s.btnCancel} onPress={() => setModalTurma(false)}>
+                  <Text style={s.btnCancelText}>Cancelar</Text>
                 </TouchableOpacity>
-              ))}
+                <TouchableOpacity style={s.btnConfirm} onPress={adicionarTurma}>
+                  <Text style={s.btnConfirmText}>Criar Turma</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-
-            <Text style={s.formLabel}>Cor da turma</Text>
-            <View style={s.colorPicker}>
-              {CORES.map(c => (
-                <TouchableOpacity key={c} style={[s.colorOption, { backgroundColor: c }, novaTurma.cor === c && s.colorOptionActive]}
-                  onPress={() => setNovaTurma({ ...novaTurma, cor: c })} />
-              ))}
-            </View>
-
-            <View style={s.modalBtns}>
-              <TouchableOpacity style={s.btnCancel} onPress={() => setModalTurma(false)}>
-                <Text style={s.btnCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={s.btnConfirm} onPress={adicionarTurma}>
-                <Text style={s.btnConfirmText}>Criar Turma</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
