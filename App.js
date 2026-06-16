@@ -1,34 +1,59 @@
-import { useState } from 'react'
-import Login from './screens/Login'
-import CriarPerfil from './screens/CriarPerfil'
-import LoginProfessor from './screens/LoginProfessor'
-import Home from './screens/Home'
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  useFonts,
+  Montserrat_400Regular,
+  Montserrat_500Medium,
+  Montserrat_600SemiBold,
+  Montserrat_700Bold,
+  Montserrat_800ExtraBold,
+} from '@expo-google-fonts/montserrat';
+import { ActivityIndicator, View } from 'react-native';
+import { colors } from './theme';
+
+// Telas existentes
+import DashboardScreen from './screens/DashboardScreen';
+
+// Telas do Washington — Módulo de Conquistas
+import ConquistasScreen       from './screens/ConquistasScreen';
+import DetalheConquistaScreen from './screens/DetalheConquistaScreen';
+import CriarConquistaScreen   from './screens/CriarConquistaScreen';
+
+const Stack = createNativeStackNavigator();
 
 export default function App() {
-  const [tela, setTela] = useState('login')
+  const [fontsLoaded] = useFonts({
+    Montserrat_400Regular,
+    Montserrat_500Medium,
+    Montserrat_600SemiBold,
+    Montserrat_700Bold,
+    Montserrat_800ExtraBold,
+  });
 
-  if (tela === 'criarPerfil') {
-    return <CriarPerfil onVoltar={() => setTela('login')} />
-  }
-
-  if (tela === 'loginProfessor') {
+  if (!fontsLoaded) {
     return (
-      <LoginProfessor
-        onLogin={() => setTela('home')}
-        onSouAluno={() => setTela('login')}
-      />
-    )
-  }
-
-  if (tela === 'home') {
-    return <Home />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.dark }}>
+        <ActivityIndicator color={colors.yellow} size="large" />
+      </View>
+    );
   }
 
   return (
-    <Login
-      onLogin={() => setTela('home')}
-      onCriarPerfil={() => setTela('criarPerfil')}
-      onSouProfessor={() => setTela('loginProfessor')}
-    />
-  )
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+
+          {/* ── Telas existentes ── */}
+          <Stack.Screen name="Dashboard" component={DashboardScreen} />
+
+          {/* ── Washington: Módulo de Conquistas ── */}
+          <Stack.Screen name="Conquistas"       component={ConquistasScreen} />
+          <Stack.Screen name="DetalheConquista" component={DetalheConquistaScreen} />
+          <Stack.Screen name="CriarConquista"   component={CriarConquistaScreen} />
+
+        </Stack.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
+  );
 }
