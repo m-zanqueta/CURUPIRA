@@ -1,29 +1,17 @@
 {
   "expo": {
-    "name": "CURUPIRA",
-    "slug": "CURUPIRA",
+    "name": "Curupira",
+    "slug": "curupira",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "icon": "./assets/logo.png",
     "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
-    "ios": {
-      "supportsTablet": true
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true
+      "backgroundColor": "#090C0E"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./assets/logo.png",
+      "bundler": "metro"
+    },
+    "platforms": ["ios", "android", "web"]
   }
 }
