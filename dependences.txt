@@ -1,5 +1,6 @@
 npm install
 
 npx expo install react-dom react-native-web @expo/metro-runtime
+npx expo install react-native-safe-area-context @expo-google-fonts/montserrat expo-font
 
 npx expo start
