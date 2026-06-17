@@ -116,7 +116,7 @@ const INITIAL_ALUNOS = [
   { id: 49, nome: 'Fábio T.',        turmaId: 4, xp: 80,  initials: 'FT', cor: '#888' },
 ]
 
-export default function DashboardScreen({ navigation }) {
+export default function DashboardScreen({ professor, onLogout }) {
   const [activeNav, setActiveNav]     = useState('overview')
   const [menuOpen, setMenuOpen]       = useState(false)
   const [turmas, setTurmas]           = useState(INITIAL_TURMAS)
@@ -664,32 +664,31 @@ export default function DashboardScreen({ navigation }) {
         </View>
 
         {/* Pets */}
-        <View style={s.panel}>
-          <Text style={s.panelTitle}>Pets das Turmas</Text>
-          <View style={s.petsGrid}>
-            {turmas.map(t => (
-              <View key={t.id} style={s.petCard}>
-                <View style={s.petCardTop}>
-                  <Text style={s.petTurma}>{t.nome}</Text>
-                  <Text style={s.petEmocao}>{t.emocao}</Text>
-                </View>
+          {turmas.map(t => (
+            <View key={t.id} style={s.petCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 <View style={[s.petAvatar, { borderColor: t.cor }]}>
                   <Text style={s.petEmoji}>{t.pet}</Text>
                   {t.cosmetico && (
                     <Image source={require('../assets/chapeu-horta.png')} style={s.petChapeu} resizeMode="contain" />
                   )}
                 </View>
-                <Text style={[s.petEstagio, { color: t.cor }]}>{t.estagio}</Text>
-                <View style={s.petXpRow}>
-                  <View style={s.petXpBg}>
-                    <View style={[s.petXpFill, { width: t.progresso + '%', backgroundColor: t.cor }]} />
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={s.petTurma}>{t.nome}</Text>
+                    <Text style={s.petEmocao}>{t.emocao}</Text>
                   </View>
-                  <Text style={s.petXpNum}>{t.xp} XP</Text>
+                  <Text style={[s.petEstagio, { color: t.cor, marginBottom: 6 }]}>{t.estagio}</Text>
+                  <View style={s.petXpRow}>
+                    <View style={s.petXpBg}>
+                      <View style={[s.petXpFill, { width: t.progresso + '%', backgroundColor: t.cor }]} />
+                    </View>
+                    <Text style={s.petXpNum}>{t.xp} XP</Text>
+                  </View>
                 </View>
               </View>
-            ))}
-          </View>
-        </View>
+            </View>
+          ))}
 
         {/* Missions preview */}
         <View style={s.panel}>
@@ -787,7 +786,7 @@ export default function DashboardScreen({ navigation }) {
                 <Text style={s.teacherRole}>Área do Professor</Text>
               </View>
             </View>
-            <TouchableOpacity onPress={() => { setMenuOpen(false); }}>
+            <TouchableOpacity onPress={() => { setMenuOpen(false); onLogout && onLogout(); }}>
               <Text style={s.logoutBtn}>← Sair</Text>
             </TouchableOpacity>
           </View>
@@ -1305,7 +1304,7 @@ export default function DashboardScreen({ navigation }) {
             </TouchableOpacity>
             <Image source={require('../assets/logo.png')} style={s.topLogo} resizeMode="contain" />
             <View>
-              <Text style={s.pageTitle}>Seja bem-vindo(a), Professor(a)! 👋</Text>
+              <Text style={s.pageTitle}>Seja bem-vindo(a), {professor?.nome || 'Professor(a)'}! 👋</Text>
               <Text style={s.pageSub}>{turmas.length} turmas · {alunos.length} alunos · Semana de {today}</Text>
             </View>
           </View>
@@ -1397,8 +1396,8 @@ const s = StyleSheet.create({
   panel:       { backgroundColor: colors.white, borderRadius: 10, padding: 16, borderWidth: 1, borderColor: colors.border },
   panelTitle:  { fontSize: 14, fontFamily: fonts.bold, color: colors.dark, marginBottom: 12 },
   petsGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  petCard:     { width: (width - 68) / 2, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10, alignItems: 'center', gap: 6, backgroundColor: colors.cream },
-  petCardTop:  { flexDirection: 'row', justifyContent: 'space-between', width: '100%' },
+  petsGrid:    { flexDirection: 'column', gap: 10 },
+  petCard:     { width: '100%', borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 14, gap: 6, backgroundColor: colors.cream },
   petTurma:    { fontSize: 12, fontFamily: fonts.bold, color: colors.dark },
   petEmocao:   { fontSize: 16 },
   petAvatar:   { width: 72, height: 72, borderRadius: 36, borderWidth: 3, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', position: 'relative' },

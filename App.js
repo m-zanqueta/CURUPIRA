@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { View, ActivityIndicator } from 'react-native'
+import { useState, useEffect } from 'react'
+import { View, ActivityIndicator, Image, Text, StyleSheet } from 'react-native'
 import {
   useFonts,
   Montserrat_400Regular,
@@ -10,6 +10,7 @@ import {
 } from '@expo-google-fonts/montserrat'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { colors } from './theme'
+import { inicializarProfessores } from './services/storage'
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
@@ -17,7 +18,8 @@ import Home from './screens/Home'
 import DashboardScreen from './screens/DashboardScreen'
 
 export default function App() {
-  const [tela, setTela] = useState('login')
+  const [tela, setTela] = useState('splash')
+  const [professor, setProfessor] = useState(null)
 
   const [fontsLoaded] = useFonts({
     Montserrat_400Regular,
@@ -27,10 +29,26 @@ export default function App() {
     Montserrat_800ExtraBold,
   })
 
-  if (!fontsLoaded) {
+  useEffect(() => {
+    async function init() {
+      await inicializarProfessores()
+      setTimeout(() => setTela('login'), 2500)
+    }
+    if (fontsLoaded) init()
+  }, [fontsLoaded])
+
+  // Splash / carregamento
+  if (!fontsLoaded || tela === 'splash') {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.dark }}>
-        <ActivityIndicator color={colors.yellow} size="large" />
+      <View style={styles.splash}>
+        <Image
+          source={require('./assets/logo.png')}
+          style={styles.splashLogo}
+          resizeMode="contain"
+        />
+        <Text style={styles.splashNome}>CURUPIRA</Text>
+        <Text style={styles.splashTagline}>Atividades extracurriculares gamificadas</Text>
+        <ActivityIndicator color={colors.yellow} size="large" style={{ marginTop: 40 }} />
       </View>
     )
   }
@@ -47,7 +65,7 @@ export default function App() {
     return (
       <SafeAreaProvider>
         <LoginProfessor
-          onLogin={() => setTela('dashboardProfessor')}
+          onLogin={(prof) => { setProfessor(prof); setTela('dashboardProfessor') }}
           onSouAluno={() => setTela('login')}
         />
       </SafeAreaProvider>
@@ -57,7 +75,7 @@ export default function App() {
   if (tela === 'dashboardProfessor') {
     return (
       <SafeAreaProvider>
-        <DashboardScreen />
+        <DashboardScreen professor={professor} onLogout={() => setTela('loginProfessor')} />
       </SafeAreaProvider>
     )
   }
@@ -80,3 +98,31 @@ export default function App() {
     </SafeAreaProvider>
   )
 }
+
+const styles = StyleSheet.create({
+  splash: {
+    flex: 1,
+    backgroundColor: colors.dark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  splashLogo: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    marginBottom: 8,
+  },
+  splashNome: {
+    fontSize: 32,
+    fontFamily: 'Montserrat_800ExtraBold',
+    color: colors.cream,
+    letterSpacing: 4,
+  },
+  splashTagline: {
+    fontSize: 13,
+    fontFamily: 'Montserrat_400Regular',
+    color: 'rgba(255,255,255,0.5)',
+    textAlign: 'center',
+  },
+})

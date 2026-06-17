@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Image,
 } from 'react-native'
-import { buscarUsuario } from '../services/storage'
+import { buscarProfessor } from '../services/storage'
 import { cores } from '../constants/cores'
 
 export default function LoginProfessor({ onLogin, onSouAluno }) {
@@ -11,30 +11,18 @@ export default function LoginProfessor({ onLogin, onSouAluno }) {
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
 
-  function validarEmail(email) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-  }
-
   async function handleLogin() {
     if (!email || !senha) {
-      setErro('Preencha e-mail e senha para continuar.')
+      setErro('Preencha usuário e senha para continuar.')
       return
     }
-    if (!validarEmail(email)) {
-      setErro('Informe um e-mail válido.')
-      return
-    }
-    if (senha.length < 8 || !/[A-Z]/.test(senha) || !/[0-9]/.test(senha)) {
-      setErro('A senha deve ter mínimo 8 caracteres, 1 maiúscula e 1 número.')
-      return
-    }
-    const encontrado = await buscarUsuario(email)
-    if (!encontrado || encontrado.senha !== senha) {
-      setErro('Email ou senha incorretos.')
+    const encontrado = await buscarProfessor(email.trim(), senha)
+    if (!encontrado) {
+      setErro('Usuário ou senha incorretos.')
       return
     }
     setErro('')
-    onLogin()
+    onLogin(encontrado)
   }
 
   return (
@@ -51,7 +39,6 @@ export default function LoginProfessor({ onLogin, onSouAluno }) {
             resizeMode="contain"
           />
           <Text style={styles.tagline}>Atividades extracurriculares gamificadas</Text>
-
           <View style={styles.features}>
             <View style={styles.featureRow}>
               <View style={[styles.dot, { backgroundColor: cores.verde }]}>
@@ -78,12 +65,11 @@ export default function LoginProfessor({ onLogin, onSouAluno }) {
           <Text style={styles.titulo}>Bem-vindo(a) de volta!</Text>
           <Text style={styles.subtitulo}>Portal exclusivo para professores</Text>
 
-          <Text style={styles.label}>E-mail institucional</Text>
+          <Text style={styles.label}>Usuário</Text>
           <TextInput
             style={styles.input}
-            placeholder="seu@escola.edu.br"
+            placeholder="professor1"
             placeholderTextColor="#bbb"
-            keyboardType="email-address"
             autoCapitalize="none"
             value={email}
             onChangeText={setEmail}
