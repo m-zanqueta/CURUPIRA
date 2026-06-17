@@ -12,10 +12,13 @@ import {
 import { ActivityIndicator, View } from 'react-native';
 import { colors } from './theme';
 
-// Telas existentes
-import DashboardScreen from './screens/DashboardScreen';
+// ── Telas existentes do projeto (Matheus / Bruno) ──
+import Login           from './screens/Login';
+import LoginProfessor  from './screens/LoginProfessor';
+import CriarPerfil     from './screens/CriarPerfil';
+import Home            from './screens/Home';
 
-// Telas do Washington — Módulo de Conquistas
+// ── Telas do Washington — Módulo de Conquistas ──
 import ConquistasScreen       from './screens/ConquistasScreen';
 import DetalheConquistaScreen from './screens/DetalheConquistaScreen';
 import CriarConquistaScreen   from './screens/CriarConquistaScreen';
@@ -42,10 +45,13 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <NavigationContainer>
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
 
           {/* ── Telas existentes ── */}
-          <Stack.Screen name="Dashboard" component={DashboardScreen} />
+          <Stack.Screen name="Login"          component={Login} />
+          <Stack.Screen name="LoginProfessor" component={LoginProfessor} />
+          <Stack.Screen name="CriarPerfil"    component={CriarPerfil} />
+          <Stack.Screen name="Home"           component={Home} />
 
           {/* ── Washington: Módulo de Conquistas ── */}
           <Stack.Screen name="Conquistas"       component={ConquistasScreen} />
