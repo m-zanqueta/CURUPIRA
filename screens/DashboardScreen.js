@@ -20,10 +20,10 @@ const PETS = ['🐉','🦊','🦅','🐺','🦁','🐯','🦋','🐸','🦉','�
 const CORES = [colors.green, colors.purple, colors.yellow, '#e74c3c', '#3498db', '#e67e22']
 
 const INITIAL_TURMAS = [
-  { id: 1, nome: '2º A', pet: '🐉', estagio: 'Jovem',   xp: 980, progresso: 78, emocao: '😄', cor: colors.green,  cosmetico: true  },
-  { id: 2, nome: '2º B', pet: '🦊', estagio: 'Filhote', xp: 640, progresso: 52, emocao: '😐', cor: colors.purple, cosmetico: false },
-  { id: 3, nome: '2º C', pet: '🦅', estagio: 'Adulto',  xp: 830, progresso: 91, emocao: '🤩', cor: colors.yellow, cosmetico: true  },
-  { id: 4, nome: '2º D', pet: '🐺', estagio: 'Filhote', xp: 510, progresso: 41, emocao: '😴', cor: colors.green,  cosmetico: false },
+  { id: 1, nome: '2º A', pet: '🐉', estagio: 'Jovem',   xp: 3570, progresso: 57, emocao: '😄', cor: colors.green,  cosmetico: true  },
+  { id: 2, nome: '2º B', pet: '🦊', estagio: 'Jovem',   xp: 2570, progresso: 57, emocao: '😐', cor: colors.purple, cosmetico: false },
+  { id: 3, nome: '2º C', pet: '🦅', estagio: 'Adulto',  xp: 3150, progresso: 15, emocao: '🤩', cor: colors.yellow, cosmetico: true  },
+  { id: 4, nome: '2º D', pet: '🐺', estagio: 'Filhote', xp: 1670, progresso: 67, emocao: '😴', cor: colors.green,  cosmetico: false },
 ]
 
 const INITIAL_MISSIONS = [
@@ -50,6 +50,30 @@ const BADGES = [
 ]
 
 const MEDALS = ['🥇', '🥈', '🥉', '4️⃣']
+
+const RARIDADE_CONFIG = {
+  'Comum':    { color: '#888',         bg: '#f0f0f0',         emoji: '⚪' },
+  'Raro':     { color: colors.green,   bg: colors.greenLight, emoji: '🟢' },
+  'Épico':    { color: colors.purple,  bg: colors.purpleLight,emoji: '🟣' },
+  'Lendário': { color: '#c8960a',      bg: colors.yellowLight,emoji: '🌟' },
+}
+
+const CRITERIOS = [
+  { id: 'primeira_tarefa', label: 'Completar a 1ª missão' },
+  { id: 'total_missoes',   label: 'Completar X missões no total' },
+  { id: 'acumular_xp',     label: 'Acumular X de XP' },
+  { id: 'missao_especifica', label: 'Completar uma missão específica' },
+  { id: 'categoria',       label: 'X missões de uma categoria' },
+]
+
+const INITIAL_CONQUISTAS = [
+  { id: 1, nome: 'Primeira Missão',    emoji: '🎯', raridade: 'Comum',    xp: 50,  criterio: 'primeira_tarefa',  meta: 1,   descricao: 'Complete sua primeira missão extracurricular', desbloqueada: false },
+  { id: 2, nome: 'Guardião da Natureza', emoji: '🌿', raridade: 'Raro',  xp: 100, criterio: 'missao_especifica', meta: 1,   descricao: 'Participe da missão Horta Escolar', missaoAlvo: 'Horta Escolar', desbloqueada: false },
+  { id: 3, nome: 'Estrela em Ascensão', emoji: '⭐', raridade: 'Raro',   xp: 150, criterio: 'acumular_xp',      meta: 500, descricao: 'Acumule 500 XP', desbloqueada: false },
+  { id: 4, nome: 'Artista do Coral',   emoji: '🎵', raridade: 'Épico',   xp: 200, criterio: 'missao_especifica', meta: 1,   descricao: 'Participe do Coral da Escola', missaoAlvo: 'Coral da Escola', desbloqueada: false },
+  { id: 5, nome: 'Maratonista',        emoji: '🏃', raridade: 'Épico',   xp: 250, criterio: 'total_missoes',    meta: 3,   descricao: 'Complete 3 missões no total', desbloqueada: false },
+  { id: 6, nome: 'Lenda Curupira',     emoji: '🌳', raridade: 'Lendário', xp: 500, criterio: 'acumular_xp',    meta: 1000, descricao: 'Acumule 1000 XP', desbloqueada: false },
+]
 
 const STATS_ICONS = [
   { label: 'Alunos ativos',        icon: '👥', bg: colors.greenLight  },
@@ -122,6 +146,7 @@ export default function DashboardScreen({ professor, onLogout }) {
   const [turmas, setTurmas]           = useState(INITIAL_TURMAS)
   const [missions, setMissions]       = useState(INITIAL_MISSIONS)
   const [alunos, setAlunos]           = useState(INITIAL_ALUNOS)
+  const [conquistas, setConquistas]   = useState(INITIAL_CONQUISTAS)
 
   // Modal de criar turma
   const [modalTurma, setModalTurma]   = useState(false)
@@ -163,6 +188,14 @@ export default function DashboardScreen({ professor, onLogout }) {
   // Modal histórico de XP
   const [modalHistorico, setModalHistorico] = useState(false)
   const [alunoHistorico, setAlunoHistorico] = useState(null)
+
+  // Conquistas
+  const [modalConquista, setModalConquista] = useState(false)
+  const [filtroRaridade, setFiltroRaridade] = useState('Todos')
+  const [filtroStatus, setFiltroStatus]     = useState('Todos')
+  const [novaConquista, setNovaConquista]   = useState({ nome: '', emoji: '🏆', raridade: 'Comum', xp: '', criterio: 'primeira_tarefa', meta: '', descricao: '', missaoAlvo: '' })
+  const [modalDetConquista, setModalDetConquista] = useState(false)
+  const [conquistaSelecionada, setConquistaSelecionada] = useState(null)
 
   // Busca de aluno
   const [buscaAluno, setBuscaAluno] = useState('')
@@ -366,32 +399,123 @@ export default function DashboardScreen({ professor, onLogout }) {
   function darXP() {
     const val = parseInt(xpValor)
     if (!val || val <= 0) { Alert.alert('Atenção', 'Digite um valor de XP válido!'); return }
+
+    // Limita o XP ao máximo da missão se vier de uma missão
+    const limite = missaoAlunos?.xp || Infinity
+    const xpJaDado = (historicoXP[alunoXP.id] || [])
+      .filter(h => h.missao === (missaoAlunos?.name || ''))
+      .reduce((acc, h) => acc + h.xp, 0)
+    const restante = missaoAlunos ? Math.max(0, limite - xpJaDado) : Infinity
+
+    if (restante === 0) {
+      Alert.alert('⚠️ Limite atingido', `Este aluno já recebeu o máximo de ${limite} XP desta missão.`)
+      return
+    }
+
+    const xpFinal = Math.min(val, restante)
+    if (xpFinal < val && missaoAlunos) {
+      Alert.alert('⚠️ XP ajustado', `O aluno pode receber no máximo +${restante} XP desta missão. Atribuindo ${xpFinal} XP.`)
+    }
+
     const dataHora = new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
     const missaoAtual = missaoAlunos?.name || 'Manual'
 
-    // Atualiza XP do aluno
-    setAlunos(prev => prev.map(a => a.id === alunoXP.id ? { ...a, xp: a.xp + val } : a))
+    setAlunos(prev => prev.map(a => a.id === alunoXP.id ? { ...a, xp: a.xp + xpFinal } : a))
 
-    // Atualiza XP da turma do aluno em tempo real
     setTurmas(prev => prev.map(t => {
       if (t.id !== alunoXP.turmaId) return t
-      const novoXP = t.xp + val
-      // Atualiza estágio e emoção baseado no XP acumulado
+      const novoXP = t.xp + xpFinal
       const estagio = novoXP >= 3000 ? 'Lendário' : novoXP >= 2000 ? 'Adulto' : novoXP >= 1000 ? 'Jovem' : 'Filhote'
       const emocao  = novoXP >= 2000 ? '🤩' : novoXP >= 1000 ? '😄' : novoXP >= 500 ? '😊' : '😐'
       const progresso = Math.min(100, Math.round((novoXP % 1000) / 10))
       return { ...t, xp: novoXP, estagio, emocao, progresso }
     }))
 
-    // Registra histórico
-    setHistoricoXP(prev => ({
-      ...prev,
-      [alunoXP.id]: [{ xp: val, missao: missaoAtual, data: dataHora }, ...(prev[alunoXP.id] || [])]
+    const novoHistorico = {
+      ...historicoXP,
+      [alunoXP.id]: [{ xp: xpFinal, missao: missaoAtual, data: dataHora }, ...(historicoXP[alunoXP.id] || [])]
+    }
+    setHistoricoXP(novoHistorico)
+
+    // Verifica conquistas em tempo real
+    const alunoAtualizado = { ...alunoXP, xp: alunoXP.xp + xpFinal }
+    const totalMissoesAluno = Object.keys(novoHistorico[alunoXP.id] ? novoHistorico : {})
+      .filter(k => parseInt(k) === alunoXP.id).length
+
+    setConquistas(prev => prev.map(c => {
+      if (c.desbloqueada) return c
+      let desbloqueada = false
+      if (c.criterio === 'primeira_tarefa' && (novoHistorico[alunoXP.id] || []).length >= 1) desbloqueada = true
+      if (c.criterio === 'acumular_xp' && alunoAtualizado.xp >= c.meta) desbloqueada = true
+      if (c.criterio === 'missao_especifica' && c.missaoAlvo === missaoAtual) desbloqueada = true
+      return desbloqueada ? { ...c, desbloqueada: true } : c
     }))
 
     setXpValor('')
     setModalXP(false)
-    Alert.alert('✅ XP atribuído!', `+${val} XP para ${alunoXP.nome}`)
+    Alert.alert('✅ XP atribuído!', `+${xpFinal} XP para ${alunoXP.nome}`)
+  }
+
+  function adicionarConquista() {
+    if (!novaConquista.nome.trim()) { Alert.alert('Atenção', 'Digite o nome da conquista!'); return }
+    const precisaMeta = novaConquista.criterio !== 'primeira_tarefa' && novaConquista.criterio !== 'missao_especifica'
+    if (precisaMeta && (!novaConquista.meta || isNaN(novaConquista.meta))) {
+      Alert.alert('Atenção', 'Digite uma meta válida!'); return
+    }
+    if (novaConquista.criterio === 'missao_especifica' && !novaConquista.missaoAlvo) {
+      Alert.alert('Atenção', 'Selecione a missão alvo!'); return
+    }
+    const nova = {
+      id: Date.now(),
+      nome: novaConquista.nome.trim(),
+      emoji: novaConquista.emoji,
+      raridade: novaConquista.raridade,
+      xp: Number(novaConquista.xp) || 0,
+      criterio: novaConquista.criterio,
+      meta: precisaMeta ? Number(novaConquista.meta) : 1,
+      descricao: novaConquista.descricao.trim(),
+      missaoAlvo: novaConquista.missaoAlvo.trim(),
+      desbloqueada: false,
+    }
+    setConquistas(prev => [nova, ...prev])
+    setNovaConquista({ nome: '', emoji: '🏆', raridade: 'Comum', xp: '', criterio: 'primeira_tarefa', meta: '', descricao: '', missaoAlvo: '' })
+    setModalConquista(false)
+    Alert.alert('✅ Conquista criada!', `"${nova.nome}" foi adicionada.`)
+  }
+
+  function removerConquista(id) {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Remover conquista?')) setConquistas(prev => prev.filter(c => c.id !== id))
+    } else {
+      Alert.alert('Remover', 'Tem certeza?', [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Remover', style: 'destructive', onPress: () => setConquistas(prev => prev.filter(c => c.id !== id)) },
+      ])
+    }
+  }
+
+  function progressoConquista(c) {
+    if (c.desbloqueada) return 100
+    if (c.criterio === 'acumular_xp') {
+      const maxXP = Math.max(...alunos.map(a => a.xp), 0)
+      return Math.min(100, Math.round((maxXP / c.meta) * 100))
+    }
+    if (c.criterio === 'total_missoes') {
+      const totalAprovacoes = Object.values(statusMissao).filter(s => s === 'aprovado').length
+      return Math.min(100, Math.round((totalAprovacoes / c.meta) * 100))
+    }
+    if (c.criterio === 'primeira_tarefa') {
+      return Object.keys(historicoXP).length > 0 ? 100 : 0
+    }
+    if (c.criterio === 'missao_especifica') {
+      const encontrou = missions.find(m => m.name === c.missaoAlvo && !m.active)
+      return encontrou ? 100 : 0
+    }
+    if (c.criterio === 'categoria') {
+      const totalAprovacoes = Object.values(statusMissao).filter(s => s === 'aprovado').length
+      return Math.min(100, Math.round((totalAprovacoes / c.meta) * 100))
+    }
+    return 0
   }
 
   function progressoRealMissao(missao) {
@@ -730,9 +854,9 @@ export default function DashboardScreen({ professor, onLogout }) {
                   <View style={[s.rankAvatar, { backgroundColor: r.cor }]}>
                     <Text style={s.rankInitials}>{r.initials}</Text>
                   </View>
-                  <View style={{ width: 90 }}>
-                    <Text style={s.rankName} numberOfLines={1}>{r.nome}</Text>
-                    <Text style={s.rankClass}>{turmaAluno?.nome}</Text>
+                  <View style={{ width: 80, flexShrink: 1 }}>
+                    <Text style={s.rankName} numberOfLines={1} ellipsizeMode="tail">{r.nome}</Text>
+                    <Text style={s.rankClass} numberOfLines={1}>{turmaAluno?.nome}</Text>
                   </View>
                   <View style={s.rankBarBg}>
                     <View style={[s.rankBarFill, { width: (r.xp / maxXP * 100) + '%', backgroundColor: r.cor }]} />
@@ -780,9 +904,9 @@ export default function DashboardScreen({ professor, onLogout }) {
           ))}
           <View style={s.sidebarBottom}>
             <View style={s.teacherRow}>
-              <View style={s.teacherAvatar}><Text style={s.teacherInitials}>P</Text></View>
+              <View style={s.teacherAvatar}><Text style={s.teacherInitials}>{(professor?.nome || 'P')[0]}</Text></View>
               <View>
-                <Text style={s.teacherName}>Professor</Text>
+                <Text style={s.teacherName}>{professor?.nome || 'Professor'}</Text>
                 <Text style={s.teacherRole}>Área do Professor</Text>
               </View>
             </View>
@@ -1247,12 +1371,150 @@ export default function DashboardScreen({ professor, onLogout }) {
         </View>
       </Modal>
 
+      {/* ── Modal Criar Conquista ── */}
+      <Modal visible={modalConquista} transparent animationType="slide" onRequestClose={() => setModalConquista(false)}>
+        <View style={s.modalOverlay}>
+          <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 20 }}>
+            <View style={s.modalBox}>
+              <Text style={s.modalTitle}>🎖️ Nova Conquista</Text>
+
+              <Text style={s.formLabel}>Emoji</Text>
+              <View style={s.petPicker}>
+                {['🏆','🌟','🎯','🌿','⭐','🎵','🏃','🎨','🔬','🤝','📚','🌍'].map(e => (
+                  <TouchableOpacity key={e}
+                    style={[s.petOption, novaConquista.emoji === e && s.petOptionActive]}
+                    onPress={() => setNovaConquista({ ...novaConquista, emoji: e })}>
+                    <Text style={{ fontSize: 22 }}>{e}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={s.formLabel}>Nome</Text>
+              <TextInput style={s.formInput} placeholder="Ex: Guardião da Natureza" placeholderTextColor="#aaa"
+                value={novaConquista.nome} onChangeText={t => setNovaConquista({ ...novaConquista, nome: t })} />
+
+              <Text style={s.formLabel}>Descrição</Text>
+              <TextInput style={s.formInput} placeholder="Descreva o critério..." placeholderTextColor="#aaa"
+                value={novaConquista.descricao} onChangeText={t => setNovaConquista({ ...novaConquista, descricao: t })} />
+
+              <Text style={s.formLabel}>Raridade</Text>
+              <View style={s.turmaPickerWrap}>
+                {['Comum','Raro','Épico','Lendário'].map(r => (
+                  <TouchableOpacity key={r}
+                    style={[s.turmaPill, novaConquista.raridade === r && s.turmaPillActive]}
+                    onPress={() => setNovaConquista({ ...novaConquista, raridade: r })}>
+                    <Text style={[s.turmaPillText, novaConquista.raridade === r && s.turmaPillTextActive]}>
+                      {RARIDADE_CONFIG[r].emoji} {r}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={s.formLabel}>Critério de desbloqueio</Text>
+              {CRITERIOS.map(cr => (
+                <TouchableOpacity key={cr.id}
+                  style={[s.turmaPill, { marginBottom: 6, width: '100%' }, novaConquista.criterio === cr.id && s.turmaPillActive]}
+                  onPress={() => setNovaConquista({ ...novaConquista, criterio: cr.id })}>
+                  <Text style={[s.turmaPillText, novaConquista.criterio === cr.id && s.turmaPillTextActive]}>{cr.label}</Text>
+                </TouchableOpacity>
+              ))}
+
+              {novaConquista.criterio === 'missao_especifica' && (
+                <>
+                  <Text style={s.formLabel}>Missão alvo</Text>
+                  <View style={s.turmaPickerWrap}>
+                    {missions.map(m => (
+                      <TouchableOpacity key={m.id}
+                        style={[s.turmaPill, novaConquista.missaoAlvo === m.name && s.turmaPillActive]}
+                        onPress={() => setNovaConquista({ ...novaConquista, missaoAlvo: m.name, meta: 1 })}>
+                        <Text style={[s.turmaPillText, novaConquista.missaoAlvo === m.name && s.turmaPillTextActive]}>{m.icon} {m.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {novaConquista.criterio !== 'primeira_tarefa' && novaConquista.criterio !== 'missao_especifica' && (
+                <>
+                  <Text style={s.formLabel}>Meta</Text>
+                  <TextInput style={s.formInput} placeholder="Ex: 500" placeholderTextColor="#aaa" keyboardType="numeric"
+                    value={novaConquista.meta} onChangeText={t => setNovaConquista({ ...novaConquista, meta: t })} />
+                </>
+              )}
+
+              <Text style={s.formLabel}>XP da conquista</Text>
+              <TextInput style={s.formInput} placeholder="Ex: 100" placeholderTextColor="#aaa" keyboardType="numeric"
+                value={novaConquista.xp} onChangeText={t => setNovaConquista({ ...novaConquista, xp: t })} />
+
+              <View style={s.modalBtns}>
+                <TouchableOpacity style={s.btnCancel} onPress={() => setModalConquista(false)}>
+                  <Text style={s.btnCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={s.btnConfirm} onPress={adicionarConquista}>
+                  <Text style={s.btnConfirmText}>Criar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* ── Modal Detalhe Conquista ── */}
+      <Modal visible={modalDetConquista} transparent animationType="fade" onRequestClose={() => setModalDetConquista(false)}>
+        <View style={s.modalOverlay}>
+          <View style={s.modalBox}>
+            {conquistaSelecionada && (() => {
+              const cfg = RARIDADE_CONFIG[conquistaSelecionada.raridade]
+              const prog = progressoConquista(conquistaSelecionada)
+              return (
+                <>
+                  <View style={{ alignItems: 'center', marginBottom: 12 }}>
+                    <View style={[s.statIconWrap, { backgroundColor: cfg.bg, width: 70, height: 70, borderRadius: 16, opacity: conquistaSelecionada.desbloqueada ? 1 : 0.5 }]}>
+                      <Text style={{ fontSize: 38 }}>{conquistaSelecionada.emoji}</Text>
+                    </View>
+                    <Text style={[s.modalTitle, { textAlign: 'center', marginTop: 8 }]}>{conquistaSelecionada.nome}</Text>
+                    <View style={[s.activePill, { backgroundColor: cfg.bg, marginTop: 6 }]}>
+                      <Text style={[s.activePillText, { color: cfg.color }]}>{cfg.emoji} {conquistaSelecionada.raridade}</Text>
+                    </View>
+                  </View>
+                  <Text style={[s.missionMeta, { textAlign: 'center', marginBottom: 12 }]}>{conquistaSelecionada.descricao}</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <View style={[s.statCard, { flex: 1, marginRight: 6 }]}>
+                      <Text style={s.statNum}>+{conquistaSelecionada.xp}</Text>
+                      <Text style={s.statLabel}>XP</Text>
+                    </View>
+                    <View style={[s.statCard, { flex: 1, marginLeft: 6 }]}>
+                      <Text style={[s.statNum, { color: conquistaSelecionada.desbloqueada ? colors.green : colors.muted }]}>
+                        {conquistaSelecionada.desbloqueada ? '✅' : '🔒'}
+                      </Text>
+                      <Text style={s.statLabel}>{conquistaSelecionada.desbloqueada ? 'Desbloqueada' : 'Bloqueada'}</Text>
+                    </View>
+                  </View>
+                  <Text style={[s.formLabel, { marginBottom: 6 }]}>Progresso: {prog}%</Text>
+                  <View style={s.missionProgressBgFull}>
+                    <View style={[s.missionProgressFillFull, { width: prog + '%', backgroundColor: conquistaSelecionada.desbloqueada ? colors.green : cfg.color }]} />
+                  </View>
+                  <Text style={[s.missionMeta, { marginTop: 6 }]}>
+                    Critério: {CRITERIOS.find(cr => cr.id === conquistaSelecionada.criterio)?.label}
+                    {conquistaSelecionada.missaoAlvo ? ` — ${conquistaSelecionada.missaoAlvo}` : ''}
+                    {conquistaSelecionada.criterio !== 'primeira_tarefa' && conquistaSelecionada.criterio !== 'missao_especifica' ? ` (meta: ${conquistaSelecionada.meta})` : ''}
+                  </Text>
+                </>
+              )
+            })()}
+            <TouchableOpacity style={[s.btnConfirm, { marginTop: 16 }]} onPress={() => setModalDetConquista(false)}>
+              <Text style={s.btnConfirmText}>Fechar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* ── Modal Dar XP ── */}
       <Modal visible={modalXP} transparent animationType="fade" onRequestClose={() => setModalXP(false)}>
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
             <Text style={s.modalTitle}>⭐ Dar XP</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
               <View style={[s.rankAvatar, { backgroundColor: alunoXP?.cor || colors.green, width: 44, height: 44, borderRadius: 22 }]}>
                 <Text style={[s.rankInitials, { fontSize: 14 }]}>{alunoXP?.initials}</Text>
               </View>
@@ -1261,6 +1523,23 @@ export default function DashboardScreen({ professor, onLogout }) {
                 <Text style={s.turmaEstagio}>XP atual: {alunoXP?.xp}</Text>
               </View>
             </View>
+
+            {missaoAlunos && (() => {
+              const xpJaDado = (historicoXP[alunoXP?.id] || [])
+                .filter(h => h.missao === missaoAlunos.name)
+                .reduce((acc, h) => acc + h.xp, 0)
+              const restante = Math.max(0, missaoAlunos.xp - xpJaDado)
+              return (
+                <View style={{ backgroundColor: restante === 0 ? '#fde8e8' : colors.yellowLight, borderRadius: 8, padding: 10, marginBottom: 12 }}>
+                  <Text style={{ fontSize: 12, fontFamily: fonts.semibold, color: restante === 0 ? '#c0392b' : '#7a5f00' }}>
+                    {restante === 0
+                      ? `⚠️ Limite atingido! Esta missão vale ${missaoAlunos.xp} XP.`
+                      : `📋 Missão: ${missaoAlunos.name} · Limite: ${missaoAlunos.xp} XP · Restante: ${restante} XP`
+                    }
+                  </Text>
+                </View>
+              )
+            })()}
 
             <Text style={s.formLabel}>Quantidade de XP a atribuir</Text>
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }}>
@@ -1325,19 +1604,110 @@ export default function DashboardScreen({ professor, onLogout }) {
             <Text style={s.emptySubtext}>Esta funcionalidade será disponibilizada na próxima versão.</Text>
           </View>
         )}
-        {activeNav === 'conquistas' && (
-          <View style={s.panel}>
-            <Text style={s.panelTitle}>Conquistas desbloqueadas</Text>
-            <View style={s.badgesWrap}>
-              {BADGES.map(b => (
-                <View key={b.label} style={[s.badge, { backgroundColor: b.color }]}>
-                  <Text style={{ fontSize: 12 }}>{b.icon}</Text>
-                  <Text style={[s.badgeText, { color: b.text }]}>{b.label}</Text>
+        {activeNav === 'conquistas' && (() => {
+          const conquistasFiltradas = conquistas
+            .filter(c => filtroRaridade === 'Todos' || c.raridade === filtroRaridade)
+            .filter(c => filtroStatus === 'Todos' || (filtroStatus === 'Desbloqueada' ? c.desbloqueada : !c.desbloqueada))
+          return (
+            <View style={{ gap: 14 }}>
+              <View style={s.screenHeader}>
+                <Text style={s.screenTitle}>🎖️ Conquistas</Text>
+                <TouchableOpacity style={s.btnNew} onPress={() => setModalConquista(true)}>
+                  <Text style={s.btnNewText}>+ Nova</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Filtros */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 4 }}>
+                  {['Todos', 'Comum', 'Raro', 'Épico', 'Lendário'].map(r => (
+                    <TouchableOpacity key={r}
+                      style={[s.turmaPill, filtroRaridade === r && s.turmaPillActive]}
+                      onPress={() => setFiltroRaridade(r)}>
+                      <Text style={[s.turmaPillText, filtroRaridade === r && s.turmaPillTextActive]}>{r}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  <View style={{ width: 1, backgroundColor: colors.border, marginHorizontal: 4 }} />
+                  {['Todos', 'Desbloqueada', 'Bloqueada'].map(st => (
+                    <TouchableOpacity key={st}
+                      style={[s.turmaPill, filtroStatus === st && s.turmaPillActive]}
+                      onPress={() => setFiltroStatus(st)}>
+                      <Text style={[s.turmaPillText, filtroStatus === st && s.turmaPillTextActive]}>{st}</Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
-              ))}
+              </ScrollView>
+
+              {/* Stats rápidos */}
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={[s.statCard, { flex: 1 }]}>
+                  <Text style={s.statNum}>{conquistas.filter(c => c.desbloqueada).length}</Text>
+                  <Text style={s.statLabel}>Desbloqueadas</Text>
+                </View>
+                <View style={[s.statCard, { flex: 1 }]}>
+                  <Text style={s.statNum}>{conquistas.filter(c => !c.desbloqueada).length}</Text>
+                  <Text style={s.statLabel}>Bloqueadas</Text>
+                </View>
+                <View style={[s.statCard, { flex: 1 }]}>
+                  <Text style={s.statNum}>{conquistas.reduce((acc, c) => c.desbloqueada ? acc + c.xp : acc, 0)}</Text>
+                  <Text style={s.statLabel}>XP total</Text>
+                </View>
+              </View>
+
+              {conquistasFiltradas.length === 0 ? (
+                <View style={s.emptyState}>
+                  <Text style={s.emptyIcon}>🎖️</Text>
+                  <Text style={s.emptyText}>Nenhuma conquista encontrada.</Text>
+                </View>
+              ) : (
+                conquistasFiltradas.map(c => {
+                  const cfg = RARIDADE_CONFIG[c.raridade]
+                  const prog = progressoConquista(c)
+                  return (
+                    <TouchableOpacity key={c.id} style={[s.panel, c.desbloqueada && { borderColor: cfg.color, borderWidth: 2 }]}
+                      onPress={() => { setConquistaSelecionada(c); setModalDetConquista(true) }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        <View style={[s.statIconWrap, { backgroundColor: cfg.bg, width: 50, height: 50, borderRadius: 12, opacity: c.desbloqueada ? 1 : 0.5 }]}>
+                          <Text style={{ fontSize: 26 }}>{c.emoji}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <Text style={[s.missionName, { color: c.desbloqueada ? colors.dark : colors.muted }]}>{c.nome}</Text>
+                            <View style={[s.activePill, { backgroundColor: cfg.bg }]}>
+                              <Text style={[s.activePillText, { color: cfg.color }]}>{cfg.emoji} {c.raridade}</Text>
+                            </View>
+                            {c.desbloqueada && <View style={[s.activePill, { backgroundColor: colors.greenLight }]}>
+                              <Text style={[s.activePillText, { color: colors.green }]}>✅ Desbloqueada</Text>
+                            </View>}
+                          </View>
+                          <Text style={s.missionMeta}>{c.descricao}</Text>
+                          <Text style={[s.missionMeta, { color: colors.yellow, marginTop: 2 }]}>+{c.xp} XP</Text>
+                        </View>
+                        <TouchableOpacity onPress={() => removerConquista(c.id)} style={s.btnRemove}>
+                          <Text style={s.btnRemoveText}>🗑️</Text>
+                        </TouchableOpacity>
+                      </View>
+                      {/* Barra de progresso */}
+                      <View style={{ marginTop: 10 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <Text style={[s.missionMeta, { fontSize: 10 }]}>
+                            {CRITERIOS.find(cr => cr.id === c.criterio)?.label}
+                            {c.missaoAlvo ? ` — ${c.missaoAlvo}` : ''}
+                            {c.criterio !== 'primeira_tarefa' && c.criterio !== 'missao_especifica' ? ` (meta: ${c.meta})` : ''}
+                          </Text>
+                          <Text style={[s.missionProgressTxt, { color: c.desbloqueada ? colors.green : cfg.color }]}>{prog}%</Text>
+                        </View>
+                        <View style={s.missionProgressBgFull}>
+                          <View style={[s.missionProgressFillFull, { width: prog + '%', backgroundColor: c.desbloqueada ? colors.green : cfg.color }]} />
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  )
+                })
+              )}
             </View>
-          </View>
-        )}
+          )
+        })()}
 
         <View style={{ height: 32 }} />
       </ScrollView>
@@ -1417,15 +1787,15 @@ const s = StyleSheet.create({
   activePillText:{ fontSize: 10, fontFamily: fonts.bold, color: '#fff', textTransform: 'uppercase' },
   xpBadge:     { backgroundColor: colors.yellowLight, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 },
   xpBadgeText: { fontSize: 12, fontFamily: fonts.bold, color: '#7a5f00' },
-  rankRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#f0edd8' },
-  rankMedal:   { fontSize: 16, width: 24, textAlign: 'center' },
-  rankAvatar:  { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  rankInitials:{ fontSize: 10, fontFamily: fonts.bold, color: '#fff' },
-  rankName:    { fontSize: 12, fontFamily: fonts.semibold, color: colors.dark },
+  rankRow:     { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#f0edd8', flexWrap: 'nowrap' },
+  rankMedal:   { fontSize: 14, width: 20, textAlign: 'center', flexShrink: 0 },
+  rankAvatar:  { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  rankInitials:{ fontSize: 10, fontFamily: fonts.bold, color: '#fff', textAlign: 'center' },
+  rankName:    { fontSize: 12, fontFamily: fonts.semibold, color: colors.dark, flexShrink: 1 },
   rankClass:   { fontSize: 10, fontFamily: fonts.regular, color: '#999' },
-  rankBarBg:   { flex: 1, height: 6, backgroundColor: '#f0edd8', borderRadius: 3, overflow: 'hidden' },
+  rankBarBg:   { flex: 1, height: 6, backgroundColor: '#f0edd8', borderRadius: 3, overflow: 'hidden', minWidth: 30 },
   rankBarFill: { height: '100%', borderRadius: 3 },
-  rankXp:      { fontSize: 12, fontFamily: fonts.bold, color: colors.dark, minWidth: 34, textAlign: 'right' },
+  rankXp:      { fontSize: 11, fontFamily: fonts.bold, color: colors.dark, minWidth: 30, textAlign: 'right', flexShrink: 0 },
   badgesWrap:  { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   badge:       { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
   badgeText:   { fontSize: 12, fontFamily: fonts.semibold },
@@ -1446,8 +1816,8 @@ const s = StyleSheet.create({
   missionProgressBgFull:  { height: 6, backgroundColor: 'rgba(0,0,0,0.08)', borderRadius: 3, overflow: 'hidden' },
   missionProgressFillFull:{ height: '100%', backgroundColor: colors.green, borderRadius: 3 },
   missionProgressTxt:     { fontSize: 11, fontFamily: fonts.bold, color: colors.green },
-  btnToggle:     { marginTop: 10, borderRadius: 8, padding: 8, alignItems: 'center' },
-  btnToggleText: { fontSize: 12, fontFamily: fonts.semibold },
+  btnToggle:     { marginTop: 10, borderRadius: 8, padding: 8, alignItems: 'center', flexShrink: 0 },
+  btnToggleText: { fontSize: 12, fontFamily: fonts.semibold, flexShrink: 1 },
 
   // Modal
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },

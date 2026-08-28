@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react'
 import { View, ActivityIndicator, Image, Text, StyleSheet } from 'react-native'
+import { NavigationContainer } from '@react-navigation/native';
+import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import {
   useFonts,
   Montserrat_400Regular,
@@ -11,6 +14,13 @@ import {
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { colors } from './theme'
 import { inicializarProfessores } from './services/storage'
+} from '@expo-google-fonts/montserrat';
+import { ActivityIndicator, View } from 'react-native';
+import { colors } from './theme';
+import DashboardScreen from './screens/DashboardScreen';
+
+const Stack = createNativeStackNavigator();
+import { useState } from 'react'
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
@@ -20,6 +30,26 @@ import DashboardScreen from './screens/DashboardScreen'
 export default function App() {
   const [tela, setTela] = useState('splash')
   const [professor, setProfessor] = useState(null)
+
+export default function App() {
+  const [tela, setTela] = useState('login')
+
+  if (tela === 'criarPerfil') {
+    return <CriarPerfil onVoltar={() => setTela('login')} />
+  }
+
+  if (tela === 'loginProfessor') {
+    return (
+      <LoginProfessor
+        onLogin={() => setTela('home')}
+        onSouAluno={() => setTela('login')}
+      />
+    )
+  }
+
+  if (tela === 'home') {
+    return <Home />
+  }
 
   const [fontsLoaded] = useFonts({
     Montserrat_400Regular,
@@ -126,3 +156,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 })
+    <View style={styles.container}>
+      <Text>Open up App.js to start working on your app!</Text>
+      <StatusBar style="auto" />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
