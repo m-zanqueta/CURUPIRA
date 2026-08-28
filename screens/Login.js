@@ -5,6 +5,7 @@ import {
 } from 'react-native'
 import { buscarUsuario } from '../services/storage'
 import { cores } from '../constants/cores'
+import { buscarAluno } from '../services/storage'
 
 export default function Login({ onLogin, onCriarPerfil, onSouProfessor }) {
   const [email, setEmail] = useState('')
@@ -17,22 +18,22 @@ export default function Login({ onLogin, onCriarPerfil, onSouProfessor }) {
   }
 
   async function handleLogin() {
-    if (!email || !senha) {
-      setErro('Preencha e-mail e senha para continuar.')
-      return
-    }
-    if (!validarEmail(email)) {
-      setErro('Informe um e-mail válido.')
-      return
-    }
-    const encontrado = await buscarUsuario(email)
-    if (!encontrado || encontrado.senha !== senha) {
-      setErro('Email ou senha incorretos.')
-      return
-    }
-    setErro('')
-    onLogin()
+  if (!email || !senha) {
+    setErro('Preencha e-mail e senha para continuar.')
+    return
   }
+  if (!validarEmail(email)) {
+    setErro('Informe um e-mail válido.')
+    return
+  }
+  const encontrado = await buscarAluno(email.trim().toLowerCase(), senha)
+  if (!encontrado) {
+    setErro('E-mail ou senha incorretos.')
+    return
+  }
+  setErro('')
+  onLogin(encontrado)
+}
 
   return (
     <KeyboardAvoidingView
