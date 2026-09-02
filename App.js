@@ -1,10 +1,4 @@
-<<<<<<< HEAD
 import { useState } from 'react';
-=======
-import { NavigationContainer } from '@react-navigation/native';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
->>>>>>> c84a9c16cf8f32802ca3cb668e1db7432e12938d
 import {
   useFonts,
   Montserrat_400Regular,
