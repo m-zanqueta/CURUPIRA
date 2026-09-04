@@ -8,10 +8,15 @@ import { colors, fonts } from '../theme'
 
 const { width, height } = Dimensions.get('window')
 
+// Imagens estáticas — require deve ser sempre estático no React Native
+const IMG_JACARE = require('../assets/jacare.png')
+const IMG_ARARA  = require('../assets/arara.png')
+const IMG_ONCA   = require('../assets/onca.png')
+
 const PETS = {
-  jacare: { nome: 'Jacaré', imagem: require('../assets/jacare.png'), cor: colors.green,  corFundo: '#0a3d1f' },
-  arara:  { nome: 'Arara',  imagem: require('../assets/arara.png'),  cor: '#1565C0',     corFundo: '#0a1a3d' },
-  onca:   { nome: 'Onça',   imagem: require('../assets/onca.png'),   cor: colors.yellow, corFundo: '#3d2a00' },
+  jacare: { nome: 'Jacaré', imagem: IMG_JACARE, cor: colors.green,  corFundo: '#0a3d1f' },
+  arara:  { nome: 'Arara',  imagem: IMG_ARARA,  cor: '#1565C0',     corFundo: '#0a1a3d' },
+  onca:   { nome: 'Onça',   imagem: IMG_ONCA,   cor: colors.yellow, corFundo: '#3d2a00' },
 }
 
 const ESTAGIOS = ['🌱 Filhote', '🌿 Guardião', '👑 Espírito da Floresta']
@@ -276,7 +281,7 @@ const s = StyleSheet.create({
   petWrap:     { alignItems: 'center', justifyContent: 'center' },
   petBrilho:   { position: 'absolute', width: 190, height: 190, borderRadius: 95, borderWidth: 6, zIndex: 0 },
   petCircle:   { width: 180, height: 180, borderRadius: 90, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 4, alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  petImg:      { width: 145, height: 145 },
+  petImg:      { width: 145, height: 145, position: 'absolute' },
   chapeuOverlay:{ position: 'absolute', top: -30, fontSize: 40 },
   zzz:         { position: 'absolute', top: -30, left: -10, fontSize: 24 },
 
