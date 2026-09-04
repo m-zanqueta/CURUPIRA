@@ -6,7 +6,7 @@ import {
 import { salvarUsuario, buscarUsuario } from '../services/storage'
 import { cores } from '../constants/cores'
 
-export default function CriarPerfil({ onVoltar }) {
+export default function CriarPerfil({ onVoltar, onCriado }) {
   const [usuario, setUsuario] = useState('')
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
@@ -45,11 +45,13 @@ export default function CriarPerfil({ onVoltar }) {
       setErro('Já existe uma conta com esse e-mail.')
       return
     }
-    await salvarUsuario({ usuario, email, senha, receberInfo })
+    const novoAluno = { usuario, email, senha, receberInfo }
+    await salvarUsuario(novoAluno)
     setErro('')
     setSucesso(true)
   }
 
+  // Tela de sucesso — agora tem botão que vai direto pro pet
   if (sucesso) {
     return (
       <View style={styles.sucessoContainer}>
@@ -82,7 +84,10 @@ export default function CriarPerfil({ onVoltar }) {
               <Text style={styles.sucessoItemTxt}>Evolua seu pet</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.btnCriar} onPress={onVoltar}>
+          <TouchableOpacity
+            style={styles.btnCriar}
+            onPress={() => onCriado && onCriado({ usuario, email })}
+          >
             <Text style={styles.btnCriarTxt}>Começar agora →</Text>
           </TouchableOpacity>
         </View>
@@ -96,8 +101,6 @@ export default function CriarPerfil({ onVoltar }) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-
-        {/* Topo verde */}
         <View style={styles.topo}>
           <Image
             source={require('../assets/logo.png')}
@@ -109,7 +112,6 @@ export default function CriarPerfil({ onVoltar }) {
           <Text style={styles.portalLabel}>Criar Perfil</Text>
         </View>
 
-        {/* Formulário */}
         <View style={styles.form}>
           <View style={styles.header}>
             <Text style={styles.titulo}>Crie sua conta</Text>
@@ -169,7 +171,6 @@ export default function CriarPerfil({ onVoltar }) {
             <Text style={styles.btnCriarTxt}>Criar</Text>
           </TouchableOpacity>
         </View>
-
       </ScrollView>
     </KeyboardAvoidingView>
   )
@@ -200,7 +201,6 @@ const styles = StyleSheet.create({
   erro: { color: 'red', fontSize: 13, marginTop: 4 },
   btnCriar: { backgroundColor: cores.verde, borderRadius: 30, paddingVertical: 16, alignItems: 'center', marginBottom: 16 },
   btnCriarTxt: { color: cores.branco, fontSize: 16, fontWeight: 'bold' },
-  esqueceu: { textAlign: 'center', color: cores.verde, fontSize: 14 },
   sucessoContainer: { flex: 1, backgroundColor: cores.branco },
   sucessoTopo: { backgroundColor: cores.verde, alignItems: 'center', paddingTop: 70, paddingBottom: 40, paddingHorizontal: 24 },
   sucessoAppNome: { fontSize: 28, fontWeight: 'bold', color: cores.branco, letterSpacing: 2, marginBottom: 6 },
