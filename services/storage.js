@@ -64,6 +64,9 @@ export async function listarAlunos() {
 }
 
 export async function buscarAluno(email, senha) {
+  if (email === 'loja@gmail.com' && senha === 'loja123') {
+    return { id: 'loja', nome: 'Loja', email: 'loja@gmail.com', senha: 'loja123', turmaId: null, xp: 0, initials: 'LJ', cor: '#009D25' }
+  }
   const alunos = await listarAlunos()
   return alunos.find(a => a.email === email && a.senha === senha) || null
 }
@@ -100,4 +103,19 @@ export async function atualizarAluno(id, novos) {
 export async function deletarAluno(id) {
   const alunos = await listarAlunos()
   await AsyncStorage.setItem('alunos', JSON.stringify(alunos.filter(a => a.id !== id)))
+}
+
+// ── Loja ─────────────────────────────────────────────────
+
+export async function listarItensComprados() {
+  const dados = await AsyncStorage.getItem('itens_comprados')
+  return dados ? JSON.parse(dados) : []
+}
+
+export async function comprarItem(itemId) {
+  const itens = await listarItensComprados()
+  if (!itens.includes(itemId)) {
+    itens.push(itemId)
+    await AsyncStorage.setItem('itens_comprados', JSON.stringify(itens))
+  }
 }
