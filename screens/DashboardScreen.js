@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity,
   StyleSheet, Modal, Dimensions, TextInput, Alert, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme';
+import { listarAlunos, atualizarAluno } from '../services/storage';
 
 const { width } = Dimensions.get('window');
 
@@ -200,6 +201,10 @@ export default function DashboardScreen({ professor, onLogout }) {
   // Busca de aluno
   const [buscaAluno, setBuscaAluno] = useState('')
 
+  useEffect(() => {
+    listarAlunos().then(setAlunos)
+  }, [])
+
   const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })
 
   // Stats dinâmicos em tempo real
@@ -250,22 +255,7 @@ export default function DashboardScreen({ professor, onLogout }) {
     const novaId = Date.now()
     const nova = { id: novaId, nome: novaTurma.nome, pet: novaTurma.pet, estagio: 'Filhote', xp: 0, progresso: 0, emocao: '😊', cor: novaTurma.cor, cosmetico: false }
     setTurmas(prev => [...prev, nova])
-
-    // Adiciona alunos se foram informados
-    if (novaTurma.alunosNomes.trim()) {
-      const nomes = novaTurma.alunosNomes.split('\n').map(n => n.trim()).filter(n => n.length > 0)
-      const novosAlunos = nomes.map((nome, i) => ({
-        id: novaId + i + 1,
-        nome,
-        turmaId: novaId,
-        xp: 0,
-        initials: nome.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2),
-        cor: novaTurma.cor,
-      }))
-      setAlunos(prev => [...prev, ...novosAlunos])
-    }
-
-    setNovaTurma({ nome: '', pet: '🐉', cor: colors.green, alunosNomes: '' })
+    setNovaTurma({ nome: '', pet: '🐉', cor: colors.green })
     setModalTurma(false)
     Alert.alert('✅ Turma criada!', `A turma "${nova.nome}" foi adicionada com sucesso.`)
   }
@@ -330,17 +320,18 @@ export default function DashboardScreen({ professor, onLogout }) {
     setModalEditAluno(true)
   }
 
-  function salvarEditAluno() {
+  async function salvarEditAluno() {
     if (!alunoNomeEdit.trim()) { Alert.alert('Atenção', 'Digite o nome do aluno!'); return }
     const turmaDestino = alunoTurmaEdit
     const initials = alunoNomeEdit.trim().split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2)
-    setAlunos(prev => prev.map(a => a.id === alunoEditando.id ? {
-      ...a,
+    const novos = {
       nome: alunoNomeEdit.trim(),
       initials,
-      turmaId: turmaDestino?.id || a.turmaId,
-      cor: turmaDestino?.cor || a.cor,
-    } : a))
+      turmaId: turmaDestino?.id || null,
+      cor: turmaDestino?.cor || '#888',
+    }
+    setAlunos(prev => prev.map(a => a.id === alunoEditando.id ? { ...a, ...novos } : a))
+    await atualizarAluno(alunoEditando.id, novos)
     setModalEditAluno(false)
     setAlunoEditando(null)
   }
@@ -375,12 +366,16 @@ export default function DashboardScreen({ professor, onLogout }) {
   }
 
   function removerAluno(alunoId) {
+    const remover = async () => {
+      setAlunos(prev => prev.map(a => a.id === alunoId ? { ...a, turmaId: null } : a))
+      await atualizarAluno(alunoId, { turmaId: null })
+    }
     if (Platform.OS === 'web') {
-      if (window.confirm('Remover aluno da turma?')) setAlunos(prev => prev.filter(a => a.id !== alunoId))
+      if (window.confirm('Remover aluno da turma?')) remover()
     } else {
-      Alert.alert('Remover aluno', 'Tem certeza?', [
+      Alert.alert('Remover da turma', 'Tem certeza?', [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Remover', style: 'destructive', onPress: () => setAlunos(prev => prev.filter(a => a.id !== alunoId)) },
+        { text: 'Remover', style: 'destructive', onPress: remover },
       ])
     }
   }
@@ -788,32 +783,31 @@ export default function DashboardScreen({ professor, onLogout }) {
         </View>
 
         {/* Pets */}
-        <View style={s.panel}>
-          <Text style={s.panelTitle}>Pets das Turmas</Text>
-          <View style={s.petsGrid}>
-            {turmas.map(t => (
-              <View key={t.id} style={s.petCard}>
-                <View style={s.petCardTop}>
-                  <Text style={s.petTurma}>{t.nome}</Text>
-                  <Text style={s.petEmocao}>{t.emocao}</Text>
-                </View>
+          {turmas.map(t => (
+            <View key={t.id} style={s.petCard}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 <View style={[s.petAvatar, { borderColor: t.cor }]}>
                   <Text style={s.petEmoji}>{t.pet}</Text>
                   {t.cosmetico && (
                     <Image source={require('../assets/chapeu-horta.png')} style={s.petChapeu} resizeMode="contain" />
                   )}
                 </View>
-                <Text style={[s.petEstagio, { color: t.cor }]}>{t.estagio}</Text>
-                <View style={s.petXpRow}>
-                  <View style={s.petXpBg}>
-                    <View style={[s.petXpFill, { width: t.progresso + '%', backgroundColor: t.cor }]} />
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={s.petTurma}>{t.nome}</Text>
+                    <Text style={s.petEmocao}>{t.emocao}</Text>
                   </View>
-                  <Text style={s.petXpNum}>{t.xp} XP</Text>
+                  <Text style={[s.petEstagio, { color: t.cor, marginBottom: 6 }]}>{t.estagio}</Text>
+                  <View style={s.petXpRow}>
+                    <View style={s.petXpBg}>
+                      <View style={[s.petXpFill, { width: t.progresso + '%', backgroundColor: t.cor }]} />
+                    </View>
+                    <Text style={s.petXpNum}>{t.xp} XP</Text>
+                  </View>
                 </View>
               </View>
-            ))}
-          </View>
-        </View>
+            </View>
+          ))}
 
         {/* Missions preview */}
         <View style={s.panel}>
@@ -946,24 +940,6 @@ export default function DashboardScreen({ professor, onLogout }) {
                     onPress={() => setNovaTurma({ ...novaTurma, cor: c })} />
                 ))}
               </View>
-
-              <Text style={s.formLabel}>Alunos da turma (um por linha)</Text>
-              <Text style={{ fontSize: 11, color: colors.muted, fontFamily: fonts.regular, marginBottom: 6 }}>
-                Opcional — você pode adicionar depois
-              </Text>
-              <TextInput
-                style={[s.formInput, { height: 120, textAlignVertical: 'top' }]}
-                placeholder={'Ex:\nMaria Fernanda\nJoão Pedro\nLetícia S.'}
-                placeholderTextColor="#aaa"
-                multiline
-                value={novaTurma.alunosNomes}
-                onChangeText={t => setNovaTurma({ ...novaTurma, alunosNomes: t })}
-              />
-              {novaTurma.alunosNomes.trim().length > 0 && (
-                <Text style={{ fontSize: 12, color: colors.green, fontFamily: fonts.semibold, marginTop: -8 }}>
-                  {novaTurma.alunosNomes.split('\n').filter(n => n.trim()).length} aluno(s) serão adicionados
-                </Text>
-              )}
 
               <View style={s.modalBtns}>
                 <TouchableOpacity style={s.btnCancel} onPress={() => setModalTurma(false)}>
@@ -1151,20 +1127,29 @@ export default function DashboardScreen({ professor, onLogout }) {
               onChangeText={setBuscaAluno}
             />
 
-            {/* Adicionar novo aluno */}
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-              <TextInput
-                style={[s.formInput, { flex: 1, marginBottom: 0 }]}
-                placeholder="Nome do aluno..."
-                placeholderTextColor="#aaa"
-                value={novoAlunoNome}
-                onChangeText={setNovoAlunoNome}
-                onSubmitEditing={adicionarAlunoTurma}
-              />
-              <TouchableOpacity style={[s.btnConfirm, { paddingHorizontal: 16 }]} onPress={adicionarAlunoTurma}>
-                <Text style={s.btnConfirmText}>+</Text>
-              </TouchableOpacity>
-            </View>
+            {/* Designar alunos sem turma */}
+            {alunos.filter(a => !a.turmaId).length > 0 && (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={[s.formLabel, { marginBottom: 6 }]}>Designar para esta turma:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {alunos.filter(a => !a.turmaId).map(a => (
+                      <TouchableOpacity
+                        key={a.id}
+                        style={[s.turmaPill, { borderColor: turmaAtribuir?.cor }]}
+                        onPress={async () => {
+                          const novos = { turmaId: turmaAtribuir.id, cor: turmaAtribuir.cor }
+                          setAlunos(prev => prev.map(al => al.id === a.id ? { ...al, ...novos } : al))
+                          await atualizarAluno(a.id, novos)
+                        }}
+                      >
+                        <Text style={s.turmaPillText}>{a.nome}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
 
             <ScrollView style={{ maxHeight: 340 }}>
               {alunos
@@ -1767,8 +1752,8 @@ const s = StyleSheet.create({
   panel:       { backgroundColor: colors.white, borderRadius: 10, padding: 16, borderWidth: 1, borderColor: colors.border },
   panelTitle:  { fontSize: 14, fontFamily: fonts.bold, color: colors.dark, marginBottom: 12 },
   petsGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  petCard:     { width: (width - 68) / 2, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10, alignItems: 'center', gap: 6, backgroundColor: colors.cream },
-  petCardTop:  { flexDirection: 'row', justifyContent: 'space-between', width: '100%' },
+  petsGrid:    { flexDirection: 'column', gap: 10 },
+  petCard:     { width: '100%', borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 14, gap: 6, backgroundColor: colors.cream },
   petTurma:    { fontSize: 12, fontFamily: fonts.bold, color: colors.dark },
   petEmocao:   { fontSize: 16 },
   petAvatar:   { width: 72, height: 72, borderRadius: 36, borderWidth: 3, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center', position: 'relative' },
