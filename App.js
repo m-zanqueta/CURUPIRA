@@ -16,6 +16,7 @@ import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
 import DashboardScreen from './screens/DashboardScreen'
 import PetScreen from './screens/PetScreen'
+import LojaScreen from './screens/LojaScreen'
 
 export default function App() {
   const [tela, setTela] = useState('splash')
@@ -47,13 +48,22 @@ export default function App() {
     })
   }
 
-  async function handleLoginAluno(alunoLogado) {
-    const turma = await buscarTurmaDoAluno(alunoLogado.turmaId)
-    setAluno(alunoLogado)
-    setTurmaAluno(turma)
-    navegarCom('splashLogin')
-    setTimeout(() => navegarCom('pet'), 2000)
-  }
+      async function handleLoginAluno(alunoLogado) {
+        const turma = await buscarTurmaDoAluno(alunoLogado.turmaId)
+        setAluno(alunoLogado)
+        setTurmaAluno(turma)
+        navegarCom('splashLogin')
+        setTimeout(() => navegarCom('pet'), 2000)
+      }
+
+      async function handleLoginGeral(alunoLogado) {
+        if (alunoLogado.email === 'loja@gmail.com') {
+          navegarCom('loja')
+          return
+        }
+        handleLoginAluno(alunoLogado)
+      }
+  
 
   if (!fontsLoaded || tela === 'splash' || tela === 'splashLogin') {
     return (
@@ -71,7 +81,7 @@ export default function App() {
       <SafeAreaProvider>
         {tela === 'login' && (
           <Login
-            onLogin={handleLoginAluno}
+            onLogin={handleLoginGeral}
             onCriarPerfil={() => navegarCom('criarPerfil')}
             onSouProfessor={() => navegarCom('loginProfessor')}
           />
@@ -91,6 +101,10 @@ export default function App() {
         {tela === 'pet' && (
           <PetScreen aluno={aluno} turma={turmaAluno} onLogout={() => navegarCom('login')} />
         )}
+        {tela === 'loja' && (
+          <LojaScreen onLogout={() => navegarCom('login')} />
+        )}
+
       </SafeAreaProvider>
     </Animated.View>
   )

@@ -71,17 +71,24 @@ export default function PetScreen({ aluno, turma, onLogout }) {
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={e => {
-          const idx = Math.round(e.nativeEvent.contentOffset.x / width)
-          setPaginaAtual(idx)
-        }}
-        contentOffset={{ x: PAGINA_INICIAL * width, y: 0 }}
-      >
+          <ScrollView
+            ref={scrollRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={e => {
+              const idx = Math.round(e.nativeEvent.contentOffset.x / width)
+              setPaginaAtual(idx)
+            }}
+            onScroll={e => {
+              const idx = Math.round(e.nativeEvent.contentOffset.x / width)
+              setPaginaAtual(idx)
+            }}
+            scrollEventThrottle={16}
+            onLayout={() => {
+              scrollRef.current?.scrollTo({ x: PAGINA_INICIAL * width, animated: false })
+            }}
+          >
         {PAGINAS.map((p, idx) =>
           idx === PAGINA_INICIAL
             ? <View key={idx} style={{ width }}>{renderPaginaCentral()}</View>
