@@ -30,8 +30,8 @@ export default function App() {
     Montserrat_600SemiBold,
     Montserrat_700Bold,
     Montserrat_800ExtraBold,
-  })
-
+  });
+ 
   useEffect(() => {
     async function init() {
       await inicializarProfessores()
@@ -95,7 +95,7 @@ export default function App() {
     </Animated.View>
   )
 }
-
+ 
 const styles = StyleSheet.create({
   splash: { flex: 1, backgroundColor: colors.dark, alignItems: 'center', justifyContent: 'center', gap: 12 },
   splashLogo: { width: 120, height: 120, borderRadius: 60, marginBottom: 8 },
