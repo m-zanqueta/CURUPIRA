@@ -11,14 +11,14 @@ export async function inicializarProfessores() {
 
 // ── Professores ───────────────────────────────────────────
 
-export async function buscarProfessor(usuario, senha) {
+export async function buscarProfessor(emailDigitado, senhaDigitada) {
   try {
     const { data, error } = await supabase
       .from('professores')
       .select('*')
-      .eq('usuario', usuario)
-      .eq('senha', senha)
-      .single()
+      .eq('email', emailDigitado.trim().toLowerCase())
+      .eq('senha', senhaDigitada)
+      .maybeSingle()
 
     if (error) throw error
     return data
