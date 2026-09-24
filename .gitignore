@@ -11,3 +11,4 @@ web-build/
 *.orig.*
 web-build/
 .DS_Store
+.env
