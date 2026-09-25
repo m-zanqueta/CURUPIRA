@@ -5,149 +5,20 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme';
-import { listarAlunos, atualizarAluno } from '../services/storage';
+import { listarAlunos, atualizarAluno, listarTurmas, salvarTurma, listarMissoes, salvarMissao, atualizarMissao, removerMissaoStorage } from '../services/storage';
+import { PETS, CORES, MEDALS, RARIDADE_CONFIG, CRITERIOS, MISSION_ICONS } from './dashboardConfig';
+import DashboardSidebar from './DashboardSidebar';
 
 const { width } = Dimensions.get('window');
 
-const NAV = [
-  { id: 'overview',   label: 'Visão Geral',  icon: '📊' },
-  { id: 'turmas',     label: 'Turmas',        icon: '👥' },
-  { id: 'missoes',    label: 'Missões',       icon: '🏆' },
-  { id: 'relatorio',  label: 'Relatórios',    icon: '📈' },
-  { id: 'conquistas', label: 'Conquistas',    icon: '🎖️' },
-]
-
-const PETS = ['🐉','🦊','🦅','🐺','🦁','🐯','🦋','🐸','🦉','🐻']
-const CORES = [colors.green, colors.purple, colors.yellow, '#e74c3c', '#3498db', '#e67e22']
-
-const INITIAL_TURMAS = [
-  { id: 1, nome: '2º A', pet: '🐉', estagio: 'Jovem',   xp: 3570, progresso: 57, emocao: '😄', cor: colors.green,  cosmetico: true  },
-  { id: 2, nome: '2º B', pet: '🦊', estagio: 'Jovem',   xp: 2570, progresso: 57, emocao: '😐', cor: colors.purple, cosmetico: false },
-  { id: 3, nome: '2º C', pet: '🦅', estagio: 'Adulto',  xp: 3150, progresso: 15, emocao: '🤩', cor: colors.yellow, cosmetico: true  },
-  { id: 4, nome: '2º D', pet: '🐺', estagio: 'Filhote', xp: 1670, progresso: 67, emocao: '😴', cor: colors.green,  cosmetico: false },
-]
-
-const INITIAL_MISSIONS = [
-  { id: 1, name: 'Horta Escolar',         turma: 'Todas as turmas', alunos: 92, xp: 150, color: colors.greenLight,  textColor: '#006516', icon: '🌱', active: true,  progress: 68, descricao: 'Cuidar da horta escolar' },
-  { id: 2, name: 'Clube de Leitura',      turma: '2º B',            alunos: 18, xp: 100, color: colors.yellowLight, textColor: '#7a5f00', icon: '📖', active: false, progress: 0,  descricao: 'Ler e apresentar um livro' },
-  { id: 3, name: 'Coral da Escola',       turma: '2º C',            alunos: 24, xp: 200, color: colors.purpleLight, textColor: colors.purple, icon: '🎵', active: false, progress: 0, descricao: 'Participar do coral' },
-  { id: 4, name: 'Atletismo Comunitário', turma: '2º D',            alunos: 15, xp: 120, color: '#fde8e8',          textColor: '#c0392b', icon: '🏃', active: false, progress: 0, descricao: 'Corrida comunitária' },
-]
-
-const RANKING = [
-  { name: 'Maria Fernanda', turma: '2º A', xp: 980, pct: 100, initials: 'MF', color: colors.green  },
-  { name: 'João Pedro',     turma: '2º B', xp: 830, pct: 85,  initials: 'JP', color: colors.purple },
-  { name: 'Letícia S.',     turma: '2º C', xp: 710, pct: 72,  initials: 'LS', color: colors.yellow },
-  { name: 'Carlos R.',      turma: '2º D', xp: 570, pct: 58,  initials: 'CR', color: '#888'        },
-]
-
-const BADGES = [
-  { label: 'Guardião da Natureza', color: colors.greenLight,  text: '#006516', icon: '🌿' },
-  { label: 'Estrela em Ascensão',  color: colors.yellowLight, text: '#7a5f00', icon: '⭐' },
-  { label: 'Artista do Coral',     color: colors.purpleLight, text: colors.purple, icon: '🎵' },
-  { label: 'Atleta Comunitário',   color: colors.greenLight,  text: '#006516', icon: '🏃' },
-  { label: 'Leitor Voraz',         color: colors.yellowLight, text: '#7a5f00', icon: '📚' },
-  { label: 'Primeira Missão',      color: colors.purpleLight, text: colors.purple, icon: '🎖️' },
-]
-
-const MEDALS = ['🥇', '🥈', '🥉', '4️⃣']
-
-const RARIDADE_CONFIG = {
-  'Comum':    { color: '#888',         bg: '#f0f0f0',         emoji: '⚪' },
-  'Raro':     { color: colors.green,   bg: colors.greenLight, emoji: '🟢' },
-  'Épico':    { color: colors.purple,  bg: colors.purpleLight,emoji: '🟣' },
-  'Lendário': { color: '#c8960a',      bg: colors.yellowLight,emoji: '🌟' },
-}
-
-const CRITERIOS = [
-  { id: 'primeira_tarefa', label: 'Completar a 1ª missão' },
-  { id: 'total_missoes',   label: 'Completar X missões no total' },
-  { id: 'acumular_xp',     label: 'Acumular X de XP' },
-  { id: 'missao_especifica', label: 'Completar uma missão específica' },
-  { id: 'categoria',       label: 'X missões de uma categoria' },
-]
-
-const INITIAL_CONQUISTAS = [
-  { id: 1, nome: 'Primeira Missão',    emoji: '🎯', raridade: 'Comum',    xp: 50,  criterio: 'primeira_tarefa',  meta: 1,   descricao: 'Complete sua primeira missão extracurricular', desbloqueada: false },
-  { id: 2, nome: 'Guardião da Natureza', emoji: '🌿', raridade: 'Raro',  xp: 100, criterio: 'missao_especifica', meta: 1,   descricao: 'Participe da missão Horta Escolar', missaoAlvo: 'Horta Escolar', desbloqueada: false },
-  { id: 3, nome: 'Estrela em Ascensão', emoji: '⭐', raridade: 'Raro',   xp: 150, criterio: 'acumular_xp',      meta: 500, descricao: 'Acumule 500 XP', desbloqueada: false },
-  { id: 4, nome: 'Artista do Coral',   emoji: '🎵', raridade: 'Épico',   xp: 200, criterio: 'missao_especifica', meta: 1,   descricao: 'Participe do Coral da Escola', missaoAlvo: 'Coral da Escola', desbloqueada: false },
-  { id: 5, nome: 'Maratonista',        emoji: '🏃', raridade: 'Épico',   xp: 250, criterio: 'total_missoes',    meta: 3,   descricao: 'Complete 3 missões no total', desbloqueada: false },
-  { id: 6, nome: 'Lenda Curupira',     emoji: '🌳', raridade: 'Lendário', xp: 500, criterio: 'acumular_xp',    meta: 1000, descricao: 'Acumule 1000 XP', desbloqueada: false },
-]
-
-const STATS_ICONS = [
-  { label: 'Alunos ativos',        icon: '👥', bg: colors.greenLight  },
-  { label: 'Missões abertas',      icon: '🏆', bg: colors.yellowLight },
-  { label: 'Conquistas entregues', icon: '🎖️', bg: colors.purpleLight },
-  { label: 'XP distribuído',       icon: '⭐', bg: '#f0f0f0'          },
-]
-
-const MISSION_ICONS = ['🌱','📖','🎵','🏃','🎨','🔬','🏀','🎭','🌍','🤝']
-
-const INITIAL_ALUNOS = [
-  // 2º A
-  { id: 1,  nome: 'Maria Fernanda',  turmaId: 1, xp: 980, initials: 'MF', cor: colors.green  },
-  { id: 2,  nome: 'Carlos R.',       turmaId: 1, xp: 570, initials: 'CR', cor: colors.green  },
-  { id: 3,  nome: 'Ana Beatriz',     turmaId: 1, xp: 450, initials: 'AB', cor: colors.green  },
-  { id: 4,  nome: 'Lucas M.',        turmaId: 1, xp: 390, initials: 'LM', cor: colors.green  },
-  { id: 5,  nome: 'Sofia A.',        turmaId: 1, xp: 340, initials: 'SA', cor: colors.green  },
-  { id: 6,  nome: 'Gabriel T.',      turmaId: 1, xp: 310, initials: 'GT', cor: colors.green  },
-  { id: 7,  nome: 'Isabela C.',      turmaId: 1, xp: 290, initials: 'IC', cor: colors.green  },
-  { id: 8,  nome: 'Matheus L.',      turmaId: 1, xp: 270, initials: 'ML', cor: colors.green  },
-  { id: 9,  nome: 'Valentina S.',    turmaId: 1, xp: 250, initials: 'VS', cor: colors.green  },
-  { id: 10, nome: 'Felipe O.',       turmaId: 1, xp: 220, initials: 'FO', cor: colors.green  },
-  { id: 11, nome: 'Laura P.',        turmaId: 1, xp: 200, initials: 'LP', cor: colors.green  },
-  { id: 12, nome: 'Davi N.',         turmaId: 1, xp: 180, initials: 'DN', cor: colors.green  },
-  { id: 13, nome: 'Alice F.',        turmaId: 1, xp: 160, initials: 'AF', cor: colors.green  },
-  { id: 14, nome: 'Enzo B.',         turmaId: 1, xp: 140, initials: 'EB', cor: colors.green  },
-  { id: 15, nome: 'Manuela R.',      turmaId: 1, xp: 120, initials: 'MR', cor: colors.green  },
-  // 2º B
-  { id: 16, nome: 'João Pedro',      turmaId: 2, xp: 830, initials: 'JP', cor: colors.purple },
-  { id: 17, nome: 'Ana Lima',        turmaId: 2, xp: 420, initials: 'AL', cor: colors.purple },
-  { id: 18, nome: 'Rodrigo S.',      turmaId: 2, xp: 380, initials: 'RS', cor: colors.purple },
-  { id: 19, nome: 'Camila F.',       turmaId: 2, xp: 350, initials: 'CF', cor: colors.purple },
-  { id: 20, nome: 'Bruno H.',        turmaId: 2, xp: 310, initials: 'BH', cor: colors.purple },
-  { id: 21, nome: 'Fernanda T.',     turmaId: 2, xp: 280, initials: 'FT', cor: colors.purple },
-  { id: 22, nome: 'Gustavo M.',      turmaId: 2, xp: 250, initials: 'GM', cor: colors.purple },
-  { id: 23, nome: 'Juliana P.',      turmaId: 2, xp: 220, initials: 'JP', cor: colors.purple },
-  { id: 24, nome: 'Thiago C.',       turmaId: 2, xp: 190, initials: 'TC', cor: colors.purple },
-  { id: 25, nome: 'Mariana L.',      turmaId: 2, xp: 160, initials: 'ML', cor: colors.purple },
-  { id: 26, nome: 'Leonardo A.',     turmaId: 2, xp: 130, initials: 'LA', cor: colors.purple },
-  { id: 27, nome: 'Patrícia N.',     turmaId: 2, xp: 100, initials: 'PN', cor: colors.purple },
-  // 2º C
-  { id: 28, nome: 'Letícia S.',      turmaId: 3, xp: 710, initials: 'LS', cor: colors.yellow },
-  { id: 29, nome: 'Pedro H.',        turmaId: 3, xp: 390, initials: 'PH', cor: colors.yellow },
-  { id: 30, nome: 'Renata V.',       turmaId: 3, xp: 360, initials: 'RV', cor: colors.yellow },
-  { id: 31, nome: 'Diego M.',        turmaId: 3, xp: 330, initials: 'DM', cor: colors.yellow },
-  { id: 32, nome: 'Natália C.',      turmaId: 3, xp: 300, initials: 'NC', cor: colors.yellow },
-  { id: 33, nome: 'Vitor R.',        turmaId: 3, xp: 270, initials: 'VR', cor: colors.yellow },
-  { id: 34, nome: 'Bianca A.',       turmaId: 3, xp: 240, initials: 'BA', cor: colors.yellow },
-  { id: 35, nome: 'Henrique T.',     turmaId: 3, xp: 210, initials: 'HT', cor: colors.yellow },
-  { id: 36, nome: 'Larissa O.',      turmaId: 3, xp: 180, initials: 'LO', cor: colors.yellow },
-  { id: 37, nome: 'Caio B.',         turmaId: 3, xp: 150, initials: 'CB', cor: colors.yellow },
-  { id: 38, nome: 'Aline F.',        turmaId: 3, xp: 120, initials: 'AF', cor: colors.yellow },
-  { id: 39, nome: 'Marcos P.',       turmaId: 3, xp: 90,  initials: 'MP', cor: colors.yellow },
-  // 2º D
-  { id: 40, nome: 'Bruna T.',        turmaId: 4, xp: 310, initials: 'BT', cor: '#888' },
-  { id: 41, nome: 'Rafael M.',       turmaId: 4, xp: 200, initials: 'RM', cor: '#888' },
-  { id: 42, nome: 'Sabrina L.',      turmaId: 4, xp: 280, initials: 'SL', cor: '#888' },
-  { id: 43, nome: 'Alexandre C.',    turmaId: 4, xp: 250, initials: 'AC', cor: '#888' },
-  { id: 44, nome: 'Priscila N.',     turmaId: 4, xp: 220, initials: 'PN', cor: '#888' },
-  { id: 45, nome: 'Danilo R.',       turmaId: 4, xp: 190, initials: 'DR', cor: '#888' },
-  { id: 46, nome: 'Cristina F.',     turmaId: 4, xp: 160, initials: 'CF', cor: '#888' },
-  { id: 47, nome: 'Eduardo S.',      turmaId: 4, xp: 130, initials: 'ES', cor: '#888' },
-  { id: 48, nome: 'Mônica A.',       turmaId: 4, xp: 100, initials: 'MA', cor: '#888' },
-  { id: 49, nome: 'Fábio T.',        turmaId: 4, xp: 80,  initials: 'FT', cor: '#888' },
-]
 
 export default function DashboardScreen({ professor, onLogout }) {
   const [activeNav, setActiveNav]     = useState('overview')
   const [menuOpen, setMenuOpen]       = useState(false)
-  const [turmas, setTurmas]           = useState(INITIAL_TURMAS)
-  const [missions, setMissions]       = useState(INITIAL_MISSIONS)
-  const [alunos, setAlunos]           = useState(INITIAL_ALUNOS)
-  const [conquistas, setConquistas]   = useState(INITIAL_CONQUISTAS)
+  const [turmas, setTurmas]           = useState([])
+  const [missions, setMissions]       = useState([])
+  const [alunos, setAlunos]           = useState([])
+  const [conquistas, setConquistas]   = useState([])
 
   // Modal de criar turma
   const [modalTurma, setModalTurma]   = useState(false)
@@ -156,6 +27,7 @@ export default function DashboardScreen({ professor, onLogout }) {
   // Modal de criar missão
   const [modalMissao, setModalMissao] = useState(false)
   const [novaMissao, setNovaMissao]   = useState({ name: '', descricao: '', turma: 'Todas as turmas', xp: '', icon: '🌱', alunos: '' })
+  const [missaoEditando, setMissaoEditando] = useState(null)
 
   // Modal de atribuir missão à turma
   const [modalAtribuir, setModalAtribuir] = useState(false)
@@ -205,17 +77,49 @@ export default function DashboardScreen({ professor, onLogout }) {
     listarAlunos().then(setAlunos)
   }, [])
 
+  useEffect(() => {
+    let ativo = true
+    async function carregarMissoes() {
+      let dados
+      let turmasCarregadas
+      try {
+        const [missoesDoBanco, turmasDoBanco] = await Promise.all([
+          listarMissoes(professor?.id),
+          listarTurmas(professor?.id),
+        ])
+        dados = missoesDoBanco
+        turmasCarregadas = turmasDoBanco
+        if (ativo) setTurmas(turmasDoBanco)
+      } catch (error) {
+        if (ativo) Alert.alert('Erro', `Não foi possível carregar as missões: ${error.message || 'verifique sua conexão.'}`)
+        return
+      }
+      if (ativo) setMissions((dados || []).map((m, index) => ({
+        ...m,
+        name: m.name || '',
+        descricao: m.descricao || m.description || '',
+        turma: turmasCarregadas.find(t => String(t.id) === String(m.turmaId))?.nome || 'Todas as turmas',
+        xp: Number(m.xp) || 0,
+        icon: m.icone || MISSION_ICONS[index % MISSION_ICONS.length],
+        color: m.color || colors.greenLight,
+        textColor: m.textColor || '#006516',
+        active: m.ativa ?? true,
+        progress: Number(m.progress) || 0,
+      })))
+    }
+    if (professor?.id) carregarMissoes()
+    else setMissions([])
+    return () => { ativo = false }
+  }, [professor?.id])
+
   const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })
 
   // Stats dinâmicos em tempo real
   const totalXP = alunos.reduce((acc, a) => acc + a.xp, 0)
   const xpFormatado = totalXP >= 1000 ? (totalXP / 1000).toFixed(1) + 'k' : String(totalXP)
-  const totalConquistas = missions.filter(m => !m.active).length * 12 // missões concluídas geram conquistas
-
   const stats = [
     { label: 'Alunos ativos',        value: String(alunos.length),                          icon: '👥', bg: colors.greenLight  },
     { label: 'Missões abertas',      value: String(missions.filter(m => m.active).length),  icon: '🏆', bg: colors.yellowLight },
-    { label: 'Conquistas entregues', value: String(totalConquistas),                         icon: '🎖️', bg: colors.purpleLight },
     { label: 'XP distribuído',       value: xpFormatado,                                    icon: '⭐', bg: '#f0f0f0'          },
   ]
 
@@ -250,14 +154,42 @@ export default function DashboardScreen({ professor, onLogout }) {
     return m.turma === 'Todas as turmas' || m.turma.split(', ').includes(turma.nome)
   }
 
-  function adicionarTurma() {
+  async function adicionarTurma() {
     if (!novaTurma.nome.trim()) { Alert.alert('Atenção', 'Digite o nome da turma!'); return; }
-    const novaId = Date.now()
-    const nova = { id: novaId, nome: novaTurma.nome, pet: novaTurma.pet, estagio: 'Filhote', xp: 0, progresso: 0, emocao: '😊', cor: novaTurma.cor, cosmetico: false }
-    setTurmas(prev => [...prev, nova])
-    setNovaTurma({ nome: '', pet: '🐉', cor: colors.green })
-    setModalTurma(false)
-    Alert.alert('✅ Turma criada!', `A turma "${nova.nome}" foi adicionada com sucesso.`)
+    if (!professor?.id) {
+      Alert.alert('Erro', 'Não foi possível identificar o professor conectado. Entre novamente e tente criar a turma.');
+      return;
+    }
+
+    const codigo = `CUR-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const dadosNovaTurma = {
+      nome: novaTurma.nome.trim(),
+      codigo,
+      professorId: professor.id,
+      pet: novaTurma.pet,
+      cor: novaTurma.cor,
+    };
+
+    try {
+      const turmaSalva = await salvarTurma(dadosNovaTurma);
+      const nova = {
+        ...turmaSalva,
+        pet: dadosNovaTurma.pet,
+        estagio: 'Filhote',
+        xp: 0,
+        progresso: 0,
+        emocao: '😊',
+        cor: dadosNovaTurma.cor,
+        cosmetico: false,
+      };
+      setTurmas(prev => [...prev, nova]);
+      setNovaTurma({ nome: '', pet: '🐉', cor: colors.green, alunosNomes: '' });
+      setModalTurma(false);
+      Alert.alert('✅ Turma criada!', `A turma "${nova.nome}" foi salva com sucesso.`);
+    } catch (error) {
+      console.error('Erro ao criar turma:', error);
+      Alert.alert('Erro', `Não foi possível salvar a turma: ${formatarErroSupabase(error)}`);
+    }
   }
 
   function removerTurma(id) {
@@ -273,30 +205,68 @@ export default function DashboardScreen({ professor, onLogout }) {
     }
   }
 
-  function adicionarMissao() {
+  async function adicionarMissao() {
     if (!novaMissao.name.trim()) { Alert.alert('Atenção', 'Digite o nome da missão!'); return; }
     if (!novaMissao.xp || isNaN(novaMissao.xp)) { Alert.alert('Atenção', 'Digite um valor de XP válido!'); return; }
-    const nova = {
-      id: Date.now(), name: novaMissao.name, descricao: novaMissao.descricao,
-      turma: novaMissao.turma, alunos: Number(novaMissao.alunos) || 0, xp: Number(novaMissao.xp),
-      color: colors.greenLight, textColor: '#006516', icon: novaMissao.icon,
-      active: true, progress: 0,
+    const dados = {
+      name: novaMissao.name.trim(), descricao: novaMissao.descricao.trim(),
+      turmaId: novaMissao.turma === 'Todas as turmas' ? null : turmas.find(t => t.nome === novaMissao.turma)?.id || null,
+      xp: Number(novaMissao.xp), icone: novaMissao.icon, ativa: missaoEditando?.active ?? true,
+      ...(!missaoEditando ? { professorId: professor.id } : {}),
     }
-    setMissions([nova, ...missions])
+    try {
+      if (missaoEditando) {
+        await atualizarMissao(missaoEditando.id, dados)
+        setMissions(prev => prev.map(m => m.id === missaoEditando.id ? { ...m, ...dados, icon: dados.icone, active: dados.ativa, turma: turmas.find(t => String(t.id) === String(dados.turmaId))?.nome || 'Todas as turmas' } : m))
+      } else {
+        const salva = await salvarMissao(dados)
+        setMissions(prev => [{ ...dados, ...(salva || {}), icon: salva?.icone || dados.icone, active: salva?.ativa ?? true, turma: turmas.find(t => String(t.id) === String(salva?.turmaId))?.nome || 'Todas as turmas', color: colors.greenLight, textColor: '#006516', progress: 0 }, ...prev])
+      }
+    } catch (error) {
+      console.error('Erro ao criar/atualizar missão:', error)
+      Alert.alert('Erro', `Não foi possível salvar a missão: ${formatarErroSupabase(error)}`)
+      return
+    }
+    const nomeMissao = dados.name
     setNovaMissao({ name: '', descricao: '', turma: 'Todas as turmas', xp: '', icon: '🌱', alunos: '' })
+    setMissaoEditando(null)
     setModalMissao(false)
-    Alert.alert('✅ Missão criada!', `A missão "${nova.name}" foi criada com sucesso.`)
+    Alert.alert('✅ Missão salva!', `A missão "${nomeMissao}" foi salva com sucesso.`)
+  }
+
+  function editarMissao(missao) {
+    setMissaoEditando(missao)
+    setNovaMissao({ name: missao.name, descricao: missao.descricao || '', turma: missao.turma || 'Todas as turmas', xp: String(missao.xp || ''), icon: missao.icon || '🌱', alunos: '' })
+    setModalMissao(true)
+  }
+
+  async function atualizarTurmaMissao(missao, turmaId) {
+    try {
+      await atualizarMissao(missao.id, { turmaId })
+      const nomeTurma = turmas.find(t => String(t.id) === String(turmaId))?.nome || 'Todas as turmas'
+      setMissions(prev => prev.map(m => m.id === missao.id ? { ...m, turmaId, turma: nomeTurma } : m))
+    } catch (error) {
+      Alert.alert('Erro', `Não foi possível atualizar a turma da missão: ${error.message || 'tente novamente.'}`)
+    }
   }
 
   function removerMissao(id) {
+    const confirmarRemocao = async () => {
+      try {
+        await removerMissaoStorage(id)
+        setMissions(prev => prev.filter(m => m.id !== id))
+      } catch (error) {
+        Alert.alert('Erro', `Não foi possível remover a missão: ${error.message || 'tente novamente.'}`)
+      }
+    }
     if (Platform.OS === 'web') {
       if (window.confirm('Tem certeza que deseja remover esta missão?')) {
-        setMissions(prev => prev.filter(m => m.id !== id))
+        confirmarRemocao()
       }
     } else {
       Alert.alert('Remover missão', 'Tem certeza?', [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Remover', style: 'destructive', onPress: () => setMissions(prev => prev.filter(m => m.id !== id)) }
+        { text: 'Remover', style: 'destructive', onPress: confirmarRemocao }
       ])
     }
   }
@@ -525,8 +495,16 @@ export default function DashboardScreen({ professor, onLogout }) {
     setMissions(prev => prev.map(m => m.id === id ? { ...m, alunos: num } : m))
   }
 
-  function toggleMissaoAtiva(id) {
-    setMissions(missions.map(m => m.id === id ? { ...m, active: !m.active } : m))
+  async function toggleMissaoAtiva(id) {
+    const missao = missions.find(m => m.id === id)
+    if (!missao) return
+    const ativa = !missao.active
+    try {
+      await atualizarMissao(id, { ativa })
+      setMissions(prev => prev.map(m => m.id === id ? { ...m, active: ativa, ativa } : m))
+    } catch (error) {
+      Alert.alert('Erro', `Não foi possível atualizar a missão: ${error.message || 'tente novamente.'}`)
+    }
   }
 
   // ─── TELA TURMAS ────────────────────────────────────────
@@ -661,23 +639,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                       <TouchableOpacity
                         key={t.id}
                         style={[s.turmaPill, atribuida && s.turmaPillActive, { paddingVertical: 3 }]}
-                        onPress={() => {
-                          setTurmaAtribuir(t)
-                          if (atribuida) {
-                            setMissions(prev => prev.map(ms => {
-                              if (ms.id !== m.id) return ms
-                              const lista = ms.turma === 'Todas as turmas' ? [] : ms.turma.split(', ')
-                              const nova = lista.filter(x => x !== t.nome)
-                              return { ...ms, turma: nova.length === 0 ? 'Nenhuma turma' : nova.join(', ') }
-                            }))
-                          } else {
-                            setMissions(prev => prev.map(ms => {
-                              if (ms.id !== m.id) return ms
-                              const lista = ms.turma === 'Todas as turmas' || ms.turma === 'Nenhuma turma' ? [] : ms.turma.split(', ')
-                              return { ...ms, turma: [...lista, t.nome].join(', ') }
-                            }))
-                          }
-                        }}
+                        onPress={() => atualizarTurmaMissao(m, atribuida ? null : t.id)}
                       >
                         <Text style={[s.turmaPillText, atribuida && s.turmaPillTextActive]}>
                           {atribuida ? '✓ ' : ''}{t.nome}
@@ -687,9 +649,14 @@ export default function DashboardScreen({ professor, onLogout }) {
                   })}
                 </View>
               </View>
-              <TouchableOpacity onPress={() => removerMissao(m.id)} style={s.btnRemove}>
-                <Text style={s.btnRemoveText}>🗑️</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                <TouchableOpacity onPress={() => editarMissao(m)} style={[s.btnToggle, { marginTop: 0, paddingHorizontal: 8, backgroundColor: colors.purpleLight }]}>
+                  <Text style={[s.btnToggleText, { color: colors.purple }]}>✏️</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => removerMissao(m.id)} style={s.btnRemove}>
+                  <Text style={s.btnRemoveText}>🗑️</Text>
+                </TouchableOpacity>
+              </View>
             </View>
             {m.active && (
               <View style={{ marginTop: 10 }}>
@@ -749,25 +716,28 @@ export default function DashboardScreen({ professor, onLogout }) {
 
   // ─── TELA OVERVIEW ──────────────────────────────────────
   function renderOverview() {
+    const missaoDestaque = missions.find(m => m.active)
+    const progressoDestaque = missaoDestaque ? progressoRealMissao(missaoDestaque) : 0
+
     return (
       <>
-        {/* Horta Banner */}
-        <View style={s.hortaBanner}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.hortaTag}>🌱 MISSÃO DA SEMANA</Text>
-            <Text style={s.hortaTitle}>Horta Escolar</Text>
-            <Text style={s.hortaDesc}>72 alunos participando · Todas as turmas · Encerra em 3 dias</Text>
-            <View style={s.progressRow}>
-              <View style={s.progressBg}><View style={[s.progressFill, { width: '68%' }]} /></View>
-              <Text style={s.progressLabel}>68%</Text>
+        {missaoDestaque && (
+          <View style={s.hortaBanner}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.hortaTag}>🏆 MISSÃO ATIVA</Text>
+              <Text style={s.hortaTitle}>{missaoDestaque.name}</Text>
+              <Text style={s.hortaDesc}>
+                {qtdAlunosMissao(missaoDestaque)} alunos participando · {missaoDestaque.turma}
+              </Text>
+              <View style={s.progressRow}>
+                <View style={s.progressBg}>
+                  <View style={[s.progressFill, { width: `${progressoDestaque}%` }]} />
+                </View>
+                <Text style={s.progressLabel}>{progressoDestaque}%</Text>
+              </View>
             </View>
           </View>
-          <View style={s.recompensaCard}>
-            <Text style={s.recompensaLabel}>🎁 Recompensa</Text>
-            <Image source={require('../assets/chapeu-horta.png')} style={s.recompensaImg} resizeMode="contain" />
-            <Text style={s.recompensaNome}>Chapéu Jardineiro #67</Text>
-          </View>
-        </View>
+        )}
 
         {/* Stats */}
         <View style={s.statsGrid}>
@@ -863,18 +833,6 @@ export default function DashboardScreen({ professor, onLogout }) {
           }
         </View>
 
-        {/* Badges */}
-        <View style={s.panel}>
-          <Text style={s.panelTitle}>Conquistas desbloqueadas esta semana</Text>
-          <View style={s.badgesWrap}>
-            {BADGES.map(b => (
-              <View key={b.label} style={[s.badge, { backgroundColor: b.color }]}>
-                <Text style={{ fontSize: 12 }}>{b.icon}</Text>
-                <Text style={[s.badgeText, { color: b.text }]}>{b.label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
       </>
     )
   }
@@ -882,35 +840,14 @@ export default function DashboardScreen({ professor, onLogout }) {
   return (
     <SafeAreaView style={s.safe}>
 
-      {/* ── Sidebar Modal ── */}
-      <Modal visible={menuOpen} transparent animationType="slide" onRequestClose={() => setMenuOpen(false)}>
-        <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setMenuOpen(false)} />
-        <View style={s.sidebar}>
-          <View style={s.sidebarLogoRow}>
-            <Image source={require('../assets/logo.png')} style={s.sidebarLogo} resizeMode="contain" />
-            <Text style={s.sidebarLogoText}>CURUPIRA</Text>
-          </View>
-          {NAV.map(item => (
-            <TouchableOpacity key={item.id} style={[s.navItem, activeNav === item.id && s.navActive]}
-              onPress={() => { setActiveNav(item.id); setMenuOpen(false); }}>
-              <Text style={s.navIcon}>{item.icon}</Text>
-              <Text style={[s.navLabel, activeNav === item.id && s.navLabelActive]}>{item.label}</Text>
-            </TouchableOpacity>
-          ))}
-          <View style={s.sidebarBottom}>
-            <View style={s.teacherRow}>
-              <View style={s.teacherAvatar}><Text style={s.teacherInitials}>{(professor?.nome || 'P')[0]}</Text></View>
-              <View>
-                <Text style={s.teacherName}>{professor?.nome || 'Professor'}</Text>
-                <Text style={s.teacherRole}>Área do Professor</Text>
-              </View>
-            </View>
-            <TouchableOpacity onPress={() => { setMenuOpen(false); onLogout && onLogout(); }}>
-              <Text style={s.logoutBtn}>← Sair</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <DashboardSidebar
+        visible={menuOpen}
+        activeNav={activeNav}
+        professor={professor}
+        onNavigate={(section) => { setActiveNav(section); setMenuOpen(false); }}
+        onClose={() => setMenuOpen(false)}
+        onLogout={() => { setMenuOpen(false); onLogout && onLogout(); }}
+      />
 
       {/* ── Modal Criar Turma ── */}
       <Modal visible={modalTurma} transparent animationType="slide" onRequestClose={() => setModalTurma(false)}>
@@ -1590,110 +1527,13 @@ export default function DashboardScreen({ professor, onLogout }) {
             <Text style={s.emptySubtext}>Esta funcionalidade será disponibilizada na próxima versão.</Text>
           </View>
         )}
-        {activeNav === 'conquistas' && (() => {
-          const conquistasFiltradas = conquistas
-            .filter(c => filtroRaridade === 'Todos' || c.raridade === filtroRaridade)
-            .filter(c => filtroStatus === 'Todos' || (filtroStatus === 'Desbloqueada' ? c.desbloqueada : !c.desbloqueada))
-          return (
-            <View style={{ gap: 14 }}>
-              <View style={s.screenHeader}>
-                <Text style={s.screenTitle}>🎖️ Conquistas</Text>
-                <TouchableOpacity style={s.btnNew} onPress={() => setModalConquista(true)}>
-                  <Text style={s.btnNewText}>+ Nova</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Filtros */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 4 }}>
-                  {['Todos', 'Comum', 'Raro', 'Épico', 'Lendário'].map(r => (
-                    <TouchableOpacity key={r}
-                      style={[s.turmaPill, filtroRaridade === r && s.turmaPillActive]}
-                      onPress={() => setFiltroRaridade(r)}>
-                      <Text style={[s.turmaPillText, filtroRaridade === r && s.turmaPillTextActive]}>{r}</Text>
-                    </TouchableOpacity>
-                  ))}
-                  <View style={{ width: 1, backgroundColor: colors.border, marginHorizontal: 4 }} />
-                  {['Todos', 'Desbloqueada', 'Bloqueada'].map(st => (
-                    <TouchableOpacity key={st}
-                      style={[s.turmaPill, filtroStatus === st && s.turmaPillActive]}
-                      onPress={() => setFiltroStatus(st)}>
-                      <Text style={[s.turmaPillText, filtroStatus === st && s.turmaPillTextActive]}>{st}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-
-              {/* Stats rápidos */}
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={[s.statCard, { flex: 1 }]}>
-                  <Text style={s.statNum}>{conquistas.filter(c => c.desbloqueada).length}</Text>
-                  <Text style={s.statLabel}>Desbloqueadas</Text>
-                </View>
-                <View style={[s.statCard, { flex: 1 }]}>
-                  <Text style={s.statNum}>{conquistas.filter(c => !c.desbloqueada).length}</Text>
-                  <Text style={s.statLabel}>Bloqueadas</Text>
-                </View>
-                <View style={[s.statCard, { flex: 1 }]}>
-                  <Text style={s.statNum}>{conquistas.reduce((acc, c) => c.desbloqueada ? acc + c.xp : acc, 0)}</Text>
-                  <Text style={s.statLabel}>XP total</Text>
-                </View>
-              </View>
-
-              {conquistasFiltradas.length === 0 ? (
-                <View style={s.emptyState}>
-                  <Text style={s.emptyIcon}>🎖️</Text>
-                  <Text style={s.emptyText}>Nenhuma conquista encontrada.</Text>
-                </View>
-              ) : (
-                conquistasFiltradas.map(c => {
-                  const cfg = RARIDADE_CONFIG[c.raridade]
-                  const prog = progressoConquista(c)
-                  return (
-                    <TouchableOpacity key={c.id} style={[s.panel, c.desbloqueada && { borderColor: cfg.color, borderWidth: 2 }]}
-                      onPress={() => { setConquistaSelecionada(c); setModalDetConquista(true) }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                        <View style={[s.statIconWrap, { backgroundColor: cfg.bg, width: 50, height: 50, borderRadius: 12, opacity: c.desbloqueada ? 1 : 0.5 }]}>
-                          <Text style={{ fontSize: 26 }}>{c.emoji}</Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <Text style={[s.missionName, { color: c.desbloqueada ? colors.dark : colors.muted }]}>{c.nome}</Text>
-                            <View style={[s.activePill, { backgroundColor: cfg.bg }]}>
-                              <Text style={[s.activePillText, { color: cfg.color }]}>{cfg.emoji} {c.raridade}</Text>
-                            </View>
-                            {c.desbloqueada && <View style={[s.activePill, { backgroundColor: colors.greenLight }]}>
-                              <Text style={[s.activePillText, { color: colors.green }]}>✅ Desbloqueada</Text>
-                            </View>}
-                          </View>
-                          <Text style={s.missionMeta}>{c.descricao}</Text>
-                          <Text style={[s.missionMeta, { color: colors.yellow, marginTop: 2 }]}>+{c.xp} XP</Text>
-                        </View>
-                        <TouchableOpacity onPress={() => removerConquista(c.id)} style={s.btnRemove}>
-                          <Text style={s.btnRemoveText}>🗑️</Text>
-                        </TouchableOpacity>
-                      </View>
-                      {/* Barra de progresso */}
-                      <View style={{ marginTop: 10 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <Text style={[s.missionMeta, { fontSize: 10 }]}>
-                            {CRITERIOS.find(cr => cr.id === c.criterio)?.label}
-                            {c.missaoAlvo ? ` — ${c.missaoAlvo}` : ''}
-                            {c.criterio !== 'primeira_tarefa' && c.criterio !== 'missao_especifica' ? ` (meta: ${c.meta})` : ''}
-                          </Text>
-                          <Text style={[s.missionProgressTxt, { color: c.desbloqueada ? colors.green : cfg.color }]}>{prog}%</Text>
-                        </View>
-                        <View style={s.missionProgressBgFull}>
-                          <View style={[s.missionProgressFillFull, { width: prog + '%', backgroundColor: c.desbloqueada ? colors.green : cfg.color }]} />
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  )
-                })
-              )}
-            </View>
-          )
-        })()}
+        {activeNav === 'conquistas' && (
+          <View style={s.emptyState}>
+            <Text style={s.emptyIcon}>🎖️</Text>
+            <Text style={s.emptyText}>Conquistas sem dados cadastrados.</Text>
+            <Text style={s.emptySubtext}>Esta área será exibida quando houver conquistas salvas no Supabase.</Text>
+          </View>
+        )}
 
         <View style={{ height: 32 }} />
       </ScrollView>
@@ -1701,27 +1541,16 @@ export default function DashboardScreen({ professor, onLogout }) {
   );
 }
 
+function formatarErroSupabase(error) {
+  const mensagem = error?.message || 'tente novamente.';
+  const detalhe = error?.details || error?.hint;
+  return detalhe ? `${mensagem} (${detalhe})` : mensagem;
+}
+
 const s = StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.cream },
   main:        { flex: 1 },
   mainContent: { padding: 14, gap: 14 },
-  overlay:     { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 10 },
-  sidebar:     { position: 'absolute', top: 0, left: 0, bottom: 0, width: 240, backgroundColor: colors.dark, paddingTop: 50, paddingBottom: 24, zIndex: 20 },
-  sidebarLogoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)', marginBottom: 12 },
-  sidebarLogo:    { width: 36, height: 36 },
-  sidebarLogoText:{ fontSize: 14, fontFamily: fonts.extrabold, color: '#fff', letterSpacing: 2 },
-  navItem:        { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 20, borderLeftWidth: 3, borderLeftColor: 'transparent' },
-  navActive:      { borderLeftColor: colors.green, backgroundColor: 'rgba(255,255,255,0.07)' },
-  navIcon:        { fontSize: 16, width: 22, textAlign: 'center' },
-  navLabel:       { fontSize: 13, fontFamily: fonts.medium, color: 'rgba(255,255,255,0.5)' },
-  navLabelActive: { color: '#fff' },
-  sidebarBottom:  { marginTop: 'auto', paddingHorizontal: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', gap: 12 },
-  teacherRow:     { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  teacherAvatar:  { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.purple, alignItems: 'center', justifyContent: 'center' },
-  teacherInitials:{ fontSize: 12, fontFamily: fonts.bold, color: '#fff' },
-  teacherName:    { fontSize: 13, fontFamily: fonts.semibold, color: '#fff' },
-  teacherRole:    { fontSize: 11, fontFamily: fonts.regular, color: 'rgba(255,255,255,0.4)' },
-  logoutBtn:      { fontSize: 12, fontFamily: fonts.semibold, color: 'rgba(255,100,100,0.8)' },
   topBar:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
   topBarLeft:  { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   hamburger:   { padding: 6, gap: 5 },
