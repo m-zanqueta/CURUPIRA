@@ -12,20 +12,20 @@ ALTER TABLE public.missoes
 
 UPDATE public.missoes
 SET dificuldade = CASE
-      WHEN COALESCE(xp, 0) <= 100 THEN 'facil'
-      WHEN COALESCE(xp, 0) <= 300 THEN 'media'
+      WHEN COALESCE(xp, 0) <= 10 THEN 'facil'
+      WHEN COALESCE(xp, 0) <= 20 THEN 'media'
       ELSE 'dificil'
     END,
     xp = CASE
-      WHEN COALESCE(xp, 0) <= 100 THEN 100
-      WHEN COALESCE(xp, 0) <= 300 THEN 300
-      ELSE 500
+      WHEN COALESCE(xp, 0) <= 10 THEN 10
+      WHEN COALESCE(xp, 0) <= 20 THEN 20
+      ELSE 40
     END;
 
 ALTER TABLE public.missoes
   ALTER COLUMN dificuldade SET DEFAULT 'media',
   ALTER COLUMN dificuldade SET NOT NULL,
-  ALTER COLUMN xp SET DEFAULT 300,
+  ALTER COLUMN xp SET DEFAULT 20,
   ALTER COLUMN xp SET NOT NULL;
 
 DO $$
@@ -38,9 +38,9 @@ BEGIN
     ALTER TABLE public.missoes
       ADD CONSTRAINT missoes_dificuldade_xp_check
       CHECK (
-        (dificuldade = 'facil' AND xp = 100) OR
-        (dificuldade = 'media' AND xp = 300) OR
-        (dificuldade = 'dificil' AND xp = 500)
+        (dificuldade = 'facil' AND xp = 10) OR
+        (dificuldade = 'media' AND xp = 20) OR
+        (dificuldade = 'dificil' AND xp = 40)
       );
   END IF;
 END $$;
@@ -310,9 +310,9 @@ DECLARE
   v_primeira_turma bigint;
 BEGIN
   IF NOT (
-    (p_dificuldade = 'facil' AND p_xp = 100) OR
-    (p_dificuldade = 'media' AND p_xp = 300) OR
-    (p_dificuldade = 'dificil' AND p_xp = 500)
+    (p_dificuldade = 'facil' AND p_xp = 10) OR
+    (p_dificuldade = 'media' AND p_xp = 20) OR
+    (p_dificuldade = 'dificil' AND p_xp = 40)
   ) THEN
     RAISE EXCEPTION 'Dificuldade e XP não correspondem.';
   END IF;

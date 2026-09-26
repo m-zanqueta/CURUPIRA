@@ -253,7 +253,7 @@ export default function DashboardScreen({ professor, onLogout }) {
     if (Object.values(erros).some(Boolean)) {
       return
     }
-    const xpPorDificuldade = { facil: 100, media: 300, dificil: 500 }
+    const xpPorDificuldade = { facil: 10, media: 20, dificil: 40 }
     const dados = {
       id: missaoEditando?.id,
       nome: novaMissao.name.trim(), descricao: novaMissao.descricao.trim(),
@@ -283,7 +283,7 @@ export default function DashboardScreen({ professor, onLogout }) {
 
   function editarMissao(missao) {
     setMissaoEditando(missao)
-    setNovaMissao({ name: missao.name, descricao: missao.descricao || '', turmaIds: missao.turmaIds || [], dificuldade: missao.dificuldade || (missao.xp <= 100 ? 'facil' : missao.xp <= 300 ? 'media' : 'dificil'), icon: missao.icon || null })
+    setNovaMissao({ name: missao.name, descricao: missao.descricao || '', turmaIds: missao.turmaIds || [], dificuldade: missao.dificuldade || (missao.xp <= 10 ? 'facil' : missao.xp <= 20 ? 'media' : 'dificil'), icon: missao.icon || null })
     setErrosMissao({})
     setModalMissao(true)
   }
@@ -1042,7 +1042,7 @@ export default function DashboardScreen({ professor, onLogout }) {
 
               <Text style={s.formLabel}>Dificuldade e XP da missão</Text>
               <View style={s.turmaPickerWrap}>
-                {[['facil', 'Fácil · 100 XP'], ['media', 'Média · 300 XP'], ['dificil', 'Difícil · 500 XP']].map(([id, label]) => (
+                {[['facil', 'Fácil · 10 XP'], ['media', 'Média · 20 XP'], ['dificil', 'Difícil · 40 XP']].map(([id, label]) => (
                   <TouchableOpacity key={id} style={[s.turmaPill, novaMissao.dificuldade === id && s.turmaPillActive]} onPress={() => atualizarCampoMissao('dificuldade', id)}>
                     <Text style={[s.turmaPillText, novaMissao.dificuldade === id && s.turmaPillTextActive]}>{label}</Text>
                   </TouchableOpacity>
