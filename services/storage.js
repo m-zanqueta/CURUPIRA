@@ -11,14 +11,14 @@ export async function inicializarProfessores() {
 
 // ── Professores ───────────────────────────────────────────
 
-export async function buscarProfessor(usuario, senha) {
+export async function buscarProfessor(emailDigitado, senhaDigitada) {
   try {
     const { data, error } = await supabase
       .from('professores')
       .select('*')
-      .eq('usuario', usuario)
-      .eq('senha', senha)
-      .single()
+      .eq('email', emailDigitado.trim().toLowerCase())
+      .eq('senha', senhaDigitada)
+      .maybeSingle()
 
     if (error) throw error
     return data
@@ -28,78 +28,201 @@ export async function buscarProfessor(usuario, senha) {
   }
 }
 
-// ── Turmas e Pets ─────────────────────────────────────────
+// ── Turmas e Pets (ATUALIZADO) ─────────────────────────────────────────
 
-export async function listarTurmas() {
+export async function listarTurmas(professorId) {
+  if (!professorId) return [];
+
   try {
-    // Busca as turmas e já puxa os dados do pet atrelado a ela
-    const { data, error } = await supabase
+    const { data: turmas, error: turmasError } = await supabase
       .from('turmas')
-      .select(`
-        id, 
-        nome,
-        pets ( icone, estagio, xp, progresso, emocao, cor, cosmetico )
-      `)
+      .select('id, nome, codigo, professor_id')
+      .eq('professor_id', professorId);
+    if (turmasError) throw turmasError;
+    if (!turmas?.length) return [];
 
-    if (error) throw error
+    const { data: pets, error: petsError } = await supabase
+      .from('pets')
+      .select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico, turma_id')
+      .in('turma_id', turmas.map(turma => turma.id));
+    if (petsError) throw petsError;
 
-    // Formata o retorno para ficar idêntico ao que o seu app antigo esperava
-    return data.map(turma => {
-      const pet = Array.isArray(turma.pets) ? turma.pets[0] : turma.pets
+    const petPorTurma = new Map((pets || []).map(pet => [String(pet.turma_id), pet]));
+    return turmas.map(turma => {
+      const pet = petPorTurma.get(String(turma.id));
       return {
-        id: turma.id,
-        nome: turma.nome,
-        pet: pet?.icone || '❓', // Mapeia a coluna 'icone' de volta para 'pet'
-        estagio: pet?.estagio || 'Desconhecido',
-        xp: pet?.xp || 0,
-        progresso: pet?.progresso || 0,
-        emocao: pet?.emocao || '😐',
-        cor: pet?.cor || '#888888',
-        cosmetico: pet?.cosmetico || false
-      }
-    })
-  } catch (error) {
-    console.error('Erro ao listar turmas:', error.message)
-    return []
-  }
-}
-
-export async function salvarTurmas(turmas) {
-  console.warn('A função salvarTurmas foi chamada, mas as turmas devem ser geridas no painel do Supabase.')
-}
-
-export async function buscarTurmaDoAluno(turmaId) {
-  if (!turmaId) return null
-
-  try {
-    const { data, error } = await supabase
-      .from('turmas')
-      .select(`
-        id, 
-        nome,
-        pets ( icone, estagio, xp, progresso, emocao, cor, cosmetico )
-      `)
-      .eq('id', turmaId)
-      .single()
-
-    if (error) throw error
-
-    const pet = Array.isArray(data.pets) ? data.pets[0] : data.pets
-    return {
-      id: data.id,
-      nome: data.nome,
-      pet: pet?.icone || '❓',
-      estagio: pet?.estagio || 'Desconhecido',
-      xp: pet?.xp || 0,
-      progresso: pet?.progresso || 0,
+      id: turma.id,
+      nome: turma.nome,
+      codigo: turma.codigo,
+      professorId: turma.professor_id,
+      petId: pet?.id || null,
+      pet: pet?.icone || null,
+      estagio: pet?.estagio || 'Filhote',
+      xp: Number(pet?.xp) || 0,
+      progresso: Number(pet?.progresso) || 0,
       emocao: pet?.emocao || '😐',
       cor: pet?.cor || '#888888',
-      cosmetico: pet?.cosmetico || false
+      cosmetico: pet?.cosmetico || false,
+      };
+    });
+  } catch (error) {
+    console.error('Erro ao listar turmas:', error.message);
+    return [];
+  }
+}
+
+export async function listarPetsDisponiveis() {
+  const { data, error } = await supabase
+    .from('pets')
+    .select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico, turma_id')
+    .is('turma_id', null)
+    .order('id', { ascending: true });
+
+  if (error) throw error;
+
+  // A coluna icone deve conter a URL pública da imagem no Supabase Storage.
+  return (data || []).filter(pet =>
+    typeof pet.icone === 'string' && /^https?:\/\//i.test(pet.icone.trim())
+  );
+}
+
+export async function salvarTurma(novaTurma) {
+  if (!novaTurma?.professorId) {
+    throw new Error('O ID do professor é necessário para criar uma turma.');
+  }
+  if (!novaTurma?.petId) {
+    throw new Error('Selecione um PET disponível para criar a turma.');
+  }
+
+  const { data: turmaData, error: turmaError } = await supabase
+    .from('turmas')
+    .insert([{
+      nome: novaTurma.nome,
+      codigo: novaTurma.codigo,
+      professor_id: novaTurma.professorId,
+    }])
+    .select()
+    .single();
+
+  if (turmaError) throw turmaError;
+
+  const { data: petVinculado, error: petError } = await supabase
+    .from('pets')
+    .update({ turma_id: turmaData.id, cor: novaTurma.cor })
+    .eq('id', novaTurma.petId)
+    .is('turma_id', null)
+    .select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico, turma_id')
+    .maybeSingle();
+
+  if (petError || !petVinculado) {
+    const { error: rollbackError } = await supabase
+      .from('turmas')
+      .delete()
+      .eq('id', turmaData.id)
+      .eq('professor_id', novaTurma.professorId);
+
+    if (rollbackError) console.error('Erro ao desfazer criação parcial da turma:', rollbackError);
+    if (petError) throw petError;
+    throw new Error('Este PET já foi vinculado a outra turma. Atualize a lista e escolha outro PET.');
+  }
+
+  return { ...turmaData, pet: petVinculado };
+}
+
+export async function atualizarTurma(id, dadosAtualizados) {
+  try {
+    // Atualiza nome da turma
+    await supabase.from('turmas').update({ nome: dadosAtualizados.nome }).eq('id', id);
+    
+    // Atualiza dados do pet se existir o ID dele
+    if (dadosAtualizados.petId) {
+      await supabase.from('pets').update({
+        icone: dadosAtualizados.pet,
+        cor: dadosAtualizados.cor
+      }).eq('id', dadosAtualizados.petId);
     }
   } catch (error) {
-    console.error('Erro ao buscar turma do aluno:', error.message)
-    return null
+    console.error('Erro ao atualizar turma:', error.message);
   }
+}
+
+export async function removerTurmaStorage(id, professorId) {
+  if (!professorId) {
+    throw new Error('O ID do professor é necessário para excluir uma turma.');
+  }
+
+  const { data, error } = await supabase
+    .from('turmas')
+    .delete()
+    .eq('id', id)
+    .eq('professor_id', professorId)
+    .select('id')
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error('Turma não encontrada ou não pertence a este professor.');
+}
+
+// ── Missões e Conquistas (NOVOS) ─────────────────────────────────────────
+
+export async function listarMissoes(professorId) {
+  const { data, error } = await supabase.from('missoes').select('*').eq('professorId', professorId).order('id', { ascending: false });
+  if (error) throw error;
+  const ids = (data || []).map(m => m.id);
+  const { data: vinculos, error: vinculosError } = ids.length
+    ? await supabase.from('missoes_turmas').select('missao_id, turma_id').in('missao_id', ids)
+    : { data: [], error: null };
+  if (vinculosError) throw vinculosError;
+  const porMissao = new Map();
+  (vinculos || []).forEach(v => porMissao.set(String(v.missao_id), [...(porMissao.get(String(v.missao_id)) || []), v.turma_id]));
+  return (data || []).map(m => ({ ...m, name: m.nome, icon: m.icone, active: m.ativa, turmaIds: porMissao.get(String(m.id)) || [] }));
+}
+
+export async function listarIconesMissoes() {
+  const { data, error } = await supabase.from('icones_missoes').select('id, nome, icone').eq('ativo', true).order('id');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function salvarMissao(missao) {
+  const { data: id, error } = await supabase.rpc('salvar_missao_com_turmas', {
+    p_missao_id: missao.id || null,
+    p_professor_id: missao.professorId,
+    p_nome: missao.nome,
+    p_descricao: missao.descricao,
+    p_xp: missao.xp,
+    p_dificuldade: missao.dificuldade,
+    p_icone: missao.icone,
+    p_ativa: missao.ativa ?? true,
+    p_turmas_ids: missao.turmasIds,
+  });
+  if (error) throw error;
+  const { data, error: fetchError } = await supabase.from('missoes').select('*').eq('id', id).single();
+  if (fetchError) throw fetchError;
+  return { ...data, name: data.nome, icon: data.icone, active: data.ativa, turmaIds: missao.turmasIds };
+}
+
+export async function atualizarMissao(id, dados) {
+  if (dados.nome !== undefined || dados.turmasIds !== undefined) return salvarMissao({ ...dados, id });
+  const { data, error } = await supabase.from('missoes').update(dados).eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function definirTurmasMissao(id, professorId, turmasIds) {
+  const { error } = await supabase.rpc('definir_turmas_missao', { p_missao_id: id, p_professor_id: professorId, p_turmas_ids: turmasIds });
+  if (error) throw error;
+}
+
+export async function listarStatusMissoes() {
+  const { data, error } = await supabase.from('alunos_missoes').select('aluno_id, missao_id, status');
+  if (error) throw error;
+  return data || [];
+}
+
+export async function removerMissaoStorage(id) {
+  const { error } = await supabase.from('missoes').delete().eq('id', id)
+  if (error) throw error
 }
 
 // ── Alunos ────────────────────────────────────────────────
@@ -221,3 +344,60 @@ export async function comprarItem(itemId) {
     await AsyncStorage.setItem('itens_comprados', JSON.stringify(itens))
   }
 }
+
+// Procura todas as missões no banco de dados
+export const buscarMissoes = async () => {
+  const { data, error } = await supabase
+    .from('missoes')
+    .select('*')
+    .order('id', { ascending: false });
+
+  if (error) {
+    console.error('Erro ao buscar missões:', error.message);
+    throw error;
+  }
+  return data;
+};
+
+// Insere uma nova missão
+export const criarMissao = async (novaMissao) => {
+  const { data, error } = await supabase
+    .from('missoes')
+    .insert([novaMissao])
+    .select();
+
+  if (error) {
+    console.error('Erro ao criar missão:', error.message);
+    throw error;
+  }
+  return data;
+};
+
+// Atualiza o estado da missão (ativa/pausada)
+export const atualizarStatusMissao = async (id, status) => {
+  const { data, error } = await supabase
+    .from('missoes')
+    .update({ status })
+    .eq('id', id);
+
+  if (error) {
+    console.error('Erro ao atualizar status da missão:', error.message);
+    throw error;
+  }
+  return data;
+};
+
+// Atualiza o estado da entrega de um aluno específico
+export const atualizarStatusAlunoMissao = async (missaoId, alunoId, novoStatus) => {
+  const { data, error } = await supabase
+    .from('alunos_missoes')
+    .upsert({ missao_id: missaoId, aluno_id: alunoId, status: novoStatus }, { onConflict: 'aluno_id,missao_id' })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Erro ao atualizar entrega do aluno:', error.message);
+    throw error;
+  }
+  return data;
+};
