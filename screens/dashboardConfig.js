@@ -9,7 +9,6 @@ export const NAV = [
   { id: 'conquistas', label: 'Conquistas', icon: '🎖️' },
 ];
 
-export const PETS = ['🐉', '🦊', '🦅', '🐺', '🦁', '🐯', '🦋', '🐸', '🦉', '🐻'];
 export const CORES = [colors.green, colors.purple, colors.yellow, '#e74c3c', '#3498db', '#e67e22'];
 export const MEDALS = ['🥇', '🥈', '🥉', '4️⃣'];
 export const RARIDADE_CONFIG = {

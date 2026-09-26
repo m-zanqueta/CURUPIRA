@@ -5,8 +5,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme';
-import { listarAlunos, atualizarAluno, listarTurmas, salvarTurma, listarMissoes, salvarMissao, atualizarMissao, removerMissaoStorage } from '../services/storage';
-import { PETS, CORES, MEDALS, RARIDADE_CONFIG, CRITERIOS, MISSION_ICONS } from './dashboardConfig';
+import { listarAlunos, atualizarAluno, listarTurmas, listarPetsDisponiveis, salvarTurma, removerTurmaStorage, listarMissoes, salvarMissao, atualizarMissao, removerMissaoStorage } from '../services/storage';
+import { CORES, MEDALS, RARIDADE_CONFIG, CRITERIOS, MISSION_ICONS } from './dashboardConfig';
 import DashboardSidebar from './DashboardSidebar';
 
 const { width } = Dimensions.get('window');
@@ -16,13 +16,15 @@ export default function DashboardScreen({ professor, onLogout }) {
   const [activeNav, setActiveNav]     = useState('overview')
   const [menuOpen, setMenuOpen]       = useState(false)
   const [turmas, setTurmas]           = useState([])
+  const [petsDisponiveis, setPetsDisponiveis] = useState([])
+  const [carregandoPets, setCarregandoPets] = useState(false)
   const [missions, setMissions]       = useState([])
   const [alunos, setAlunos]           = useState([])
   const [conquistas, setConquistas]   = useState([])
 
   // Modal de criar turma
   const [modalTurma, setModalTurma]   = useState(false)
-  const [novaTurma, setNovaTurma]     = useState({ nome: '', pet: '🐉', cor: colors.green, alunosNomes: '' })
+  const [novaTurma, setNovaTurma]     = useState({ nome: '', petId: null, cor: colors.green, alunosNomes: '' })
 
   // Modal de criar missão
   const [modalMissao, setModalMissao] = useState(false)
@@ -80,21 +82,21 @@ export default function DashboardScreen({ professor, onLogout }) {
   useEffect(() => {
     let ativo = true
     async function carregarMissoes() {
-      let dados
-      let turmasCarregadas
-      try {
-        const [missoesDoBanco, turmasDoBanco] = await Promise.all([
-          listarMissoes(professor?.id),
-          listarTurmas(professor?.id),
-        ])
-        dados = missoesDoBanco
-        turmasCarregadas = turmasDoBanco
-        if (ativo) setTurmas(turmasDoBanco)
-      } catch (error) {
-        if (ativo) Alert.alert('Erro', `Não foi possível carregar as missões: ${error.message || 'verifique sua conexão.'}`)
+      const [missoesResult, turmasResult] = await Promise.allSettled([
+        listarMissoes(professor.id),
+        listarTurmas(professor.id),
+      ])
+      if (!ativo) return
+
+      const turmasCarregadas = turmasResult.status === 'fulfilled' ? turmasResult.value : []
+      setTurmas(turmasCarregadas)
+
+      if (missoesResult.status === 'rejected') {
+        Alert.alert('Erro', `Não foi possível carregar as missões: ${missoesResult.reason?.message || 'verifique sua conexão.'}`)
         return
       }
-      if (ativo) setMissions((dados || []).map((m, index) => ({
+
+      setMissions((missoesResult.value || []).map((m, index) => ({
         ...m,
         name: m.name || '',
         descricao: m.descricao || m.description || '',
@@ -156,17 +158,25 @@ export default function DashboardScreen({ professor, onLogout }) {
 
   async function adicionarTurma() {
     if (!novaTurma.nome.trim()) { Alert.alert('Atenção', 'Digite o nome da turma!'); return; }
+    const petSelecionado = petsDisponiveis.find(pet => String(pet.id) === String(novaTurma.petId));
+    if (!petSelecionado) {
+      Alert.alert('Atenção', 'Não há PET disponível para vincular. Atualize a lista ou cadastre um PET no banco.');
+      return;
+    }
     if (!professor?.id) {
       Alert.alert('Erro', 'Não foi possível identificar o professor conectado. Entre novamente e tente criar a turma.');
       return;
     }
 
-    const codigo = `CUR-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const alfabetoCodigo = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const codigo = Array.from({ length: 5 }, () =>
+      alfabetoCodigo[Math.floor(Math.random() * alfabetoCodigo.length)]
+    ).join('');
     const dadosNovaTurma = {
       nome: novaTurma.nome.trim(),
       codigo,
       professorId: professor.id,
-      pet: novaTurma.pet,
+      petId: petSelecionado.id,
       cor: novaTurma.cor,
     };
 
@@ -174,16 +184,19 @@ export default function DashboardScreen({ professor, onLogout }) {
       const turmaSalva = await salvarTurma(dadosNovaTurma);
       const nova = {
         ...turmaSalva,
-        pet: dadosNovaTurma.pet,
-        estagio: 'Filhote',
-        xp: 0,
-        progresso: 0,
-        emocao: '😊',
-        cor: dadosNovaTurma.cor,
-        cosmetico: false,
+        professorId: turmaSalva.professor_id,
+        petId: turmaSalva.pet.id,
+        pet: turmaSalva.pet.icone,
+        estagio: turmaSalva.pet.estagio || 'Filhote',
+        xp: Number(turmaSalva.pet.xp) || 0,
+        progresso: Number(turmaSalva.pet.progresso) || 0,
+        emocao: turmaSalva.pet.emocao || '😊',
+        cor: turmaSalva.pet.cor || dadosNovaTurma.cor,
+        cosmetico: Boolean(turmaSalva.pet.cosmetico),
       };
       setTurmas(prev => [...prev, nova]);
-      setNovaTurma({ nome: '', pet: '🐉', cor: colors.green, alunosNomes: '' });
+      setPetsDisponiveis(prev => prev.filter(pet => String(pet.id) !== String(petSelecionado.id)));
+      setNovaTurma({ nome: '', petId: null, cor: colors.green, alunosNomes: '' });
       setModalTurma(false);
       Alert.alert('✅ Turma criada!', `A turma "${nova.nome}" foi salva com sucesso.`);
     } catch (error) {
@@ -192,15 +205,43 @@ export default function DashboardScreen({ professor, onLogout }) {
     }
   }
 
+  async function confirmarRemocaoTurma(id) {
+    try {
+      await removerTurmaStorage(id, professor?.id);
+      setTurmas(prev => prev.filter(t => t.id !== id));
+    } catch (error) {
+      console.error('Erro ao remover turma:', error);
+      Alert.alert('Erro', `Não foi possível excluir a turma: ${formatarErroSupabase(error)}`);
+    }
+  }
+
+  async function abrirModalTurma() {
+    setModalTurma(true);
+    setCarregandoPets(true);
+    setPetsDisponiveis([]);
+    setNovaTurma(prev => ({ ...prev, petId: null }));
+
+    try {
+      const disponiveis = await listarPetsDisponiveis();
+      setPetsDisponiveis(disponiveis);
+      setNovaTurma(prev => ({ ...prev, petId: disponiveis[0]?.id || null }));
+    } catch (error) {
+      console.error('Erro ao carregar PETs disponíveis:', error);
+      Alert.alert('Erro', `Não foi possível carregar os PETs: ${formatarErroSupabase(error)}`);
+    } finally {
+      setCarregandoPets(false);
+    }
+  }
+
   function removerTurma(id) {
     if (Platform.OS === 'web') {
       if (window.confirm('Tem certeza que deseja remover esta turma?')) {
-        setTurmas(prev => prev.filter(t => t.id !== id))
+        confirmarRemocaoTurma(id);
       }
     } else {
       Alert.alert('Remover turma', 'Tem certeza?', [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Remover', style: 'destructive', onPress: () => setTurmas(prev => prev.filter(t => t.id !== id)) }
+        { text: 'Remover', style: 'destructive', onPress: () => confirmarRemocaoTurma(id) }
       ])
     }
   }
@@ -513,7 +554,7 @@ export default function DashboardScreen({ professor, onLogout }) {
       <View style={{ gap: 14 }}>
         <View style={s.screenHeader}>
           <Text style={s.screenTitle}>👥 Turmas</Text>
-          <TouchableOpacity style={s.btnNew} onPress={() => setModalTurma(true)}>
+          <TouchableOpacity style={s.btnNew} onPress={abrirModalTurma}>
             <Text style={s.btnNewText}>+ Nova Turma</Text>
           </TouchableOpacity>
         </View>
@@ -523,7 +564,7 @@ export default function DashboardScreen({ professor, onLogout }) {
             <View key={t.id} style={s.panel}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 <View style={[s.petAvatarSmall, { borderColor: t.cor }]}>
-                  <Text style={{ fontSize: 28 }}>{t.pet}</Text>
+                  <PetImage uri={t.pet} width={42} height={42} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.turmaName}>{t.nome}</Text>
@@ -757,7 +798,7 @@ export default function DashboardScreen({ professor, onLogout }) {
             <View key={t.id} style={s.petCard}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 <View style={[s.petAvatar, { borderColor: t.cor }]}>
-                  <Text style={s.petEmoji}>{t.pet}</Text>
+                  <PetImage uri={t.pet} width={120} height={120} />
                   {t.cosmetico && (
                     <Image source={require('../assets/chapeu-horta.png')} style={s.petChapeu} resizeMode="contain" />
                   )}
@@ -861,14 +902,26 @@ export default function DashboardScreen({ professor, onLogout }) {
                 value={novaTurma.nome} onChangeText={t => setNovaTurma({ ...novaTurma, nome: t })} />
 
               <Text style={s.formLabel}>Escolha o pet</Text>
-              <View style={s.petPicker}>
-                {PETS.map(p => (
-                  <TouchableOpacity key={p} style={[s.petOption, novaTurma.pet === p && s.petOptionActive]}
-                    onPress={() => setNovaTurma({ ...novaTurma, pet: p })}>
-                    <Text style={{ fontSize: 22 }}>{p}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {carregandoPets ? (
+                <Text style={s.emptySubtext}>Carregando PETs disponíveis...</Text>
+              ) : petsDisponiveis.length > 0 ? (
+                <View style={s.petPicker}>
+                  {petsDisponiveis.map(pet => (
+                    <TouchableOpacity
+                      key={pet.id}
+                      style={[s.petOption, String(novaTurma.petId) === String(pet.id) && s.petOptionActive]}
+                      onPress={() => setNovaTurma(prev => ({ ...prev, petId: pet.id }))}
+                    >
+                      <Image source={{ uri: pet.icone }} style={s.petOptionImage} resizeMode="contain" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <View style={s.noPetsState}>
+                  <Text style={s.noPetsGhost}>👻</Text>
+                  <Text style={s.emptySubtext}>Ainda não existem PETs disponíveis. Cadastre ou libere um PET no banco para criar uma turma.</Text>
+                </View>
+              )}
 
               <Text style={s.formLabel}>Cor da turma</Text>
               <View style={s.colorPicker}>
@@ -882,7 +935,11 @@ export default function DashboardScreen({ professor, onLogout }) {
                 <TouchableOpacity style={s.btnCancel} onPress={() => setModalTurma(false)}>
                   <Text style={s.btnCancelText}>Cancelar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.btnConfirm} onPress={adicionarTurma}>
+                <TouchableOpacity
+                  style={[s.btnConfirm, (carregandoPets || !petsDisponiveis.length || !novaTurma.petId) && s.btnConfirmDisabled]}
+                  onPress={adicionarTurma}
+                  disabled={carregandoPets || !petsDisponiveis.length || !novaTurma.petId}
+                >
                   <Text style={s.btnConfirmText}>Criar Turma</Text>
                 </TouchableOpacity>
               </View>
@@ -1019,9 +1076,10 @@ export default function DashboardScreen({ professor, onLogout }) {
                   style={[s.turmaPill, alunoTurmaEdit?.id === t.id && s.turmaPillActive]}
                   onPress={() => setAlunoTurmaEdit(t)}
                 >
-                  <Text style={[s.turmaPillText, alunoTurmaEdit?.id === t.id && s.turmaPillTextActive]}>
-                    {t.pet} {t.nome}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <PetImage uri={t.pet} width={20} height={20} />
+                    <Text style={[s.turmaPillText, alunoTurmaEdit?.id === t.id && s.turmaPillTextActive]}>{t.nome}</Text>
+                  </View>
                 </TouchableOpacity>
               ))}
             </View>
@@ -1547,6 +1605,25 @@ function formatarErroSupabase(error) {
   return detalhe ? `${mensagem} (${detalhe})` : mensagem;
 }
 
+function PetImage({ uri, width, height }) {
+  const [imagemFalhou, setImagemFalhou] = useState(false);
+
+  useEffect(() => setImagemFalhou(false), [uri]);
+
+  if (!uri || imagemFalhou) {
+    return <Text style={{ fontSize: Math.min(width, height) * 0.65 }}>🐾</Text>;
+  }
+
+  return (
+    <Image
+      source={{ uri }}
+      style={{ width, height }}
+      resizeMode="contain"
+      onError={() => setImagemFalhou(true)}
+    />
+  );
+}
+
 const s = StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.cream },
   main:        { flex: 1 },
@@ -1642,7 +1719,10 @@ const s = StyleSheet.create({
   formInput:    { borderWidth: 1.5, borderColor: colors.border, borderRadius: 8, padding: 11, fontSize: 14, fontFamily: fonts.regular, color: colors.dark, backgroundColor: colors.cream },
   petPicker:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   petOption:    { width: 44, height: 44, borderRadius: 10, borderWidth: 2, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.cream },
+  petOptionImage:{ width: 36, height: 36 },
   petOptionActive:{ borderColor: colors.green, backgroundColor: colors.greenLight },
+  noPetsState:  { alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8 },
+  noPetsGhost:  { fontSize: 32 },
   colorPicker:  { flexDirection: 'row', gap: 10 },
   colorOption:  { width: 32, height: 32, borderRadius: 16 },
   colorOptionActive:{ borderWidth: 3, borderColor: colors.dark },
@@ -1655,6 +1735,7 @@ const s = StyleSheet.create({
   btnCancel:    { flex: 1, padding: 12, borderRadius: 8, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center' },
   btnCancelText:{ fontSize: 14, fontFamily: fonts.semibold, color: colors.muted },
   btnConfirm:   { flex: 1, padding: 12, borderRadius: 8, backgroundColor: colors.green, alignItems: 'center' },
+  btnConfirmDisabled:{ opacity: 0.5 },
   btnConfirmText:{ fontSize: 14, fontFamily: fonts.semibold, color: '#fff' },
 
   // Empty state

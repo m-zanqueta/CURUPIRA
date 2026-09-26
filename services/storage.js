@@ -31,37 +31,38 @@ export async function buscarProfessor(emailDigitado, senhaDigitada) {
 // ── Turmas e Pets (ATUALIZADO) ─────────────────────────────────────────
 
 export async function listarTurmas(professorId) {
+  if (!professorId) return [];
+
   try {
-    let query = supabase
+    const { data: turmas, error: turmasError } = await supabase
       .from('turmas')
-      .select(`
-        id, nome, codigo, professorId,
-        pets ( id, icone, estagio, xp, progresso, emocao, cor, cosmetico )
-      `);
+      .select('id, nome, codigo, professor_id')
+      .eq('professor_id', professorId);
+    if (turmasError) throw turmasError;
+    if (!turmas?.length) return [];
 
-    // Se passar o ID do professor, filtra apenas as turmas dele
-    if (professorId) {
-      query = query.eq('professorId', professorId);
-    }
+    const { data: pets, error: petsError } = await supabase
+      .from('pets')
+      .select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico, turma_id')
+      .in('turma_id', turmas.map(turma => turma.id));
+    if (petsError) throw petsError;
 
-    const { data, error } = await query;
-    if (error) throw error;
-
-    return data.map(turma => {
-      const pet = Array.isArray(turma.pets) ? turma.pets[0] : turma.pets;
+    const petPorTurma = new Map((pets || []).map(pet => [String(pet.turma_id), pet]));
+    return turmas.map(turma => {
+      const pet = petPorTurma.get(String(turma.id));
       return {
-        id: turma.id,
-        nome: turma.nome,
-        codigo: turma.codigo,
-        professorId: turma.professorId,
-        petId: pet?.id,
-        pet: pet?.icone || '❓',
-        estagio: pet?.estagio || 'Filhote',
-        xp: pet?.xp || 0,
-        progresso: pet?.progresso || 0,
-        emocao: pet?.emocao || '😐',
-        cor: pet?.cor || '#888888',
-        cosmetico: pet?.cosmetico || false
+      id: turma.id,
+      nome: turma.nome,
+      codigo: turma.codigo,
+      professorId: turma.professor_id,
+      petId: pet?.id || null,
+      pet: pet?.icone || null,
+      estagio: pet?.estagio || 'Filhote',
+      xp: Number(pet?.xp) || 0,
+      progresso: Number(pet?.progresso) || 0,
+      emocao: pet?.emocao || '😐',
+      cor: pet?.cor || '#888888',
+      cosmetico: pet?.cosmetico || false,
       };
     });
   } catch (error) {
@@ -70,38 +71,62 @@ export async function listarTurmas(professorId) {
   }
 }
 
+export async function listarPetsDisponiveis() {
+  const { data, error } = await supabase
+    .from('pets')
+    .select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico, turma_id')
+    .is('turma_id', null)
+    .order('id', { ascending: true });
+
+  if (error) throw error;
+
+  // A coluna icone deve conter a URL pública da imagem no Supabase Storage.
+  return (data || []).filter(pet =>
+    typeof pet.icone === 'string' && /^https?:\/\//i.test(pet.icone.trim())
+  );
+}
+
 export async function salvarTurma(novaTurma) {
+  if (!novaTurma?.professorId) {
+    throw new Error('O ID do professor é necessário para criar uma turma.');
+  }
+  if (!novaTurma?.petId) {
+    throw new Error('Selecione um PET disponível para criar a turma.');
+  }
+
   const { data: turmaData, error: turmaError } = await supabase
     .from('turmas')
     .insert([{
       nome: novaTurma.nome,
       codigo: novaTurma.codigo,
-      professorId: novaTurma.professorId,
+      professor_id: novaTurma.professorId,
     }])
     .select()
     .single();
 
   if (turmaError) throw turmaError;
 
-  const { error: petError } = await supabase
+  const { data: petVinculado, error: petError } = await supabase
     .from('pets')
-    .insert([{
-      turmaId: turmaData.id,
-      icone: novaTurma.pet,
-      cor: novaTurma.cor,
-      estagio: 'Filhote',
-      xp: 0,
-      progresso: 0,
-      emocao: '😊',
-    }]);
+    .update({ turma_id: turmaData.id, cor: novaTurma.cor })
+    .eq('id', novaTurma.petId)
+    .is('turma_id', null)
+    .select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico, turma_id')
+    .maybeSingle();
 
-  if (petError) {
-    // Evita deixar a turma gravada sem o pet que o app associa a ela.
-    await supabase.from('turmas').delete().eq('id', turmaData.id);
-    throw petError;
+  if (petError || !petVinculado) {
+    const { error: rollbackError } = await supabase
+      .from('turmas')
+      .delete()
+      .eq('id', turmaData.id)
+      .eq('professor_id', novaTurma.professorId);
+
+    if (rollbackError) console.error('Erro ao desfazer criação parcial da turma:', rollbackError);
+    if (petError) throw petError;
+    throw new Error('Este PET já foi vinculado a outra turma. Atualize a lista e escolha outro PET.');
   }
 
-  return turmaData;
+  return { ...turmaData, pet: petVinculado };
 }
 
 export async function atualizarTurma(id, dadosAtualizados) {
@@ -121,15 +146,21 @@ export async function atualizarTurma(id, dadosAtualizados) {
   }
 }
 
-export async function removerTurmaStorage(id) {
-  try {
-    // O Supabase deleta o PET automaticamente se a chave estrangeira (foreign key) tiver "Cascade Delete".
-    // Caso contrário, deletamos o pet primeiro:
-    await supabase.from('pets').delete().eq('turmaId', id);
-    await supabase.from('turmas').delete().eq('id', id);
-  } catch (error) {
-    console.error('Erro ao remover turma:', error.message);
+export async function removerTurmaStorage(id, professorId) {
+  if (!professorId) {
+    throw new Error('O ID do professor é necessário para excluir uma turma.');
   }
+
+  const { data, error } = await supabase
+    .from('turmas')
+    .delete()
+    .eq('id', id)
+    .eq('professor_id', professorId)
+    .select('id')
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw new Error('Turma não encontrada ou não pertence a este professor.');
 }
 
 // ── Missões e Conquistas (NOVOS) ─────────────────────────────────────────
