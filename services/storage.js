@@ -166,29 +166,58 @@ export async function removerTurmaStorage(id, professorId) {
 // ── Missões e Conquistas (NOVOS) ─────────────────────────────────────────
 
 export async function listarMissoes(professorId) {
-  try {
-    const { data, error } = await supabase.from('missoes').select('*').eq('professorId', professorId).order('id', { ascending: false });
-    if (error) throw error;
-    return data || [];
-  } catch (error) {
-    console.error('Erro ao listar missões:', error.message)
-    throw error
-  }
+  const { data, error } = await supabase.from('missoes').select('*').eq('professorId', professorId).order('id', { ascending: false });
+  if (error) throw error;
+  const ids = (data || []).map(m => m.id);
+  const { data: vinculos, error: vinculosError } = ids.length
+    ? await supabase.from('missoes_turmas').select('missao_id, turma_id').in('missao_id', ids)
+    : { data: [], error: null };
+  if (vinculosError) throw vinculosError;
+  const porMissao = new Map();
+  (vinculos || []).forEach(v => porMissao.set(String(v.missao_id), [...(porMissao.get(String(v.missao_id)) || []), v.turma_id]));
+  return (data || []).map(m => ({ ...m, name: m.nome, icon: m.icone, active: m.ativa, turmaIds: porMissao.get(String(m.id)) || [] }));
+}
+
+export async function listarIconesMissoes() {
+  const { data, error } = await supabase.from('icones_missoes').select('id, nome, icone').eq('ativo', true).order('id');
+  if (error) throw error;
+  return data || [];
 }
 
 export async function salvarMissao(missao) {
-  const { data, error } = await supabase.from('missoes').insert([missao]).select().single()
-  if (error) {
-    console.error('Erro ao salvar missão no Supabase:', error)
-    throw error
-  }
-  return data
+  const { data: id, error } = await supabase.rpc('salvar_missao_com_turmas', {
+    p_missao_id: missao.id || null,
+    p_professor_id: missao.professorId,
+    p_nome: missao.nome,
+    p_descricao: missao.descricao,
+    p_xp: missao.xp,
+    p_dificuldade: missao.dificuldade,
+    p_icone: missao.icone,
+    p_ativa: missao.ativa ?? true,
+    p_turmas_ids: missao.turmasIds,
+  });
+  if (error) throw error;
+  const { data, error: fetchError } = await supabase.from('missoes').select('*').eq('id', id).single();
+  if (fetchError) throw fetchError;
+  return { ...data, name: data.nome, icon: data.icone, active: data.ativa, turmaIds: missao.turmasIds };
 }
 
 export async function atualizarMissao(id, dados) {
-  const { data, error } = await supabase.from('missoes').update(dados).eq('id', id).select().single()
-  if (error) throw error
-  return data
+  if (dados.nome !== undefined || dados.turmasIds !== undefined) return salvarMissao({ ...dados, id });
+  const { data, error } = await supabase.from('missoes').update(dados).eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function definirTurmasMissao(id, professorId, turmasIds) {
+  const { error } = await supabase.rpc('definir_turmas_missao', { p_missao_id: id, p_professor_id: professorId, p_turmas_ids: turmasIds });
+  if (error) throw error;
+}
+
+export async function listarStatusMissoes() {
+  const { data, error } = await supabase.from('alunos_missoes').select('aluno_id, missao_id, status');
+  if (error) throw error;
+  return data || [];
 }
 
 export async function removerMissaoStorage(id) {
@@ -330,7 +359,7 @@ export const buscarMissoes = async () => {
   return data;
 };
 
-// Insere uma nova missão/tarefa
+// Insere uma nova missão
 export const criarMissao = async (novaMissao) => {
   const { data, error } = await supabase
     .from('missoes')
@@ -362,9 +391,9 @@ export const atualizarStatusMissao = async (id, status) => {
 export const atualizarStatusAlunoMissao = async (missaoId, alunoId, novoStatus) => {
   const { data, error } = await supabase
     .from('alunos_missoes')
-    .update({ status: novoStatus })
-    .eq('missao_id', missaoId)
-    .eq('aluno_id', alunoId);
+    .upsert({ missao_id: missaoId, aluno_id: alunoId, status: novoStatus }, { onConflict: 'aluno_id,missao_id' })
+    .select()
+    .single();
 
   if (error) {
     console.error('Erro ao atualizar entrega do aluno:', error.message);

@@ -18,10 +18,9 @@ export const RARIDADE_CONFIG = {
   Lendário: { color: '#c8960a', bg: colors.yellowLight, emoji: '🌟' },
 };
 export const CRITERIOS = [
-  { id: 'primeira_tarefa', label: 'Completar a 1ª missão' },
+  { id: 'primeira_missao', label: 'Completar a 1ª missão' },
   { id: 'total_missoes', label: 'Completar X missões no total' },
   { id: 'acumular_xp', label: 'Acumular X de XP' },
   { id: 'missao_especifica', label: 'Completar uma missão específica' },
   { id: 'categoria', label: 'X missões de uma categoria' },
 ];
-export const MISSION_ICONS = ['🌱', '📖', '🎵', '🏃', '🎨', '🔬', '🏀', '🎭', '🌍', '🤝'];
