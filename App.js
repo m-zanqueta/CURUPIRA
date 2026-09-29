@@ -15,6 +15,7 @@ import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
 import DashboardScreen from './screens/DashboardScreen'
+import AdminDashboardScreen from './screens/AdminDashboardScreen'
 import PetScreen from './screens/PetScreen'
 import LojaScreen from './screens/LojaScreen'
 
@@ -46,6 +47,11 @@ export default function App() {
       setTela(destino)
       Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start()
     })
+  }
+
+  function entrarAreaProfessor(usuario) {
+    setProfessor(usuario)
+    navegarCom(usuario?.tipo === 'admin' ? 'dashboardAdmin' : 'dashboardProfessor')
   }
 
       async function handleLoginAluno(alunoLogado) {
@@ -91,12 +97,16 @@ export default function App() {
         )}
         {tela === 'loginProfessor' && (
           <LoginProfessor
-            onLogin={(prof) => { setProfessor(prof); navegarCom('dashboardProfessor') }}
+            onLogin={entrarAreaProfessor}
+            onAdminLogin={entrarAreaProfessor}
             onSouAluno={() => navegarCom('login')}
           />
         )}
+        {tela === 'dashboardAdmin' && (
+          professor?.tipo === 'admin' ? <AdminDashboardScreen usuario={professor} onLogout={() => navegarCom('loginProfessor')} /> : <LoginProfessor onLogin={entrarAreaProfessor} onAdminLogin={entrarAreaProfessor} onSouAluno={() => navegarCom('login')} />
+        )}
         {tela === 'dashboardProfessor' && (
-          <DashboardScreen professor={professor} onLogout={() => navegarCom('loginProfessor')} />
+          professor?.tipo !== 'admin' ? <DashboardScreen professor={professor} onLogout={() => navegarCom('loginProfessor')} /> : <AdminDashboardScreen usuario={professor} onLogout={() => navegarCom('loginProfessor')} />
         )}
         {tela === 'pet' && (
           <PetScreen aluno={aluno} turma={turmaAluno} onLogout={() => navegarCom('login')} />

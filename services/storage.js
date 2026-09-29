@@ -28,6 +28,45 @@ export async function buscarProfessor(emailDigitado, senhaDigitada) {
   }
 }
 
+export async function salvarProfessor(dados) {
+  const { data, error } = await supabase
+    .from('professores')
+    .insert([{ nome: dados.nome.trim(), email: dados.email.trim().toLowerCase(), senha: dados.senha }])
+    .select('id, nome, email')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function salvarPetAdmin(dados) {
+  const { data, error } = await supabase
+    .from('pets')
+    .insert([{
+      icone: dados.icone.trim(),
+      estagio: dados.estagio.trim() || 'Filhote',
+      xp: 0,
+      progresso: 0,
+      emocao: '😐',
+      cor: dados.cor || '#009D25',
+      cosmetico: null,
+      turma_id: null,
+    }])
+    .select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico, turma_id')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function salvarIconeMissao(dados) {
+  const { data, error } = await supabase
+    .from('icones_missoes')
+    .insert([{ nome: dados.nome.trim(), icone: dados.icone.trim(), ativo: true }])
+    .select('id, nome, icone, ativo')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 // ── Turmas e Pets (ATUALIZADO) ─────────────────────────────────────────
 
 export async function listarTurmas(professorId) {
