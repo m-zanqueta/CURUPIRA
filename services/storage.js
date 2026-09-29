@@ -239,11 +239,15 @@ export async function listarAlunos() {
 }
 
 export async function buscarAluno(email, senha) {
-  // A lógica da loja continua igual
+  // ⚠️ MOCK — não é dado real do Supabase. Atalho fixo pra abrir a
+  // LojaScreen enquanto não existe um botão de navegação real até ela
+  // (ex: dentro do PetScreen). Continua aqui porque hoje é a ÚNICA forma
+  // de acessar a Loja no app.
   if (email === 'loja@gmail.com' && senha === 'loja123') {
     return { id: 'loja', nome: 'Loja', email: 'loja@gmail.com', senha: 'loja123', turmaId: null, xp: 0, initials: 'LJ', cor: '#009D25' }
   }
-  
+
+  // A partir daqui é busca real, direto na tabela "alunos" do Supabase.
   try {
     const { data, error } = await supabase
       .from('alunos')
@@ -401,3 +405,193 @@ export const atualizarStatusAlunoMissao = async (missaoId, alunoId, novoStatus) 
   }
   return data;
 };
+
+// ── Aluno: turma/pet, missões visíveis, progresso, XP e conquistas ──────
+//
+// Tudo abaixo é consumido pelo lado do ALUNO (App.js, PetScreen.js). Não
+// mexe em nada que o Matheus criou pro professor acima — só usa as mesmas
+// tabelas. "XP" nunca é escrito diretamente por essas funções: quem
+// credita XP de verdade é o trigger do banco (aplicar_xp_aluno_missao),
+// disparado quando uma linha de alunos_missoes vira status='aprovado'.
+// Isso é proposital — ver observação de segurança no relatório.
+
+// Turma do aluno + o pet dela. "turmas" não guarda mais o pet embutido
+// (era assim numa versão antiga do schema) — agora "pets" tem turma_id,
+// então busca as duas em paralelo e junta no mesmo formato que
+// listarTurmas() já usa pro professor, pra manter as duas pontas iguais.
+export async function buscarTurmaDoAluno(turmaId) {
+  if (!turmaId) return null // aluno ainda sem turma atribuída
+
+  try {
+    const [{ data: turma, error: turmaError }, { data: pet, error: petError }] = await Promise.all([
+      supabase.from('turmas').select('id, nome, codigo, professor_id').eq('id', turmaId).maybeSingle(),
+      supabase.from('pets').select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico').eq('turma_id', turmaId).maybeSingle(),
+    ])
+    if (turmaError) throw turmaError
+    if (petError) throw petError
+    if (!turma) return null
+
+    return {
+      id: turma.id,
+      nome: turma.nome,
+      codigo: turma.codigo,
+      professorId: turma.professor_id,
+      petId: pet?.id || null,
+      pet: pet?.icone || null,
+      estagio: pet?.estagio || 'Filhote',
+      xp: Number(pet?.xp) || 0,
+      progresso: Number(pet?.progresso) || 0,
+      emocao: pet?.emocao || '😐',
+      cor: pet?.cor || '#888888',
+      cosmetico: pet?.cosmetico || false,
+    }
+  } catch (error) {
+    console.error('Erro ao buscar turma do aluno:', error.message)
+    return null
+  }
+}
+
+// Missões que o aluno pode ver: as que estão vinculadas à turma dele em
+// "missoes_turmas" (a relação N:N real — ver migrations) e ativas.
+//
+// ⚠️ Diferença do que foi pedido: a tarefa original descrevia "turmaId
+// preenchido = turma específica, turmaId NULL = todas as turmas". Isso
+// valia num modelo antigo. No banco atual (migrations do Matheus), toda
+// missão OBRIGATORIAMENTE tem pelo menos 1 turma — a própria função
+// salvar_missao_com_turmas() rejeita criar missão sem turma nenhuma.
+// Não existe mais "missão pra todo mundo" no schema real, então não
+// implementei isso pra não fingir um comportamento que o banco não
+// sustenta. Se quiserem esse conceito de volta, é mudança de schema, não
+// só de código — falar com o Matheus antes.
+export async function listarMissoesDoAluno(alunoId) {
+  try {
+    const { data: aluno, error: alunoError } = await supabase
+      .from('alunos').select('turmaId').eq('id', alunoId).maybeSingle()
+    if (alunoError) throw alunoError
+    if (!aluno?.turmaId) return [] // sem turma, sem missão pra mostrar
+
+    const { data: vinculos, error: vinculosError } = await supabase
+      .from('missoes_turmas').select('missao_id').eq('turma_id', aluno.turmaId)
+    if (vinculosError) throw vinculosError
+    const missaoIds = (vinculos || []).map(v => v.missao_id)
+    if (!missaoIds.length) return []
+
+    const { data: missoes, error: missoesError } = await supabase
+      .from('missoes').select('*').in('id', missaoIds).eq('ativa', true)
+    if (missoesError) throw missoesError
+
+    const { data: progresso, error: progressoError } = await supabase
+      .from('alunos_missoes').select('missao_id, status, xp_aluno, atualizado_em')
+      .eq('aluno_id', alunoId).in('missao_id', missaoIds)
+    if (progressoError) throw progressoError
+    const statusPorMissao = new Map((progresso || []).map(p => [String(p.missao_id), p]))
+
+    return (missoes || []).map(m => {
+      const p = statusPorMissao.get(String(m.id))
+      return {
+        id: m.id,
+        nome: m.nome,
+        descricao: m.descricao,
+        xp: m.xp,
+        dificuldade: m.dificuldade,
+        icone: m.icone,
+        status: p?.status || 'pendente', // sem linha em alunos_missoes ainda = pendente
+        atualizadoEm: p?.atualizado_em || null,
+      }
+    })
+  } catch (error) {
+    console.error('Erro ao listar missões do aluno:', error.message)
+    return []
+  }
+}
+
+// Status de UMA missão específica pra um aluno (undefined se ele nunca
+// interagiu com ela — trate como 'pendente' na UI).
+export async function buscarProgressoMissao(alunoId, missaoId) {
+  try {
+    const { data, error } = await supabase
+      .from('alunos_missoes').select('*')
+      .eq('aluno_id', alunoId).eq('missao_id', missaoId).maybeSingle()
+    if (error) throw error
+    return data
+  } catch (error) {
+    console.error('Erro ao buscar progresso da missão:', error.message)
+    return null
+  }
+}
+
+// "Iniciar" = criar/confirmar a linha em alunos_missoes com status
+// pendente (deixa registrado que o aluno abriu a missão).
+export async function iniciarMissao(alunoId, missaoId) {
+  return atualizarStatusAlunoMissao(missaoId, alunoId, 'pendente')
+}
+
+// "Concluir" = o aluno entrega a missão pra avaliação. Só isso — quem
+// muda pra 'aprovado' (e credita XP de verdade, via trigger do banco) é
+// o professor, não o aluno. Não existe função aqui pra aluno se
+// autoaprovar; isso é intencional.
+export async function concluirMissao(alunoId, missaoId) {
+  return atualizarStatusAlunoMissao(missaoId, alunoId, 'entregue')
+}
+
+// Alias genérico — não existe campo de "progresso percentual" em
+// alunos_missoes, só o status (pendente/entregue/aprovado). "Atualizar
+// progresso" na prática é mudar o status.
+export const atualizarProgressoMissao = atualizarStatusAlunoMissao
+
+// XP atual do aluno (o valor já fica cacheado em alunos.xp, mantido pelo
+// trigger do banco — não precisa somar histórico toda vez).
+export async function consultarXP(alunoId) {
+  try {
+    const { data, error } = await supabase.from('alunos').select('xp').eq('id', alunoId).maybeSingle()
+    if (error) throw error
+    return data?.xp || 0
+  } catch (error) {
+    console.error('Erro ao consultar XP do aluno:', error.message)
+    return 0
+  }
+}
+
+// Conquistas do aluno (tabela "conquistas": cada linha já nasce vinculada
+// a um alunoId — é o professor concedendo diretamente, não existe uma
+// etapa separada de "desbloqueio automático" no schema atual, então não
+// tem uma função "verificarConquistas()" aqui: a existência da linha JÁ
+// é o desbloqueio).
+export async function listarConquistasDoAluno(alunoId) {
+  try {
+    const { data, error } = await supabase
+      .from('conquistas').select('*').eq('alunoId', alunoId).order('id', { ascending: false })
+    if (error) throw error
+    return data || []
+  } catch (error) {
+    console.error('Erro ao listar conquistas do aluno:', error.message)
+    return []
+  }
+}
+
+// Resumo pra tela de perfil/dashboard do aluno: XP, quantas missões já
+// foram aprovadas e quantas conquistas ele tem.
+export async function consultarProgressoGeral(alunoId) {
+  try {
+    const [alunoRes, missoesRes, conquistasRes] = await Promise.all([
+      supabase.from('alunos').select('xp, nome, turmaId').eq('id', alunoId).maybeSingle(),
+      supabase.from('alunos_missoes').select('id', { count: 'exact', head: true }).eq('aluno_id', alunoId).eq('status', 'aprovado'),
+      supabase.from('conquistas').select('id', { count: 'exact', head: true }).eq('alunoId', alunoId),
+    ])
+    if (alunoRes.error) throw alunoRes.error
+    if (missoesRes.error) throw missoesRes.error
+    if (conquistasRes.error) throw conquistasRes.error
+
+    return {
+      xp: alunoRes.data?.xp || 0,
+      nome: alunoRes.data?.nome || '',
+      turmaId: alunoRes.data?.turmaId || null,
+      missoesAprovadas: missoesRes.count || 0,
+      conquistas: conquistasRes.count || 0,
+    }
+  } catch (error) {
+    console.error('Erro ao consultar progresso geral do aluno:', error.message)
+    return { xp: 0, nome: '', turmaId: null, missoesAprovadas: 0, conquistas: 0 }
+  }
+}
+
