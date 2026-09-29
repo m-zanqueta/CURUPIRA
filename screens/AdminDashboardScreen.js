@@ -4,6 +4,7 @@ import {
   Text, TextInput, TouchableOpacity, View,
 } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
+import AdminDataManager from '../components/AdminDataManager'
 import { colors, fonts } from '../theme'
 import { salvarIconeMissao, salvarPetAdmin, salvarProfessor } from '../services/storage'
 
@@ -43,6 +44,7 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
   const [erros, setErros] = useState({})
   const [salvando, setSalvando] = useState(false)
   const [mensagem, setMensagem] = useState('')
+  const [alterarDadosVisivel, setAlterarDadosVisivel] = useState(false)
 
   function abrirFormulario(tipo) {
     setDados({ ...DADOS_INICIAIS[tipo] })
@@ -129,6 +131,7 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
           <AdminAction icon="🐾" title="Adicionar PET" description="Cadastre uma imagem PET disponível para uma turma." onPress={() => abrirFormulario('pet')} />
           <AdminAction icon="👩‍🏫" title="Adicionar professor" description="Crie um novo acesso para a área do professor." onPress={() => abrirFormulario('professor')} />
           <AdminAction icon="🖼️" title="Adicionar ícone missão" description="Inclua uma imagem no catálogo de ícones das missões." onPress={() => abrirFormulario('icone')} />
+          <AdminAction icon="📝" title="Alterar dados" description="Consulte e edite professores, alunos e PETs cadastrados." onPress={() => setAlterarDadosVisivel(true)} />
         </View>
 
         <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
@@ -197,6 +200,8 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
           </ScrollView>
         </View>
       </Modal>
+
+      <AdminDataManager visible={alterarDadosVisivel} onClose={() => setAlterarDadosVisivel(false)} />
     </SafeAreaView>
   )
 }

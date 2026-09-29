@@ -1,6 +1,50 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from './supabase'
 
+const TABELAS_ADMIN = new Set(['professores', 'alunos', 'pets'])
+
+export async function listarDadosAdmin(tabela) {
+  if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
+
+  const { data, error } = await supabase
+    .from(tabela)
+    .select('*')
+    .order('id', { ascending: true })
+
+  if (error) throw error
+  return data || []
+}
+
+export async function atualizarDadoAdmin(tabela, id, dados) {
+  if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
+  if (id === null || id === undefined) throw new Error('O registro não possui um ID válido.')
+
+  const { data, error } = await supabase
+    .from(tabela)
+    .update(dados)
+    .eq('id', id)
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('Nenhum registro foi alterado. Confira se ele ainda existe e se as políticas RLS permitem a edição.')
+}
+
+export async function excluirDadoAdmin(tabela, id) {
+  if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
+  if (id === null || id === undefined) throw new Error('O registro não possui um ID válido.')
+
+  const { data, error } = await supabase
+    .from(tabela)
+    .delete()
+    .eq('id', id)
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('Nenhum registro foi excluído. Confira se ele ainda existe e se as políticas RLS permitem a exclusão.')
+}
+
 // ── Init ─────────────────────────────────────────────────
 
 // Como os dados agora são reais e estão na nuvem, não precisamos mais 
