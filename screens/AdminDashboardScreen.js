@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import {
-  ActivityIndicator, Modal, SafeAreaView, ScrollView, StyleSheet,
+  ActivityIndicator, Image, Modal, SafeAreaView, ScrollView, StyleSheet,
   Text, TextInput, TouchableOpacity, View,
 } from 'react-native'
+import * as ImagePicker from 'expo-image-picker'
 import { colors, fonts } from '../theme'
 import { salvarIconeMissao, salvarPetAdmin, salvarProfessor } from '../services/storage'
 
@@ -10,9 +11,7 @@ const FORMULARIOS = {
   pet: {
     titulo: 'Adicionar PET',
     campos: [
-      { id: 'icone', label: 'URL pública da imagem do PET', placeholder: 'https://…', required: true },
-      { id: 'estagio', label: 'Estágio inicial', placeholder: 'Filhote' },
-      { id: 'cor', label: 'Cor do PET', placeholder: '#009D25' },
+      { id: 'nome', label: 'Nome do PET', placeholder: 'Ex.: Jatobá', required: true },
     ],
   },
   professor: {
@@ -33,7 +32,7 @@ const FORMULARIOS = {
 }
 
 const DADOS_INICIAIS = {
-  pet: { icone: '', estagio: 'Filhote', cor: '#009D25' },
+  pet: { nome: '', imagem: null, estagio: null },
   professor: { nome: '', email: '', senha: '' },
   icone: { nome: '', icone: '' },
 }
@@ -57,6 +56,27 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
     setErros(prev => ({ ...prev, [campo]: '' }))
   }
 
+  async function escolherImagemPet() {
+    try {
+      const permissao = await ImagePicker.requestMediaLibraryPermissionsAsync()
+      if (!permissao.granted) {
+        setErros(prev => ({ ...prev, imagem: 'Permita o acesso à galeria para escolher a imagem.' }))
+        return
+      }
+
+      const resultado = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.9,
+      })
+      if (resultado.canceled) return
+      setDados(prev => ({ ...prev, imagem: resultado.assets?.[0] || null }))
+      setErros(prev => ({ ...prev, imagem: '' }))
+    } catch (error) {
+      setErros(prev => ({ ...prev, imagem: error?.message || 'Não foi possível abrir a galeria de imagens.' }))
+    }
+  }
+
   async function salvar() {
     const config = FORMULARIOS[formulario]
     const novosErros = {}
@@ -66,6 +86,10 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
       else if (campo.email && valor && !/^\S+@\S+\.\S+$/.test(valor)) novosErros[campo.id] = 'Informe um e-mail válido.'
       else if (campo.id === 'icone' && valor && !/^https?:\/\//i.test(valor)) novosErros[campo.id] = 'Informe uma URL pública iniciada com http:// ou https://.'
     })
+    if (formulario === 'pet') {
+      if (!dados.imagem) novosErros.imagem = 'Selecione a imagem do PET para enviar ao Supabase Storage.'
+      if (!dados.estagio) novosErros.estagio = 'Escolha uma fase para o PET.'
+    }
     setErros(novosErros)
     if (Object.keys(novosErros).length) return
 
@@ -117,7 +141,31 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
           <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled">
             <View style={styles.modal}>
               <Text style={styles.modalTitle}>{config?.titulo}</Text>
-              {formulario === 'pet' && <Text style={styles.hint}>O PET será criado sem turma e ficará disponível para vinculação.</Text>}
+              {formulario === 'pet' && <Text style={styles.hint}>A imagem será enviada ao Supabase. O PET começa com 0 XP, emoção vazia e sem turma vinculada.</Text>}
+              {formulario === 'pet' && (
+                <>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Imagem do PET *</Text>
+                    <TouchableOpacity style={styles.imagePicker} onPress={escolherImagemPet}>
+                      {dados.imagem?.uri
+                        ? <Image source={{ uri: dados.imagem.uri }} style={styles.imagePreview} resizeMode="contain" />
+                        : <Text style={styles.imagePickerText}>＋ Escolher imagem</Text>}
+                    </TouchableOpacity>
+                    {!!erros.imagem && <Text style={styles.errorText}>{erros.imagem}</Text>}
+                  </View>
+                  <View style={styles.field}>
+                    <Text style={styles.label}>Estágio *</Text>
+                    <View style={styles.stageOptions}>
+                      {['infantil', 'jovem', 'adulto'].map(estagio => (
+                        <TouchableOpacity key={estagio} style={[styles.stageOption, dados.estagio === estagio && styles.stageOptionActive]} onPress={() => atualizarCampo('estagio', estagio)}>
+                          <Text style={[styles.stageText, dados.estagio === estagio && styles.stageTextActive]}>{estagio[0].toUpperCase() + estagio.slice(1)}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {!!erros.estagio && <Text style={styles.errorText}>{erros.estagio}</Text>}
+                  </View>
+                </>
+              )}
               {config?.campos.map(campo => (
                 <View key={campo.id} style={styles.field}>
                   <Text style={styles.label}>{campo.label}{campo.required ? ' *' : ''}</Text>
@@ -131,6 +179,7 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
                     keyboardType={campo.email ? 'email-address' : 'default'}
                     secureTextEntry={campo.secure}
                     autoCorrect={!campo.email && campo.id !== 'icone'}
+                    editable={!salvando}
                   />
                   {!!erros[campo.id] && <Text style={styles.errorText}>{erros[campo.id]}</Text>}
                 </View>
@@ -190,6 +239,14 @@ const styles = StyleSheet.create({
   modal: { width: '100%', maxWidth: 500, alignSelf: 'center', backgroundColor: colors.white, borderRadius: 16, padding: 22, gap: 14 },
   modalTitle: { color: colors.dark, fontFamily: fonts.bold, fontSize: 20 },
   hint: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, marginTop: -8 },
+  imagePicker: { minHeight: 120, borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border, borderRadius: 10, backgroundColor: colors.cream, alignItems: 'center', justifyContent: 'center', padding: 10 },
+  imagePreview: { width: 112, height: 112 },
+  imagePickerText: { color: colors.green, fontFamily: fonts.semibold, fontSize: 13 },
+  stageOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  stageOption: { borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.cream, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
+  stageOptionActive: { borderColor: colors.green, backgroundColor: colors.greenLight },
+  stageText: { color: colors.muted, fontFamily: fonts.medium, fontSize: 12 },
+  stageTextActive: { color: colors.green, fontFamily: fonts.bold },
   field: { gap: 6 },
   label: { color: colors.dark, fontFamily: fonts.semibold, fontSize: 12 },
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: 9, backgroundColor: colors.cream, color: colors.dark, paddingHorizontal: 12, paddingVertical: 11, fontFamily: fonts.regular, fontSize: 14 },
