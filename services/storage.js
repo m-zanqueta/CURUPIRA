@@ -1,6 +1,50 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from './supabase'
 
+const TABELAS_ADMIN = new Set(['professores', 'alunos', 'pets'])
+
+export async function listarDadosAdmin(tabela) {
+  if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
+
+  const { data, error } = await supabase
+    .from(tabela)
+    .select('*')
+    .order('id', { ascending: true })
+
+  if (error) throw error
+  return data || []
+}
+
+export async function atualizarDadoAdmin(tabela, id, dados) {
+  if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
+  if (id === null || id === undefined) throw new Error('O registro não possui um ID válido.')
+
+  const { data, error } = await supabase
+    .from(tabela)
+    .update(dados)
+    .eq('id', id)
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('Nenhum registro foi alterado. Confira se ele ainda existe e se as políticas RLS permitem a edição.')
+}
+
+export async function excluirDadoAdmin(tabela, id) {
+  if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
+  if (id === null || id === undefined) throw new Error('O registro não possui um ID válido.')
+
+  const { data, error } = await supabase
+    .from(tabela)
+    .delete()
+    .eq('id', id)
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('Nenhum registro foi excluído. Confira se ele ainda existe e se as políticas RLS permitem a exclusão.')
+}
+
 // ── Init ─────────────────────────────────────────────────
 
 // Como os dados agora são reais e estão na nuvem, não precisamos mais 
@@ -28,6 +72,120 @@ export async function buscarProfessor(emailDigitado, senhaDigitada) {
   }
 }
 
+export async function salvarProfessor(dados) {
+  const { data, error } = await supabase
+    .from('professores')
+    .insert([{ nome: dados.nome.trim(), email: dados.email.trim().toLowerCase(), senha: dados.senha }])
+    .select('id, nome, email')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function salvarPetAdmin(dados) {
+  if (!dados?.imagem) throw new Error('Selecione uma imagem para o PET.');
+
+  const arquivo = dados.imagem;
+  const resposta = await fetch(arquivo.uri);
+  if (!resposta.ok) throw new Error('Não foi possível ler a imagem selecionada.');
+  const blob = await resposta.blob();
+  const tipoMime = arquivo.mimeType || blob.type || 'image/jpeg';
+  const extensao = tipoMime.split('/')[1]?.split(';')[0] || 'jpg';
+  const caminho = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extensao}`;
+
+  const { data: arquivoEnviado, error: erroUpload } = await supabase.storage
+    .from('pets-images')
+    .upload(caminho, blob, { contentType: tipoMime, cacheControl: '3600', upsert: false });
+  if (erroUpload) throw erroUpload;
+
+  const { data: urlPublica } = supabase.storage.from('pets-images').getPublicUrl(arquivoEnviado.path);
+  const { error } = await supabase
+    .from('pets')
+    .insert([{
+      nome: dados.nome.trim(),
+      icone: urlPublica.publicUrl,
+      estagio: dados.estagio,
+      xp: 0,
+      emocao: null,
+      turma_id: null,
+    }]);
+  if (error) {
+    await supabase.storage.from('pets-images').remove([arquivoEnviado.path]);
+    throw error;
+  }
+  return {
+    nome: dados.nome.trim(),
+    icone: urlPublica.publicUrl,
+    estagio: dados.estagio,
+    xp: 0,
+    emocao: null,
+    turma_id: null,
+  };
+}
+
+async function enviarImagemAdmin(imagem, pasta) {
+  if (!imagem) throw new Error('Selecione uma imagem para enviar.')
+
+  const resposta = await fetch(imagem.uri)
+  if (!resposta.ok) throw new Error('Não foi possível ler a imagem selecionada.')
+  const blob = await resposta.blob()
+  const tipoMime = imagem.mimeType || blob.type || 'image/png'
+  const extensao = tipoMime.split('/')[1]?.split(';')[0] || 'png'
+  const nomeArquivo = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extensao}`
+  const caminho = `${pasta}/${nomeArquivo}`
+
+  const { data, error } = await supabase.storage
+    .from('pets-images')
+    .upload(caminho, blob, { contentType: tipoMime, cacheControl: '3600', upsert: false })
+  if (error) throw error
+
+  const { data: urlPublica } = supabase.storage.from('pets-images').getPublicUrl(data.path)
+  return { path: data.path, url: urlPublica.publicUrl }
+}
+
+export async function salvarIconeMissao(dados) {
+  const imagem = await enviarImagemAdmin(dados.imagem, 'icones-missoes')
+  const registro = { nome: dados.nome.trim(), icone: imagem.url, ativo: true }
+  const { error } = await supabase.from('icones_missoes').insert([registro])
+  if (error) {
+    await supabase.storage.from('pets-images').remove([imagem.path])
+    throw error
+  }
+  return registro
+}
+
+export async function salvarAcessorioAdmin(dados) {
+  const imagem = await enviarImagemAdmin(dados.imagem, 'acessorios')
+  const registro = {
+    nome: dados.nome.trim(),
+    slot: dados.slot,
+    imagem_path: imagem.path,
+    camada: 10,
+    ativo: true,
+    preco: Number(dados.preco),
+  }
+  const { error } = await supabase.from('acessorios').insert([registro])
+  if (error) {
+    await supabase.storage.from('pets-images').remove([imagem.path])
+    throw error
+  }
+  return registro
+}
+
+export async function listarAcessoriosLoja() {
+  const { data, error } = await supabase
+    .from('acessorios')
+    .select('id, nome, slot, imagem_path, camada, preco, ativo')
+    .eq('ativo', true)
+    .order('id', { ascending: true })
+  if (error) throw error
+
+  return (data || []).map(item => ({
+    ...item,
+    imagem: supabase.storage.from('pets-images').getPublicUrl(item.imagem_path).data.publicUrl,
+  }))
+}
+
 // ── Turmas e Pets (ATUALIZADO) ─────────────────────────────────────────
 
 export async function listarTurmas(professorId) {
@@ -36,14 +194,14 @@ export async function listarTurmas(professorId) {
   try {
     const { data: turmas, error: turmasError } = await supabase
       .from('turmas')
-      .select('id, nome, codigo, professor_id')
+      .select('id, nome, codigo, professor_id, cor')
       .eq('professor_id', professorId);
     if (turmasError) throw turmasError;
     if (!turmas?.length) return [];
 
     const { data: pets, error: petsError } = await supabase
       .from('pets')
-      .select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico, turma_id')
+      .select('id, nome, icone, estagio, xp, emocao, cosmetico, turma_id')
       .in('turma_id', turmas.map(turma => turma.id));
     if (petsError) throw petsError;
 
@@ -53,15 +211,16 @@ export async function listarTurmas(professorId) {
       return {
       id: turma.id,
       nome: turma.nome,
+      cor: turma.cor || '#888888',
       codigo: turma.codigo,
       professorId: turma.professor_id,
       petId: pet?.id || null,
       pet: pet?.icone || null,
-      estagio: pet?.estagio || 'Filhote',
+      petNome: pet?.nome || null,
+      estagio: pet?.estagio || 'infantil',
       xp: Number(pet?.xp) || 0,
-      progresso: Number(pet?.progresso) || 0,
-      emocao: pet?.emocao || '😐',
-      cor: pet?.cor || '#888888',
+      progresso: Math.min(100, Math.floor((Number(pet?.xp) % 1000) / 10)),
+      emocao: pet?.emocao ?? null,
       cosmetico: pet?.cosmetico || false,
       };
     });
@@ -74,7 +233,7 @@ export async function listarTurmas(professorId) {
 export async function listarPetsDisponiveis() {
   const { data, error } = await supabase
     .from('pets')
-    .select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico, turma_id')
+    .select('id, nome, icone, estagio, xp, emocao, cosmetico, turma_id')
     .is('turma_id', null)
     .order('id', { ascending: true });
 
@@ -100,6 +259,7 @@ export async function salvarTurma(novaTurma) {
       nome: novaTurma.nome,
       codigo: novaTurma.codigo,
       professor_id: novaTurma.professorId,
+      cor: novaTurma.cor,
     }])
     .select()
     .single();
@@ -108,10 +268,10 @@ export async function salvarTurma(novaTurma) {
 
   const { data: petVinculado, error: petError } = await supabase
     .from('pets')
-    .update({ turma_id: turmaData.id, cor: novaTurma.cor })
+    .update({ turma_id: turmaData.id })
     .eq('id', novaTurma.petId)
     .is('turma_id', null)
-    .select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico, turma_id')
+    .select('id, nome, icone, estagio, xp, emocao, cosmetico, turma_id')
     .maybeSingle();
 
   if (petError || !petVinculado) {
@@ -132,13 +292,12 @@ export async function salvarTurma(novaTurma) {
 export async function atualizarTurma(id, dadosAtualizados) {
   try {
     // Atualiza nome da turma
-    await supabase.from('turmas').update({ nome: dadosAtualizados.nome }).eq('id', id);
+    await supabase.from('turmas').update({ nome: dadosAtualizados.nome, cor: dadosAtualizados.cor }).eq('id', id);
     
     // Atualiza dados do pet se existir o ID dele
     if (dadosAtualizados.petId) {
       await supabase.from('pets').update({
         icone: dadosAtualizados.pet,
-        cor: dadosAtualizados.cor
       }).eq('id', dadosAtualizados.petId);
     }
   } catch (error) {
