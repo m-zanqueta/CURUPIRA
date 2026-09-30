@@ -6,7 +6,7 @@ import {
 import * as ImagePicker from 'expo-image-picker'
 import AdminDataManager from '../components/AdminDataManager'
 import { colors, fonts } from '../theme'
-import { salvarIconeMissao, salvarPetAdmin, salvarProfessor } from '../services/storage'
+import { salvarAcessorioAdmin, salvarIconeMissao, salvarPetAdmin, salvarProfessor } from '../services/storage'
 
 const FORMULARIOS = {
   pet: {
@@ -27,7 +27,13 @@ const FORMULARIOS = {
     titulo: 'Adicionar ícone de missão',
     campos: [
       { id: 'nome', label: 'Nome do ícone', placeholder: 'Ex.: Livro', required: true },
-      { id: 'icone', label: 'URL pública da imagem', placeholder: 'https://…', required: true },
+    ],
+  },
+  acessorio: {
+    titulo: 'Adicionar item à loja',
+    campos: [
+      { id: 'nome', label: 'Nome do item', placeholder: 'Ex.: Chapéu de palha', required: true },
+      { id: 'preco', label: 'Preço em moedas', placeholder: 'Ex.: 150', required: true, numeric: true },
     ],
   },
 }
@@ -35,7 +41,8 @@ const FORMULARIOS = {
 const DADOS_INICIAIS = {
   pet: { nome: '', imagem: null, estagio: null },
   professor: { nome: '', email: '', senha: '' },
-  icone: { nome: '', icone: '' },
+  icone: { nome: '', imagem: null },
+  acessorio: { nome: '', preco: '', slot: 'cabeca', imagem: null },
 }
 
 export default function AdminDashboardScreen({ usuario, onLogout }) {
@@ -58,7 +65,7 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
     setErros(prev => ({ ...prev, [campo]: '' }))
   }
 
-  async function escolherImagemPet() {
+  async function escolherImagem() {
     try {
       const permissao = await ImagePicker.requestMediaLibraryPermissionsAsync()
       if (!permissao.granted) {
@@ -86,11 +93,18 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
       const valor = String(dados[campo.id] || '').trim()
       if (campo.required && !valor) novosErros[campo.id] = `Preencha ${campo.label.toLowerCase()}.`
       else if (campo.email && valor && !/^\S+@\S+\.\S+$/.test(valor)) novosErros[campo.id] = 'Informe um e-mail válido.'
-      else if (campo.id === 'icone' && valor && !/^https?:\/\//i.test(valor)) novosErros[campo.id] = 'Informe uma URL pública iniciada com http:// ou https://.'
     })
+    if (['pet', 'icone', 'acessorio'].includes(formulario)) {
+      const tipoImagem = formulario === 'pet' ? 'PET' : formulario === 'icone' ? 'ícone' : 'acessório'
+      if (!dados.imagem) novosErros.imagem = `Selecione a imagem do ${tipoImagem} para enviar ao Supabase Storage.`
+    }
     if (formulario === 'pet') {
-      if (!dados.imagem) novosErros.imagem = 'Selecione a imagem do PET para enviar ao Supabase Storage.'
       if (!dados.estagio) novosErros.estagio = 'Escolha uma fase para o PET.'
+    }
+    if (formulario === 'acessorio') {
+      if (!['cabeca', 'roupa', 'outro'].includes(dados.slot)) novosErros.slot = 'Escolha o tipo do acessório.'
+      const preco = Number(dados.preco)
+      if (!Number.isInteger(preco) || preco < 0) novosErros.preco = 'Informe um preço inteiro igual ou maior que zero.'
     }
     setErros(novosErros)
     if (Object.keys(novosErros).length) return
@@ -100,6 +114,7 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
       if (formulario === 'pet') await salvarPetAdmin(dados)
       if (formulario === 'professor') await salvarProfessor(dados)
       if (formulario === 'icone') await salvarIconeMissao(dados)
+      if (formulario === 'acessorio') await salvarAcessorioAdmin(dados)
       setFormulario(null)
       setMensagem(`${config.titulo.replace('Adicionar ', '')} cadastrado com sucesso.`)
       setDados({ ...DADOS_INICIAIS[formulario] })
@@ -131,6 +146,7 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
           <AdminAction icon="🐾" title="Adicionar PET" description="Cadastre uma imagem PET disponível para uma turma." onPress={() => abrirFormulario('pet')} />
           <AdminAction icon="👩‍🏫" title="Adicionar professor" description="Crie um novo acesso para a área do professor." onPress={() => abrirFormulario('professor')} />
           <AdminAction icon="🖼️" title="Adicionar ícone missão" description="Inclua uma imagem no catálogo de ícones das missões." onPress={() => abrirFormulario('icone')} />
+          <AdminAction icon="🛍️" title="Adicionar item à loja" description="Cadastre acessórios com imagem e preço em moedas." onPress={() => abrirFormulario('acessorio')} />
           <AdminAction icon="📝" title="Alterar dados" description="Consulte e edite professores, alunos e PETs cadastrados." onPress={() => setAlterarDadosVisivel(true)} />
         </View>
 
@@ -145,29 +161,50 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
             <View style={styles.modal}>
               <Text style={styles.modalTitle}>{config?.titulo}</Text>
               {formulario === 'pet' && <Text style={styles.hint}>A imagem será enviada ao Supabase. O PET começa com 0 XP, emoção vazia e sem turma vinculada.</Text>}
-              {formulario === 'pet' && (
+              {formulario === 'icone' && <Text style={styles.hint}>Escolha a imagem do ícone. Ela será enviada ao Supabase Storage.</Text>}
+              {formulario === 'acessorio' && <Text style={styles.hint}>Envie uma imagem PNG transparente para sobrepor ao PET animado.</Text>}
+              {['pet', 'icone', 'acessorio'].includes(formulario) && (
                 <>
                   <View style={styles.field}>
-                    <Text style={styles.label}>Imagem do PET *</Text>
-                    <TouchableOpacity style={styles.imagePicker} onPress={escolherImagemPet}>
+                    <Text style={styles.label}>{formulario === 'pet' ? 'Imagem do PET' : formulario === 'icone' ? 'Imagem do ícone' : 'Imagem do acessório'} *</Text>
+                    <TouchableOpacity style={styles.imagePicker} onPress={escolherImagem}>
                       {dados.imagem?.uri
                         ? <Image source={{ uri: dados.imagem.uri }} style={styles.imagePreview} resizeMode="contain" />
                         : <Text style={styles.imagePickerText}>＋ Escolher imagem</Text>}
                     </TouchableOpacity>
                     {!!erros.imagem && <Text style={styles.errorText}>{erros.imagem}</Text>}
                   </View>
-                  <View style={styles.field}>
-                    <Text style={styles.label}>Estágio *</Text>
-                    <View style={styles.stageOptions}>
-                      {['infantil', 'jovem', 'adulto'].map(estagio => (
-                        <TouchableOpacity key={estagio} style={[styles.stageOption, dados.estagio === estagio && styles.stageOptionActive]} onPress={() => atualizarCampo('estagio', estagio)}>
-                          <Text style={[styles.stageText, dados.estagio === estagio && styles.stageTextActive]}>{estagio[0].toUpperCase() + estagio.slice(1)}</Text>
-                        </TouchableOpacity>
-                      ))}
+                  {formulario === 'pet' && (
+                    <View style={styles.field}>
+                      <Text style={styles.label}>Estágio *</Text>
+                      <View style={styles.stageOptions}>
+                        {['infantil', 'jovem', 'adulto'].map(estagio => (
+                          <TouchableOpacity key={estagio} style={[styles.stageOption, dados.estagio === estagio && styles.stageOptionActive]} onPress={() => atualizarCampo('estagio', estagio)}>
+                            <Text style={[styles.stageText, dados.estagio === estagio && styles.stageTextActive]}>{estagio[0].toUpperCase() + estagio.slice(1)}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      {!!erros.estagio && <Text style={styles.errorText}>{erros.estagio}</Text>}
                     </View>
-                    {!!erros.estagio && <Text style={styles.errorText}>{erros.estagio}</Text>}
-                  </View>
+                  )}
                 </>
+              )}
+              {formulario === 'acessorio' && (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Espaço do acessório *</Text>
+                  <View style={styles.stageOptions}>
+                    {[
+                      { id: 'cabeca', nome: 'Cabeça' },
+                      { id: 'roupa', nome: 'Roupa' },
+                      { id: 'outro', nome: 'Outro' },
+                    ].map(slot => (
+                      <TouchableOpacity key={slot.id} style={[styles.stageOption, dados.slot === slot.id && styles.stageOptionActive]} onPress={() => atualizarCampo('slot', slot.id)}>
+                        <Text style={[styles.stageText, dados.slot === slot.id && styles.stageTextActive]}>{slot.nome}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {!!erros.slot && <Text style={styles.errorText}>{erros.slot}</Text>}
+                </View>
               )}
               {config?.campos.map(campo => (
                 <View key={campo.id} style={styles.field}>
@@ -178,10 +215,10 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
                     onChangeText={valor => atualizarCampo(campo.id, valor)}
                     placeholder={campo.placeholder}
                     placeholderTextColor="#9a9a91"
-                    autoCapitalize={campo.email ? 'none' : campo.id === 'icone' ? 'none' : 'sentences'}
-                    keyboardType={campo.email ? 'email-address' : 'default'}
+                    autoCapitalize={campo.email ? 'none' : 'sentences'}
+                    keyboardType={campo.email ? 'email-address' : campo.numeric ? 'numeric' : 'default'}
                     secureTextEntry={campo.secure}
-                    autoCorrect={!campo.email && campo.id !== 'icone'}
+                    autoCorrect={!campo.email && !campo.numeric}
                     editable={!salvando}
                   />
                   {!!erros[campo.id] && <Text style={styles.errorText}>{erros[campo.id]}</Text>}

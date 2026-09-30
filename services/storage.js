@@ -123,14 +123,67 @@ export async function salvarPetAdmin(dados) {
   };
 }
 
+async function enviarImagemAdmin(imagem, pasta) {
+  if (!imagem) throw new Error('Selecione uma imagem para enviar.')
+
+  const resposta = await fetch(imagem.uri)
+  if (!resposta.ok) throw new Error('Não foi possível ler a imagem selecionada.')
+  const blob = await resposta.blob()
+  const tipoMime = imagem.mimeType || blob.type || 'image/png'
+  const extensao = tipoMime.split('/')[1]?.split(';')[0] || 'png'
+  const nomeArquivo = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extensao}`
+  const caminho = `${pasta}/${nomeArquivo}`
+
+  const { data, error } = await supabase.storage
+    .from('pets-images')
+    .upload(caminho, blob, { contentType: tipoMime, cacheControl: '3600', upsert: false })
+  if (error) throw error
+
+  const { data: urlPublica } = supabase.storage.from('pets-images').getPublicUrl(data.path)
+  return { path: data.path, url: urlPublica.publicUrl }
+}
+
 export async function salvarIconeMissao(dados) {
+  const imagem = await enviarImagemAdmin(dados.imagem, 'icones-missoes')
+  const registro = { nome: dados.nome.trim(), icone: imagem.url, ativo: true }
+  const { error } = await supabase.from('icones_missoes').insert([registro])
+  if (error) {
+    await supabase.storage.from('pets-images').remove([imagem.path])
+    throw error
+  }
+  return registro
+}
+
+export async function salvarAcessorioAdmin(dados) {
+  const imagem = await enviarImagemAdmin(dados.imagem, 'acessorios')
+  const registro = {
+    nome: dados.nome.trim(),
+    slot: dados.slot,
+    imagem_path: imagem.path,
+    camada: 10,
+    ativo: true,
+    preco: Number(dados.preco),
+  }
+  const { error } = await supabase.from('acessorios').insert([registro])
+  if (error) {
+    await supabase.storage.from('pets-images').remove([imagem.path])
+    throw error
+  }
+  return registro
+}
+
+export async function listarAcessoriosLoja() {
   const { data, error } = await supabase
-    .from('icones_missoes')
-    .insert([{ nome: dados.nome.trim(), icone: dados.icone.trim(), ativo: true }])
-    .select('id, nome, icone, ativo')
-    .single();
-  if (error) throw error;
-  return data;
+    .from('acessorios')
+    .select('id, nome, slot, imagem_path, camada, preco, ativo')
+    .eq('ativo', true)
+    .order('id', { ascending: true })
+  if (error) throw error
+
+  return (data || []).map(item => ({
+    ...item,
+    imagem: supabase.storage.from('pets-images').getPublicUrl(item.imagem_path).data.publicUrl,
+  }))
 }
 
 // ── Turmas e Pets (ATUALIZADO) ─────────────────────────────────────────
