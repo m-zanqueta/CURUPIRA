@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from './supabase'
 
-const TABELAS_ADMIN = new Set(['professores', 'alunos', 'pets'])
+const TABELAS_ADMIN = new Set(['professores', 'alunos', 'pets', 'icones_missoes', 'acessorios'])
 
 export async function listarDadosAdmin(tabela) {
   if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
@@ -104,7 +104,7 @@ export async function salvarPetAdmin(dados) {
     .insert([{
       nome: dados.nome.trim(),
       icone: urlPublica.publicUrl,
-      estagio: dados.estagio,
+      estagio: 'infantil',
       xp: 0,
       emocao: null,
       turma_id: null,
@@ -116,7 +116,7 @@ export async function salvarPetAdmin(dados) {
   return {
     nome: dados.nome.trim(),
     icone: urlPublica.publicUrl,
-    estagio: dados.estagio,
+    estagio: 'infantil',
     xp: 0,
     emocao: null,
     turma_id: null,
