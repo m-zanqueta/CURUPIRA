@@ -10,11 +10,12 @@ import {
 } from '@expo-google-fonts/montserrat'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { colors } from './theme'
-import { inicializarProfessores, buscarTurmaDoAluno } from './services/storage'
+import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral } from './services/storage'
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
 import DashboardScreen from './screens/DashboardScreen'
+import AdminDashboardScreen from './screens/AdminDashboardScreen'
 import PetScreen from './screens/PetScreen'
 import LojaScreen from './screens/LojaScreen'
 
@@ -23,6 +24,7 @@ export default function App() {
   const [professor, setProfessor] = useState(null)
   const [aluno, setAluno] = useState(null)
   const [turmaAluno, setTurmaAluno] = useState(null)
+  const [progressoAluno, setProgressoAluno] = useState(null)
   const fadeAnim = useRef(new Animated.Value(1)).current
 
   const [fontsLoaded] = useFonts({
@@ -48,10 +50,19 @@ export default function App() {
     })
   }
 
+  function entrarAreaProfessor(usuario) {
+    setProfessor(usuario)
+    navegarCom(usuario?.tipo === 'admin' ? 'dashboardAdmin' : 'dashboardProfessor')
+  }
+
       async function handleLoginAluno(alunoLogado) {
-        const turma = await buscarTurmaDoAluno(alunoLogado.turmaId)
+        const [turma, progresso] = await Promise.all([
+          buscarTurmaDoAluno(alunoLogado.turmaId),
+          consultarProgressoGeral(alunoLogado.id),
+        ])
         setAluno(alunoLogado)
         setTurmaAluno(turma)
+        setProgressoAluno(progresso)
         navegarCom('splashLogin')
         setTimeout(() => navegarCom('pet'), 2000)
       }
@@ -91,15 +102,19 @@ export default function App() {
         )}
         {tela === 'loginProfessor' && (
           <LoginProfessor
-            onLogin={(prof) => { setProfessor(prof); navegarCom('dashboardProfessor') }}
+            onLogin={entrarAreaProfessor}
+            onAdminLogin={entrarAreaProfessor}
             onSouAluno={() => navegarCom('login')}
           />
         )}
+        {tela === 'dashboardAdmin' && (
+          professor?.tipo === 'admin' ? <AdminDashboardScreen usuario={professor} onLogout={() => navegarCom('loginProfessor')} /> : <LoginProfessor onLogin={entrarAreaProfessor} onAdminLogin={entrarAreaProfessor} onSouAluno={() => navegarCom('login')} />
+        )}
         {tela === 'dashboardProfessor' && (
-          <DashboardScreen professor={professor} onLogout={() => navegarCom('loginProfessor')} />
+          professor?.tipo !== 'admin' ? <DashboardScreen professor={professor} onLogout={() => navegarCom('loginProfessor')} /> : <AdminDashboardScreen usuario={professor} onLogout={() => navegarCom('loginProfessor')} />
         )}
         {tela === 'pet' && (
-          <PetScreen aluno={aluno} turma={turmaAluno} onLogout={() => navegarCom('login')} />
+          <PetScreen aluno={aluno} turma={turmaAluno} progresso={progressoAluno} onLogout={() => navegarCom('login')} />
         )}
         {tela === 'loja' && (
           <LojaScreen onLogout={() => navegarCom('login')} />

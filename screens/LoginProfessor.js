@@ -6,17 +6,27 @@ import {
 import { buscarProfessor } from '../services/storage'
 import { cores } from '../constants/cores'
 
-export default function LoginProfessor({ onLogin, onSouAluno }) {
+export default function LoginProfessor({ onLogin, onAdminLogin, onSouAluno }) {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
 
   async function handleLogin() {
-    if (!email || !senha) {
+    const emailNormalizado = email.trim().toLowerCase()
+    if (!emailNormalizado || !senha) {
       setErro('Preencha usuário e senha para continuar.')
       return
     }
-    const encontrado = await buscarProfessor(email.trim(), senha)
+    if (emailNormalizado === 'adm@email.com') {
+      if (senha !== 'Adm123!') {
+        setErro('Senha do administrador incorreta.')
+        return
+      }
+      setErro('')
+      onAdminLogin?.({ nome: 'Administrador', tipo: 'admin' })
+      return
+    }
+    const encontrado = await buscarProfessor(emailNormalizado, senha)
     if (!encontrado) {
       setErro('Usuário ou senha incorretos.')
       return

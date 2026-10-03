@@ -1,6 +1,50 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from './supabase'
 
+const TABELAS_ADMIN = new Set(['professores', 'alunos', 'pets', 'icones_missoes', 'acessorios'])
+
+export async function listarDadosAdmin(tabela) {
+  if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
+
+  const { data, error } = await supabase
+    .from(tabela)
+    .select('*')
+    .order('id', { ascending: true })
+
+  if (error) throw error
+  return data || []
+}
+
+export async function atualizarDadoAdmin(tabela, id, dados) {
+  if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
+  if (id === null || id === undefined) throw new Error('O registro não possui um ID válido.')
+
+  const { data, error } = await supabase
+    .from(tabela)
+    .update(dados)
+    .eq('id', id)
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('Nenhum registro foi alterado. Confira se ele ainda existe e se as políticas RLS permitem a edição.')
+}
+
+export async function excluirDadoAdmin(tabela, id) {
+  if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
+  if (id === null || id === undefined) throw new Error('O registro não possui um ID válido.')
+
+  const { data, error } = await supabase
+    .from(tabela)
+    .delete()
+    .eq('id', id)
+    .select('id')
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) throw new Error('Nenhum registro foi excluído. Confira se ele ainda existe e se as políticas RLS permitem a exclusão.')
+}
+
 // ── Init ─────────────────────────────────────────────────
 
 // Como os dados agora são reais e estão na nuvem, não precisamos mais 
@@ -28,6 +72,120 @@ export async function buscarProfessor(emailDigitado, senhaDigitada) {
   }
 }
 
+export async function salvarProfessor(dados) {
+  const { data, error } = await supabase
+    .from('professores')
+    .insert([{ nome: dados.nome.trim(), email: dados.email.trim().toLowerCase(), senha: dados.senha }])
+    .select('id, nome, email')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function salvarPetAdmin(dados) {
+  if (!dados?.imagem) throw new Error('Selecione uma imagem para o PET.');
+
+  const arquivo = dados.imagem;
+  const resposta = await fetch(arquivo.uri);
+  if (!resposta.ok) throw new Error('Não foi possível ler a imagem selecionada.');
+  const blob = await resposta.blob();
+  const tipoMime = arquivo.mimeType || blob.type || 'image/jpeg';
+  const extensao = tipoMime.split('/')[1]?.split(';')[0] || 'jpg';
+  const caminho = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extensao}`;
+
+  const { data: arquivoEnviado, error: erroUpload } = await supabase.storage
+    .from('pets-images')
+    .upload(caminho, blob, { contentType: tipoMime, cacheControl: '3600', upsert: false });
+  if (erroUpload) throw erroUpload;
+
+  const { data: urlPublica } = supabase.storage.from('pets-images').getPublicUrl(arquivoEnviado.path);
+  const { error } = await supabase
+    .from('pets')
+    .insert([{
+      nome: dados.nome.trim(),
+      icone: urlPublica.publicUrl,
+      estagio: 'infantil',
+      xp: 0,
+      emocao: null,
+      turma_id: null,
+    }]);
+  if (error) {
+    await supabase.storage.from('pets-images').remove([arquivoEnviado.path]);
+    throw error;
+  }
+  return {
+    nome: dados.nome.trim(),
+    icone: urlPublica.publicUrl,
+    estagio: 'infantil',
+    xp: 0,
+    emocao: null,
+    turma_id: null,
+  };
+}
+
+async function enviarImagemAdmin(imagem, pasta) {
+  if (!imagem) throw new Error('Selecione uma imagem para enviar.')
+
+  const resposta = await fetch(imagem.uri)
+  if (!resposta.ok) throw new Error('Não foi possível ler a imagem selecionada.')
+  const blob = await resposta.blob()
+  const tipoMime = imagem.mimeType || blob.type || 'image/png'
+  const extensao = tipoMime.split('/')[1]?.split(';')[0] || 'png'
+  const nomeArquivo = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extensao}`
+  const caminho = `${pasta}/${nomeArquivo}`
+
+  const { data, error } = await supabase.storage
+    .from('pets-images')
+    .upload(caminho, blob, { contentType: tipoMime, cacheControl: '3600', upsert: false })
+  if (error) throw error
+
+  const { data: urlPublica } = supabase.storage.from('pets-images').getPublicUrl(data.path)
+  return { path: data.path, url: urlPublica.publicUrl }
+}
+
+export async function salvarIconeMissao(dados) {
+  const imagem = await enviarImagemAdmin(dados.imagem, 'icones-missoes')
+  const registro = { nome: dados.nome.trim(), icone: imagem.url, ativo: true }
+  const { error } = await supabase.from('icones_missoes').insert([registro])
+  if (error) {
+    await supabase.storage.from('pets-images').remove([imagem.path])
+    throw error
+  }
+  return registro
+}
+
+export async function salvarAcessorioAdmin(dados) {
+  const imagem = await enviarImagemAdmin(dados.imagem, 'acessorios')
+  const registro = {
+    nome: dados.nome.trim(),
+    slot: dados.slot,
+    imagem_path: imagem.path,
+    camada: 10,
+    ativo: true,
+    preco: Number(dados.preco),
+  }
+  const { error } = await supabase.from('acessorios').insert([registro])
+  if (error) {
+    await supabase.storage.from('pets-images').remove([imagem.path])
+    throw error
+  }
+  return registro
+}
+
+export async function listarAcessoriosLoja() {
+  const { data, error } = await supabase
+    .from('acessorios')
+    .select('id, nome, slot, imagem_path, camada, preco, ativo')
+    .eq('ativo', true)
+    .order('id', { ascending: true })
+  if (error) throw error
+
+  return (data || []).map(item => ({
+    ...item,
+    imagem: supabase.storage.from('pets-images').getPublicUrl(item.imagem_path).data.publicUrl,
+  }))
+}
+
 // ── Turmas e Pets (ATUALIZADO) ─────────────────────────────────────────
 
 export async function listarTurmas(professorId) {
@@ -36,14 +194,14 @@ export async function listarTurmas(professorId) {
   try {
     const { data: turmas, error: turmasError } = await supabase
       .from('turmas')
-      .select('id, nome, codigo, professor_id')
+      .select('id, nome, codigo, professor_id, cor')
       .eq('professor_id', professorId);
     if (turmasError) throw turmasError;
     if (!turmas?.length) return [];
 
     const { data: pets, error: petsError } = await supabase
       .from('pets')
-      .select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico, turma_id')
+      .select('id, nome, icone, estagio, xp, emocao, cosmetico, turma_id')
       .in('turma_id', turmas.map(turma => turma.id));
     if (petsError) throw petsError;
 
@@ -53,15 +211,16 @@ export async function listarTurmas(professorId) {
       return {
       id: turma.id,
       nome: turma.nome,
+      cor: turma.cor || '#888888',
       codigo: turma.codigo,
       professorId: turma.professor_id,
       petId: pet?.id || null,
       pet: pet?.icone || null,
-      estagio: pet?.estagio || 'Filhote',
+      petNome: pet?.nome || null,
+      estagio: pet?.estagio || 'infantil',
       xp: Number(pet?.xp) || 0,
-      progresso: Number(pet?.progresso) || 0,
-      emocao: pet?.emocao || '😐',
-      cor: pet?.cor || '#888888',
+      progresso: Math.min(100, Math.floor((Number(pet?.xp) % 1000) / 10)),
+      emocao: pet?.emocao ?? null,
       cosmetico: pet?.cosmetico || false,
       };
     });
@@ -74,7 +233,7 @@ export async function listarTurmas(professorId) {
 export async function listarPetsDisponiveis() {
   const { data, error } = await supabase
     .from('pets')
-    .select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico, turma_id')
+    .select('id, nome, icone, estagio, xp, emocao, cosmetico, turma_id')
     .is('turma_id', null)
     .order('id', { ascending: true });
 
@@ -100,6 +259,7 @@ export async function salvarTurma(novaTurma) {
       nome: novaTurma.nome,
       codigo: novaTurma.codigo,
       professor_id: novaTurma.professorId,
+      cor: novaTurma.cor,
     }])
     .select()
     .single();
@@ -108,10 +268,10 @@ export async function salvarTurma(novaTurma) {
 
   const { data: petVinculado, error: petError } = await supabase
     .from('pets')
-    .update({ turma_id: turmaData.id, cor: novaTurma.cor })
+    .update({ turma_id: turmaData.id })
     .eq('id', novaTurma.petId)
     .is('turma_id', null)
-    .select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico, turma_id')
+    .select('id, nome, icone, estagio, xp, emocao, cosmetico, turma_id')
     .maybeSingle();
 
   if (petError || !petVinculado) {
@@ -132,13 +292,12 @@ export async function salvarTurma(novaTurma) {
 export async function atualizarTurma(id, dadosAtualizados) {
   try {
     // Atualiza nome da turma
-    await supabase.from('turmas').update({ nome: dadosAtualizados.nome }).eq('id', id);
+    await supabase.from('turmas').update({ nome: dadosAtualizados.nome, cor: dadosAtualizados.cor }).eq('id', id);
     
     // Atualiza dados do pet se existir o ID dele
     if (dadosAtualizados.petId) {
       await supabase.from('pets').update({
         icone: dadosAtualizados.pet,
-        cor: dadosAtualizados.cor
       }).eq('id', dadosAtualizados.petId);
     }
   } catch (error) {
@@ -239,11 +398,15 @@ export async function listarAlunos() {
 }
 
 export async function buscarAluno(email, senha) {
-  // A lógica da loja continua igual
+  // ⚠️ MOCK — não é dado real do Supabase. Atalho fixo pra abrir a
+  // LojaScreen enquanto não existe um botão de navegação real até ela
+  // (ex: dentro do PetScreen). Continua aqui porque hoje é a ÚNICA forma
+  // de acessar a Loja no app.
   if (email === 'loja@gmail.com' && senha === 'loja123') {
     return { id: 'loja', nome: 'Loja', email: 'loja@gmail.com', senha: 'loja123', turmaId: null, xp: 0, initials: 'LJ', cor: '#009D25' }
   }
-  
+
+  // A partir daqui é busca real, direto na tabela "alunos" do Supabase.
   try {
     const { data, error } = await supabase
       .from('alunos')
@@ -401,3 +564,193 @@ export const atualizarStatusAlunoMissao = async (missaoId, alunoId, novoStatus) 
   }
   return data;
 };
+
+// ── Aluno: turma/pet, missões visíveis, progresso, XP e conquistas ──────
+//
+// Tudo abaixo é consumido pelo lado do ALUNO (App.js, PetScreen.js). Não
+// mexe em nada que o Matheus criou pro professor acima — só usa as mesmas
+// tabelas. "XP" nunca é escrito diretamente por essas funções: quem
+// credita XP de verdade é o trigger do banco (aplicar_xp_aluno_missao),
+// disparado quando uma linha de alunos_missoes vira status='aprovado'.
+// Isso é proposital — ver observação de segurança no relatório.
+
+// Turma do aluno + o pet dela. "turmas" não guarda mais o pet embutido
+// (era assim numa versão antiga do schema) — agora "pets" tem turma_id,
+// então busca as duas em paralelo e junta no mesmo formato que
+// listarTurmas() já usa pro professor, pra manter as duas pontas iguais.
+export async function buscarTurmaDoAluno(turmaId) {
+  if (!turmaId) return null // aluno ainda sem turma atribuída
+
+  try {
+    const [{ data: turma, error: turmaError }, { data: pet, error: petError }] = await Promise.all([
+      supabase.from('turmas').select('id, nome, codigo, professor_id').eq('id', turmaId).maybeSingle(),
+      supabase.from('pets').select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico').eq('turma_id', turmaId).maybeSingle(),
+    ])
+    if (turmaError) throw turmaError
+    if (petError) throw petError
+    if (!turma) return null
+
+    return {
+      id: turma.id,
+      nome: turma.nome,
+      codigo: turma.codigo,
+      professorId: turma.professor_id,
+      petId: pet?.id || null,
+      pet: pet?.icone || null,
+      estagio: pet?.estagio || 'Filhote',
+      xp: Number(pet?.xp) || 0,
+      progresso: Number(pet?.progresso) || 0,
+      emocao: pet?.emocao || '😐',
+      cor: pet?.cor || '#888888',
+      cosmetico: pet?.cosmetico || false,
+    }
+  } catch (error) {
+    console.error('Erro ao buscar turma do aluno:', error.message)
+    return null
+  }
+}
+
+// Missões que o aluno pode ver: as que estão vinculadas à turma dele em
+// "missoes_turmas" (a relação N:N real — ver migrations) e ativas.
+//
+// ⚠️ Diferença do que foi pedido: a tarefa original descrevia "turmaId
+// preenchido = turma específica, turmaId NULL = todas as turmas". Isso
+// valia num modelo antigo. No banco atual (migrations do Matheus), toda
+// missão OBRIGATORIAMENTE tem pelo menos 1 turma — a própria função
+// salvar_missao_com_turmas() rejeita criar missão sem turma nenhuma.
+// Não existe mais "missão pra todo mundo" no schema real, então não
+// implementei isso pra não fingir um comportamento que o banco não
+// sustenta. Se quiserem esse conceito de volta, é mudança de schema, não
+// só de código — falar com o Matheus antes.
+export async function listarMissoesDoAluno(alunoId) {
+  try {
+    const { data: aluno, error: alunoError } = await supabase
+      .from('alunos').select('turmaId').eq('id', alunoId).maybeSingle()
+    if (alunoError) throw alunoError
+    if (!aluno?.turmaId) return [] // sem turma, sem missão pra mostrar
+
+    const { data: vinculos, error: vinculosError } = await supabase
+      .from('missoes_turmas').select('missao_id').eq('turma_id', aluno.turmaId)
+    if (vinculosError) throw vinculosError
+    const missaoIds = (vinculos || []).map(v => v.missao_id)
+    if (!missaoIds.length) return []
+
+    const { data: missoes, error: missoesError } = await supabase
+      .from('missoes').select('*').in('id', missaoIds).eq('ativa', true)
+    if (missoesError) throw missoesError
+
+    const { data: progresso, error: progressoError } = await supabase
+      .from('alunos_missoes').select('missao_id, status, xp_aluno, atualizado_em')
+      .eq('aluno_id', alunoId).in('missao_id', missaoIds)
+    if (progressoError) throw progressoError
+    const statusPorMissao = new Map((progresso || []).map(p => [String(p.missao_id), p]))
+
+    return (missoes || []).map(m => {
+      const p = statusPorMissao.get(String(m.id))
+      return {
+        id: m.id,
+        nome: m.nome,
+        descricao: m.descricao,
+        xp: m.xp,
+        dificuldade: m.dificuldade,
+        icone: m.icone,
+        status: p?.status || 'pendente', // sem linha em alunos_missoes ainda = pendente
+        atualizadoEm: p?.atualizado_em || null,
+      }
+    })
+  } catch (error) {
+    console.error('Erro ao listar missões do aluno:', error.message)
+    return []
+  }
+}
+
+// Status de UMA missão específica pra um aluno (undefined se ele nunca
+// interagiu com ela — trate como 'pendente' na UI).
+export async function buscarProgressoMissao(alunoId, missaoId) {
+  try {
+    const { data, error } = await supabase
+      .from('alunos_missoes').select('*')
+      .eq('aluno_id', alunoId).eq('missao_id', missaoId).maybeSingle()
+    if (error) throw error
+    return data
+  } catch (error) {
+    console.error('Erro ao buscar progresso da missão:', error.message)
+    return null
+  }
+}
+
+// "Iniciar" = criar/confirmar a linha em alunos_missoes com status
+// pendente (deixa registrado que o aluno abriu a missão).
+export async function iniciarMissao(alunoId, missaoId) {
+  return atualizarStatusAlunoMissao(missaoId, alunoId, 'pendente')
+}
+
+// "Concluir" = o aluno entrega a missão pra avaliação. Só isso — quem
+// muda pra 'aprovado' (e credita XP de verdade, via trigger do banco) é
+// o professor, não o aluno. Não existe função aqui pra aluno se
+// autoaprovar; isso é intencional.
+export async function concluirMissao(alunoId, missaoId) {
+  return atualizarStatusAlunoMissao(missaoId, alunoId, 'entregue')
+}
+
+// Alias genérico — não existe campo de "progresso percentual" em
+// alunos_missoes, só o status (pendente/entregue/aprovado). "Atualizar
+// progresso" na prática é mudar o status.
+export const atualizarProgressoMissao = atualizarStatusAlunoMissao
+
+// XP atual do aluno (o valor já fica cacheado em alunos.xp, mantido pelo
+// trigger do banco — não precisa somar histórico toda vez).
+export async function consultarXP(alunoId) {
+  try {
+    const { data, error } = await supabase.from('alunos').select('xp').eq('id', alunoId).maybeSingle()
+    if (error) throw error
+    return data?.xp || 0
+  } catch (error) {
+    console.error('Erro ao consultar XP do aluno:', error.message)
+    return 0
+  }
+}
+
+// Conquistas do aluno (tabela "conquistas": cada linha já nasce vinculada
+// a um alunoId — é o professor concedendo diretamente, não existe uma
+// etapa separada de "desbloqueio automático" no schema atual, então não
+// tem uma função "verificarConquistas()" aqui: a existência da linha JÁ
+// é o desbloqueio).
+export async function listarConquistasDoAluno(alunoId) {
+  try {
+    const { data, error } = await supabase
+      .from('conquistas').select('*').eq('alunoId', alunoId).order('id', { ascending: false })
+    if (error) throw error
+    return data || []
+  } catch (error) {
+    console.error('Erro ao listar conquistas do aluno:', error.message)
+    return []
+  }
+}
+
+// Resumo pra tela de perfil/dashboard do aluno: XP, quantas missões já
+// foram aprovadas e quantas conquistas ele tem.
+export async function consultarProgressoGeral(alunoId) {
+  try {
+    const [alunoRes, missoesRes, conquistasRes] = await Promise.all([
+      supabase.from('alunos').select('xp, nome, turmaId').eq('id', alunoId).maybeSingle(),
+      supabase.from('alunos_missoes').select('id', { count: 'exact', head: true }).eq('aluno_id', alunoId).eq('status', 'aprovado'),
+      supabase.from('conquistas').select('id', { count: 'exact', head: true }).eq('alunoId', alunoId),
+    ])
+    if (alunoRes.error) throw alunoRes.error
+    if (missoesRes.error) throw missoesRes.error
+    if (conquistasRes.error) throw conquistasRes.error
+
+    return {
+      xp: alunoRes.data?.xp || 0,
+      nome: alunoRes.data?.nome || '',
+      turmaId: alunoRes.data?.turmaId || null,
+      missoesAprovadas: missoesRes.count || 0,
+      conquistas: conquistasRes.count || 0,
+    }
+  } catch (error) {
+    console.error('Erro ao consultar progresso geral do aluno:', error.message)
+    return { xp: 0, nome: '', turmaId: null, missoesAprovadas: 0, conquistas: 0 }
+  }
+}
+

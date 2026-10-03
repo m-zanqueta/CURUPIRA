@@ -64,7 +64,12 @@ const COSMETICOS = {
   ],
 }
  
-const TURMA = { petId: 'jacare', xp: 3570, emocao: '😄', energia: 75, missoes: 2 }
+// Turma sem pet ainda cadastrado, ou aluno sem turma atribuída pelo
+// professor: usamos um estado neutro (Filhote, sem XP) em vez de travar a
+// tela. "energia" não existe como coluna/mecânica real no banco ainda —
+// fica só decorativa no cliente até alguém definir a regra.
+const TURMA_PADRAO = { petId: 'jacare', xp: 0, emocao: '😐', energia: 75, progresso: 0 }
+const ENERGIA_PADRAO = 75
 const XP_MAX = 5000
  
 function getEstagio(xp) {
@@ -184,14 +189,35 @@ function BotaoRPG({ icon, label, cor, onPress, itemEquipado }) {
   )
 }
  
+function mapearPetId(icone) {
+  return icone && PETS[icone] ? icone : 'jacare'
+}
+
 // ── TELA PRINCIPAL ───────────────────────────────────────────
-export default function PetScreen({ aluno, onVoltar }) {
-  const pet       = PETS[TURMA.petId]
-  const emocao    = EMOCOES[TURMA.emocao] || EMOCOES['😄']
-  const estagioI  = getEstagio(TURMA.xp)
+// `turma` e `progresso` vêm do App.js já resolvidos do Supabase
+// (buscarTurmaDoAluno + consultarProgressoGeral). `onLogout` é o nome que
+// o App.js usa pra essa ação; onVoltar fica como alias por segurança.
+export default function PetScreen({ aluno, turma, progresso, onLogout, onVoltar }) {
+  const sair = onLogout || onVoltar
+  const semTurma = !turma
+  const turmaAtual = turma ? {
+    petId:     mapearPetId(turma.pet),
+    xp:        turma.xp ?? 0,
+    emocao:    turma.emocao || '😐',
+    energia:   ENERGIA_PADRAO, // sem coluna/mecânica de energia no banco ainda
+    progresso: turma.progresso ?? 0,
+  } : TURMA_PADRAO
+  // Barra "Missões": conta real de missões aprovadas do aluno (0 a 5+
+  // vira 0-100%). Não é um "progresso" salvo em lugar nenhum, é calculado
+  // aqui a partir do que consultarProgressoGeral trouxe.
+  const missoesPct = Math.min(100, (progresso?.missoesAprovadas || 0) * 20)
+
+  const pet       = PETS[turmaAtual.petId]
+  const emocao    = EMOCOES[turmaAtual.emocao] || EMOCOES['😄']
+  const estagioI  = getEstagio(turmaAtual.xp)
   const estagio   = ESTAGIOS[estagioI]
   const proxEst   = ESTAGIOS[estagioI + 1]
-  const xpLocal   = TURMA.xp - estagio.xpMin
+  const xpLocal   = turmaAtual.xp - estagio.xpMin
   const xpNeed    = proxEst ? proxEst.xpMin - estagio.xpMin : 1
   const xpPct     = Math.min(100, Math.round((xpLocal / xpNeed) * 100))
  
@@ -257,8 +283,8 @@ export default function PetScreen({ aluno, onVoltar }) {
       '😴': ['💤','😪','🌙','💤'],
       '😢': ['💧','😢','🌧️','💦'],
     }
-    const emojis = mapa[TURMA.emocao] || mapa['😄']
-    const count  = TURMA.emocao === '🤩' ? 12 : 8
+    const emojis = mapa[turmaAtual.emocao] || mapa['😄']
+    const count  = turmaAtual.emocao === '🤩' ? 12 : 8
     const novas  = Array.from({ length: count }, (_, i) => ({
       id: Date.now() + i,
       emoji: emojis[i % emojis.length],
@@ -283,7 +309,7 @@ export default function PetScreen({ aluno, onVoltar }) {
  
           {/* Header */}
           <View style={s.header}>
-            <TouchableOpacity style={s.btnVoltar} onPress={onVoltar} activeOpacity={0.7}>
+            <TouchableOpacity style={s.btnVoltar} onPress={sair} activeOpacity={0.7}>
               <Text style={s.btnVoltarTxt}>←</Text>
             </TouchableOpacity>
  
@@ -299,19 +325,28 @@ export default function PetScreen({ aluno, onVoltar }) {
             </Animated.View>
  
             <View style={s.emocaoWrap}>
-              <Text style={s.emocaoEmoji}>{TURMA.emocao}</Text>
+              <Text style={s.emocaoEmoji}>{turmaAtual.emocao}</Text>
               <Text style={s.emocaoLabel}>{emocao.label}</Text>
             </View>
           </View>
  
+
+          {semTurma && (
+            <View style={s.avisoSemTurma}>
+              <Text style={s.avisoSemTurmaTxt}>
+                ⏳ Você ainda não foi colocado em uma turma. Assim que o professor te atribuir, seu pet e seu XP aparecem aqui.
+              </Text>
+            </View>
+          )}
+
           {/* Barras de status — estilo folha/natureza */}
           <Animated.View style={[s.statusWrap, {
             opacity: entradaA,
             transform: [{ translateX: entradaA.interpolate({ inputRange:[0,1], outputRange:[-30,0] }) }]
           }]}>
             <BarraStatus icon="❤️" valor={emocao.felicidade} cor="#e53935" label="Vida" />
-            <BarraStatus icon="⚡" valor={TURMA.energia}      cor="#f9a825" label="Energia" />
-            <BarraStatus icon="🏆" valor={TURMA.missoes * 40} cor={pet.cor} label="Missões" />
+            <BarraStatus icon="⚡" valor={turmaAtual.energia}      cor="#f9a825" label="Energia" />
+            <BarraStatus icon="🏆" valor={missoesPct} cor={pet.cor} label="Missões" />
           </Animated.View>
  
           {/* Arena */}
@@ -342,8 +377,8 @@ export default function PetScreen({ aluno, onVoltar }) {
                   {chapeu && <Text style={s.chapeu}>{chapeu.emoji}</Text>}
                   <Image source={pet.imagem} style={s.petImg} resizeMode="contain" />
                   {acessorio && <Text style={s.acessorio}>{acessorio.emoji}</Text>}
-                  {TURMA.emocao === '😴' && <Text style={s.zzz}>💤</Text>}
-                  {TURMA.emocao === '😢' && <Text style={s.lagrima}>💧</Text>}
+                  {turmaAtual.emocao === '😴' && <Text style={s.zzz}>💤</Text>}
+                  {turmaAtual.emocao === '😢' && <Text style={s.lagrima}>💧</Text>}
                 </Animated.View>
               </TouchableOpacity>
             </Animated.View>
@@ -363,11 +398,11 @@ export default function PetScreen({ aluno, onVoltar }) {
             <View style={s.xpHeader}>
               <View style={s.xpLabelWrap}>
                 <Text style={s.xpIcon}>🍃</Text>
-                <Text style={s.xpLabel}>{TURMA.xp.toLocaleString('pt-BR')} XP</Text>
+                <Text style={s.xpLabel}>{turmaAtual.xp.toLocaleString('pt-BR')} XP</Text>
               </View>
               {proxEst ? (
                 <Text style={s.xpFaltam}>
-                  {(proxEst.xpMin - TURMA.xp).toLocaleString('pt-BR')} para {proxEst.icon} {proxEst.label}
+                  {(proxEst.xpMin - turmaAtual.xp).toLocaleString('pt-BR')} para {proxEst.icon} {proxEst.label}
                 </Text>
               ) : (
                 <Text style={[s.xpFaltam, { color: pet.cor }]}>👑 Nível máximo!</Text>
@@ -507,6 +542,8 @@ const s = StyleSheet.create({
   emocaoLabel: { fontSize: 8, fontFamily: fonts.semibold, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.5 },
  
   statusWrap:  { paddingHorizontal: 14, gap: 5, marginBottom: 4 },
+  avisoSemTurma: { marginHorizontal: 14, marginBottom: 8, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  avisoSemTurmaTxt: { fontSize: 11.5, fontFamily: fonts.medium, color: 'rgba(255,255,255,0.75)', lineHeight: 16 },
   barraWrap:   { flexDirection: 'row', alignItems: 'center', gap: 7 },
   barraIcon:   { fontSize: 13, width: 18, textAlign: 'center' },
   barraTrilho: { flex: 1, height: 8, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' },

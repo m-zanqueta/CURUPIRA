@@ -182,11 +182,12 @@ export default function DashboardScreen({ professor, onLogout }) {
         professorId: turmaSalva.professor_id,
         petId: turmaSalva.pet.id,
         pet: turmaSalva.pet.icone,
-        estagio: turmaSalva.pet.estagio || 'Filhote',
+        petNome: turmaSalva.pet.nome,
+        estagio: turmaSalva.pet.estagio || 'infantil',
         xp: Number(turmaSalva.pet.xp) || 0,
         progresso: Number(turmaSalva.pet.progresso) || 0,
-        emocao: turmaSalva.pet.emocao || '😊',
-        cor: turmaSalva.pet.cor || dadosNovaTurma.cor,
+        emocao: turmaSalva.pet.emocao ?? null,
+        cor: turmaSalva.cor || dadosNovaTurma.cor,
         cosmetico: Boolean(turmaSalva.pet.cosmetico),
       };
       setTurmas(prev => [...prev, nova]);
