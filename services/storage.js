@@ -230,19 +230,30 @@ export async function listarTurmas(professorId) {
   }
 }
 
-export async function listarPetsDisponiveis() {
-  const { data, error } = await supabase
-    .from('pets')
-    .select('id, nome, icone, estagio, xp, emocao, cosmetico, turma_id')
-    .is('turma_id', null)
-    .order('id', { ascending: true });
+export async function listarPetsParaTurma() {
+  const [petsResult, turmasResult] = await Promise.all([
+    supabase
+      .from('pets')
+      .select('id, nome, icone, estagio, xp, emocao, cosmetico, turma_id')
+      .order('id', { ascending: true }),
+    supabase
+      .from('turmas')
+      .select('id, nome'),
+  ]);
 
-  if (error) throw error;
+  if (petsResult.error) throw petsResult.error;
+  if (turmasResult.error) throw turmasResult.error;
+
+  const turmaPorId = new Map((turmasResult.data || []).map(turma => [String(turma.id), turma.nome]));
 
   // A coluna icone deve conter a URL pública da imagem no Supabase Storage.
-  return (data || []).filter(pet =>
-    typeof pet.icone === 'string' && /^https?:\/\//i.test(pet.icone.trim())
-  );
+  return (petsResult.data || [])
+    .filter(pet => typeof pet.icone === 'string' && /^https?:\/\//i.test(pet.icone.trim()))
+    .map(pet => ({
+      ...pet,
+      turmaNome: pet.turma_id == null ? null : turmaPorId.get(String(pet.turma_id)) || `Turma ${pet.turma_id}`,
+      disponivel: pet.turma_id == null,
+    }));
 }
 
 export async function salvarTurma(novaTurma) {
