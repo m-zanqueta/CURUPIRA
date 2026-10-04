@@ -2,6 +2,26 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from './supabase'
 
 const TABELAS_ADMIN = new Set(['professores', 'alunos', 'pets', 'icones_missoes', 'acessorios'])
+const CHAVE_SESSAO_APP = 'curupira_sessao_app'
+
+export async function salvarSessaoApp(sessao) {
+  await AsyncStorage.setItem(CHAVE_SESSAO_APP, JSON.stringify(sessao))
+}
+
+export async function obterSessaoApp() {
+  const valor = await AsyncStorage.getItem(CHAVE_SESSAO_APP)
+  if (!valor) return null
+  try {
+    return JSON.parse(valor)
+  } catch {
+    await AsyncStorage.removeItem(CHAVE_SESSAO_APP)
+    return null
+  }
+}
+
+export async function limparSessaoApp() {
+  await AsyncStorage.removeItem(CHAVE_SESSAO_APP)
+}
 
 export async function listarDadosAdmin(tabela) {
   if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')

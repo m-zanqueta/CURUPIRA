@@ -10,7 +10,7 @@ import {
 } from '@expo-google-fonts/montserrat'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { colors } from './theme'
-import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral } from './services/storage'
+import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp } from './services/storage'
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
@@ -36,11 +36,49 @@ export default function App() {
   });
  
   useEffect(() => {
+    let ativo = true
     async function init() {
-      await inicializarProfessores()
-      setTimeout(() => navegarCom('login'), 2500)
+      try {
+        await inicializarProfessores()
+        const sessao = await obterSessaoApp()
+        if (!ativo) return
+
+        if (sessao?.tipo === 'admin' && sessao.usuario) {
+          setProfessor({ ...sessao.usuario, tipo: 'admin' })
+          setTela('dashboardAdmin')
+          return
+        }
+        if (sessao?.tipo === 'professor' && sessao.usuario?.id) {
+          setProfessor(sessao.usuario)
+          setTela('dashboardProfessor')
+          return
+        }
+        if (sessao?.tipo === 'aluno' && sessao.usuario?.id) {
+          const alunoSalvo = sessao.usuario
+          const [turma, progresso] = await Promise.all([
+            buscarTurmaDoAluno(alunoSalvo.turmaId),
+            consultarProgressoGeral(alunoSalvo.id),
+          ])
+          if (!ativo) return
+          setAluno(alunoSalvo)
+          setTurmaAluno(turma)
+          setProgressoAluno(progresso)
+          setTela('pet')
+          return
+        }
+        if (sessao?.tipo === 'loja') {
+          setTela('loja')
+          return
+        }
+
+        setTela('login')
+      } catch (error) {
+        console.error('Não foi possível restaurar a sessão salva:', error)
+        if (ativo) setTela('login')
+      }
     }
     if (fontsLoaded) init()
+    return () => { ativo = false }
   }, [fontsLoaded])
 
   function navegarCom(destino) {
@@ -50,12 +88,29 @@ export default function App() {
     })
   }
 
-  function entrarAreaProfessor(usuario) {
+  function usuarioSemSenha(usuario) {
+    if (!usuario) return null
+    const { senha, ...dados } = usuario
+    return dados
+  }
+
+  async function entrarAreaProfessor(usuario) {
+    const tipo = usuario?.tipo === 'admin' ? 'admin' : 'professor'
+    try {
+      await salvarSessaoApp({ tipo, usuario: usuarioSemSenha(usuario) })
+    } catch (error) {
+      console.error('Não foi possível salvar a sessão do professor:', error)
+    }
     setProfessor(usuario)
     navegarCom(usuario?.tipo === 'admin' ? 'dashboardAdmin' : 'dashboardProfessor')
   }
 
       async function handleLoginAluno(alunoLogado) {
+        try {
+          await salvarSessaoApp({ tipo: 'aluno', usuario: usuarioSemSenha(alunoLogado) })
+        } catch (error) {
+          console.error('Não foi possível salvar a sessão do aluno:', error)
+        }
         const [turma, progresso] = await Promise.all([
           buscarTurmaDoAluno(alunoLogado.turmaId),
           consultarProgressoGeral(alunoLogado.id),
@@ -69,11 +124,29 @@ export default function App() {
 
       async function handleLoginGeral(alunoLogado) {
         if (alunoLogado.email === 'loja@gmail.com') {
+          try {
+            await salvarSessaoApp({ tipo: 'loja', usuario: usuarioSemSenha(alunoLogado) })
+          } catch (error) {
+            console.error('Não foi possível salvar a sessão da loja:', error)
+          }
           navegarCom('loja')
           return
         }
-        handleLoginAluno(alunoLogado)
+        await handleLoginAluno(alunoLogado)
       }
+
+  async function sair() {
+    try {
+      await limparSessaoApp()
+    } catch (error) {
+      console.error('Não foi possível limpar a sessão salva:', error)
+    }
+    setProfessor(null)
+    setAluno(null)
+    setTurmaAluno(null)
+    setProgressoAluno(null)
+    navegarCom(professor ? 'loginProfessor' : 'login')
+  }
   
 
   if (!fontsLoaded || tela === 'splash' || tela === 'splashLogin') {
@@ -108,16 +181,16 @@ export default function App() {
           />
         )}
         {tela === 'dashboardAdmin' && (
-          professor?.tipo === 'admin' ? <AdminDashboardScreen usuario={professor} onLogout={() => navegarCom('loginProfessor')} /> : <LoginProfessor onLogin={entrarAreaProfessor} onAdminLogin={entrarAreaProfessor} onSouAluno={() => navegarCom('login')} />
+          professor?.tipo === 'admin' ? <AdminDashboardScreen usuario={professor} onLogout={sair} /> : <LoginProfessor onLogin={entrarAreaProfessor} onAdminLogin={entrarAreaProfessor} onSouAluno={() => navegarCom('login')} />
         )}
         {tela === 'dashboardProfessor' && (
-          professor?.tipo !== 'admin' ? <DashboardScreen professor={professor} onLogout={() => navegarCom('loginProfessor')} /> : <AdminDashboardScreen usuario={professor} onLogout={() => navegarCom('loginProfessor')} />
+          professor?.tipo !== 'admin' ? <DashboardScreen professor={professor} onLogout={sair} /> : <AdminDashboardScreen usuario={professor} onLogout={sair} />
         )}
         {tela === 'pet' && (
-          <PetScreen aluno={aluno} turma={turmaAluno} progresso={progressoAluno} onLogout={() => navegarCom('login')} />
+          <PetScreen aluno={aluno} turma={turmaAluno} progresso={progressoAluno} onLogout={sair} />
         )}
         {tela === 'loja' && (
-          <LojaScreen onLogout={() => navegarCom('login')} />
+          <LojaScreen onLogout={sair} />
         )}
 
       </SafeAreaProvider>
