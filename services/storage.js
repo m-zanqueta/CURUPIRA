@@ -264,17 +264,25 @@ export async function salvarTurma(novaTurma) {
     throw new Error('Selecione um PET disponível para criar a turma.');
   }
 
-  const { data: turmaData, error: turmaError } = await supabase
-    .from('turmas')
-    .insert([{
-      nome: novaTurma.nome,
-      codigo: novaTurma.codigo,
-      professor_id: novaTurma.professorId,
-      cor: novaTurma.cor,
-    }])
-    .select()
-    .single();
+  const dadosTurma = {
+    nome: novaTurma.nome,
+    codigo: novaTurma.codigo,
+    professor_id: novaTurma.professorId,
+    cor: novaTurma.cor,
+  };
+  let { data: turmaData, error: turmaError } = await supabase
+    .from('turmas').insert([dadosTurma]).select().single();
 
+  // Compatibilidade com bancos onde a migration da cor da turma ainda não foi aplicada.
+  const colunaCorAusente = turmaError && (
+    turmaError.code === '42703' || turmaError.code === 'PGRST204'
+  ) && /cor/i.test(turmaError.message || '');
+  if (colunaCorAusente) {
+    const dadosSemCor = { ...dadosTurma };
+    delete dadosSemCor.cor;
+    ({ data: turmaData, error: turmaError } = await supabase
+      .from('turmas').insert([dadosSemCor]).select().single());
+  }
   if (turmaError) throw turmaError;
 
   const { data: petVinculado, error: petError } = await supabase
@@ -340,12 +348,16 @@ export async function listarMissoes(professorId) {
   if (error) throw error;
   const ids = (data || []).map(m => m.id);
   const { data: vinculos, error: vinculosError } = ids.length
-    ? await supabase.from('missoes_turmas').select('missao_id, turma_id').in('missao_id', ids)
+    ? await supabase.from('missoes_turmas').select('missao_id, turma_id, ativa').in('missao_id', ids)
     : { data: [], error: null };
   if (vinculosError) throw vinculosError;
   const porMissao = new Map();
-  (vinculos || []).forEach(v => porMissao.set(String(v.missao_id), [...(porMissao.get(String(v.missao_id)) || []), v.turma_id]));
-  return (data || []).map(m => ({ ...m, name: m.nome, icon: m.icone, active: m.ativa, turmaIds: porMissao.get(String(m.id)) || [] }));
+  const statusPorMissao = new Map();
+  (vinculos || []).forEach(v => {
+    porMissao.set(String(v.missao_id), [...(porMissao.get(String(v.missao_id)) || []), v.turma_id]);
+    statusPorMissao.set(String(v.missao_id), { ...(statusPorMissao.get(String(v.missao_id)) || {}), [String(v.turma_id)]: v.ativa ?? true });
+  });
+  return (data || []).map(m => ({ ...m, name: m.nome, icon: m.icone, active: m.ativa, turmaIds: porMissao.get(String(m.id)) || [], turmaAtivas: statusPorMissao.get(String(m.id)) || {} }));
 }
 
 export async function listarIconesMissoes() {
@@ -367,9 +379,10 @@ export async function salvarMissao(missao) {
     p_turmas_ids: missao.turmasIds,
   });
   if (error) throw error;
-  const { data, error: fetchError } = await supabase.from('missoes').select('*').eq('id', id).single();
-  if (fetchError) throw fetchError;
-  return { ...data, name: data.nome, icon: data.icone, active: data.ativa, turmaIds: missao.turmasIds };
+  const atualizadas = await listarMissoes(missao.professorId);
+  const salva = atualizadas.find(item => String(item.id) === String(id));
+  if (!salva) throw new Error('A missão foi salva, mas não foi possível recarregar seus vínculos com as turmas.');
+  return salva;
 }
 
 export async function atualizarMissao(id, dados) {
@@ -381,6 +394,25 @@ export async function atualizarMissao(id, dados) {
 
 export async function definirTurmasMissao(id, professorId, turmasIds) {
   const { error } = await supabase.rpc('definir_turmas_missao', { p_missao_id: id, p_professor_id: professorId, p_turmas_ids: turmasIds });
+  if (error) throw error;
+}
+
+export async function definirAtivaMissaoTurma(missaoId, professorId, turmaId, ativa) {
+  const { error } = await supabase.rpc('definir_ativa_missao_turma', {
+    p_missao_id: missaoId,
+    p_professor_id: professorId,
+    p_turma_id: turmaId,
+    p_ativa: ativa,
+  });
+  if (error) throw error;
+}
+
+export async function removerMissaoDaTurma(missaoId, professorId, turmaId) {
+  const { error } = await supabase.rpc('remover_missao_da_turma', {
+    p_missao_id: missaoId,
+    p_professor_id: professorId,
+    p_turma_id: turmaId,
+  });
   if (error) throw error;
 }
 
@@ -641,7 +673,7 @@ export async function listarMissoesDoAluno(alunoId) {
     if (!aluno?.turmaId) return [] // sem turma, sem missão pra mostrar
 
     const { data: vinculos, error: vinculosError } = await supabase
-      .from('missoes_turmas').select('missao_id').eq('turma_id', aluno.turmaId)
+      .from('missoes_turmas').select('missao_id').eq('turma_id', aluno.turmaId).eq('ativa', true)
     if (vinculosError) throw vinculosError
     const missaoIds = (vinculos || []).map(v => v.missao_id)
     if (!missaoIds.length) return []
