@@ -20,7 +20,7 @@ const FORMULARIOS = {
     campos: [
       { id: 'nome', label: 'Nome', placeholder: 'Nome do professor', required: true },
       { id: 'email', label: 'E-mail', placeholder: 'professor@escola.com', required: true, email: true },
-      { id: 'senha', label: 'Senha', placeholder: 'Crie uma senha', required: true, secure: true },
+      { id: 'senha', label: 'Senha', placeholder: '8+ caracteres, maiúscula, número e símbolo', required: true, secure: true },
     ],
   },
   icone: {
@@ -39,10 +39,10 @@ const FORMULARIOS = {
 }
 
 const DADOS_INICIAIS = {
-  pet: { nome: '', imagem: null, estagio: null },
+  pet: { nome: '', imagem: null },
   professor: { nome: '', email: '', senha: '' },
   icone: { nome: '', imagem: null },
-  acessorio: { nome: '', preco: '', slot: 'cabeca', imagem: null },
+  acessorio: { nome: '', preco: '', slot: 'chapeu', imagem: null },
 }
 
 export default function AdminDashboardScreen({ usuario, onLogout }) {
@@ -92,17 +92,17 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
     config.campos.forEach(campo => {
       const valor = String(dados[campo.id] || '').trim()
       if (campo.required && !valor) novosErros[campo.id] = `Preencha ${campo.label.toLowerCase()}.`
-      else if (campo.email && valor && !/^\S+@\S+\.\S+$/.test(valor)) novosErros[campo.id] = 'Informe um e-mail válido.'
+      else if (campo.email && valor && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(valor)) novosErros[campo.id] = 'Informe um e-mail válido, como nome@dominio.com.'
+      else if (campo.id === 'senha' && valor && (!/[A-Z]/.test(valor) || !/[a-z]/.test(valor) || !/[0-9]/.test(valor) || !/[^A-Za-z0-9]/.test(valor) || valor.length < 8)) {
+        novosErros[campo.id] = 'Use ao menos 8 caracteres, com maiúscula, minúscula, número e símbolo.'
+      }
     })
     if (['pet', 'icone', 'acessorio'].includes(formulario)) {
       const tipoImagem = formulario === 'pet' ? 'PET' : formulario === 'icone' ? 'ícone' : 'acessório'
       if (!dados.imagem) novosErros.imagem = `Selecione a imagem do ${tipoImagem} para enviar ao Supabase Storage.`
     }
-    if (formulario === 'pet') {
-      if (!dados.estagio) novosErros.estagio = 'Escolha uma fase para o PET.'
-    }
     if (formulario === 'acessorio') {
-      if (!['cabeca', 'roupa', 'outro'].includes(dados.slot)) novosErros.slot = 'Escolha o tipo do acessório.'
+      if (!['chapeu', 'colar'].includes(dados.slot)) novosErros.slot = 'Escolha o tipo do acessório.'
       const preco = Number(dados.preco)
       if (!Number.isInteger(preco) || preco < 0) novosErros.preco = 'Informe um preço inteiro igual ou maior que zero.'
     }
@@ -147,7 +147,7 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
           <AdminAction icon="👩‍🏫" title="Adicionar professor" description="Crie um novo acesso para a área do professor." onPress={() => abrirFormulario('professor')} />
           <AdminAction icon="🖼️" title="Adicionar ícone missão" description="Inclua uma imagem no catálogo de ícones das missões." onPress={() => abrirFormulario('icone')} />
           <AdminAction icon="🛍️" title="Adicionar item à loja" description="Cadastre acessórios com imagem e preço em moedas." onPress={() => abrirFormulario('acessorio')} />
-          <AdminAction icon="📝" title="Alterar dados" description="Consulte e edite professores, alunos e PETs cadastrados." onPress={() => setAlterarDadosVisivel(true)} />
+          <AdminAction icon="📝" title="Alterar dados" description="Consulte, edite e exclua professores, alunos, PETs, ícones e itens da loja." onPress={() => setAlterarDadosVisivel(true)} />
         </View>
 
         <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
@@ -160,7 +160,7 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
           <ScrollView contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled">
             <View style={styles.modal}>
               <Text style={styles.modalTitle}>{config?.titulo}</Text>
-              {formulario === 'pet' && <Text style={styles.hint}>A imagem será enviada ao Supabase. O PET começa com 0 XP, emoção vazia e sem turma vinculada.</Text>}
+              {formulario === 'pet' && <Text style={styles.hint}>A imagem será enviada ao Supabase. O PET começa no estágio infantil, com 0 XP, emoção vazia e sem turma vinculada.</Text>}
               {formulario === 'icone' && <Text style={styles.hint}>Escolha a imagem do ícone. Ela será enviada ao Supabase Storage.</Text>}
               {formulario === 'acessorio' && <Text style={styles.hint}>Envie uma imagem PNG transparente para sobrepor ao PET animado.</Text>}
               {['pet', 'icone', 'acessorio'].includes(formulario) && (
@@ -174,19 +174,6 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
                     </TouchableOpacity>
                     {!!erros.imagem && <Text style={styles.errorText}>{erros.imagem}</Text>}
                   </View>
-                  {formulario === 'pet' && (
-                    <View style={styles.field}>
-                      <Text style={styles.label}>Estágio *</Text>
-                      <View style={styles.stageOptions}>
-                        {['infantil', 'jovem', 'adulto'].map(estagio => (
-                          <TouchableOpacity key={estagio} style={[styles.stageOption, dados.estagio === estagio && styles.stageOptionActive]} onPress={() => atualizarCampo('estagio', estagio)}>
-                            <Text style={[styles.stageText, dados.estagio === estagio && styles.stageTextActive]}>{estagio[0].toUpperCase() + estagio.slice(1)}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                      {!!erros.estagio && <Text style={styles.errorText}>{erros.estagio}</Text>}
-                    </View>
-                  )}
                 </>
               )}
               {formulario === 'acessorio' && (
@@ -194,9 +181,8 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
                   <Text style={styles.label}>Espaço do acessório *</Text>
                   <View style={styles.stageOptions}>
                     {[
-                      { id: 'cabeca', nome: 'Cabeça' },
-                      { id: 'roupa', nome: 'Roupa' },
-                      { id: 'outro', nome: 'Outro' },
+                      { id: 'chapeu', nome: 'Chapéu' },
+                      { id: 'colar', nome: 'Colar' },
                     ].map(slot => (
                       <TouchableOpacity key={slot.id} style={[styles.stageOption, dados.slot === slot.id && styles.stageOptionActive]} onPress={() => atualizarCampo('slot', slot.id)}>
                         <Text style={[styles.stageText, dados.slot === slot.id && styles.stageTextActive]}>{slot.nome}</Text>

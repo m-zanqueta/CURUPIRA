@@ -9,17 +9,16 @@ import { listarAcessoriosLoja, listarItensComprados, comprarItem } from '../serv
 const { width } = Dimensions.get('window')
 
 const CATEGORIAS = [
-  { id: 'cabeca', label: 'Chapéus', icon: '🎩' },
-  { id: 'roupa', label: 'Roupas', icon: '👕' },
-  { id: 'outro', label: 'Acessórios', icon: '💎' },
+  { id: 'chapeu', label: 'Chapéus', icon: '🎩' },
+  { id: 'colar', label: 'Colares', icon: '📿' },
 ]
 
 const PET_EMOJI = '🐉' // padrão da loja
 const MOEDAS_INICIAIS = 1000
-const SLOT_LABEL = { cabeca: 'Cabeça', roupa: 'Roupa', outro: 'Acessório' }
+const SLOT_LABEL = { chapeu: 'Chapéu', colar: 'Colar' }
 
 export default function LojaScreen({ onLogout }) {
-  const [categoriaAtiva, setCategoriaAtiva] = useState('cabeca')
+  const [categoriaAtiva, setCategoriaAtiva] = useState('chapeu')
   const [moedas, setMoedas] = useState(MOEDAS_INICIAIS)
   const [comprados, setComprados] = useState([])
   const [produtos, setProdutos] = useState([])

@@ -10,6 +10,8 @@ const ABAS = [
   { id: 'professores', titulo: 'Professores' },
   { id: 'alunos', titulo: 'Alunos' },
   { id: 'pets', titulo: 'PETs' },
+  { id: 'icones_missoes', titulo: 'Ícones de missão' },
+  { id: 'acessorios', titulo: 'Itens da loja' },
 ]
 
 const ROTULOS = {
@@ -18,6 +20,7 @@ const ROTULOS = {
   cosmetico: 'Cosmético', turma_id: 'ID da turma', turmaId: 'ID da turma',
   professor_id: 'ID do professor', professorId: 'ID do professor',
   cor: 'Cor', progresso: 'Progresso', ativo: 'Ativo', ativa: 'Ativa',
+  slot: 'Tipo de acessório', imagem_path: 'Caminho da imagem', camada: 'Camada', preco: 'Preço em moedas',
 }
 
 function rotuloCampo(chave) {
@@ -64,12 +67,17 @@ function converterValor(chave, valor, original) {
 function tituloRegistro(tabela, registro) {
   if (registro.nome) return String(registro.nome)
   if (registro.email) return String(registro.email)
-  return `${tabela === 'pets' ? 'PET' : 'Registro'} #${registro.id}`
+  const tipo = tabela === 'pets' ? 'PET' : tabela === 'icones_missoes' ? 'Ícone' : 'Item'
+  return `${tipo} #${registro.id}`
 }
 
 function resumoRegistro(tabela, registro) {
   const campos = tabela === 'professores'
     ? [registro.email]
+      : tabela === 'icones_missoes'
+        ? [registro.ativo ? 'Ativo' : 'Inativo']
+        : tabela === 'acessorios'
+          ? [registro.slot, registro.preco != null ? `${registro.preco} moedas` : null, registro.ativo ? 'Ativo' : 'Inativo']
     : tabela === 'alunos'
       ? [registro.email, registro.turmaId != null ? `Turma ${registro.turmaId}` : null, registro.xp != null ? `${registro.xp} XP` : null]
       : [registro.estagio, registro.xp != null ? `${registro.xp} XP` : null, registro.turma_id != null ? `Turma ${registro.turma_id}` : null]
@@ -135,6 +143,22 @@ export default function AdminDataManager({ visible, onClose }) {
 
   async function salvarEdicao() {
     if (!selecionado) return
+    if (aba === 'acessorios' && !['chapeu', 'colar'].includes(rascunho.slot)) {
+      setErro('Escolha Chapéu ou Colar para o tipo do acessório.')
+      return
+    }
+    if (aba === 'professores') {
+      const email = String(rascunho.email || '').trim()
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+        setErro('Informe um e-mail válido, como nome@dominio.com.')
+        return
+      }
+      const senha = String(rascunho.senha || '')
+      if (senha && senha !== String(selecionado.senha || '') && (!/[A-Z]/.test(senha) || !/[a-z]/.test(senha) || !/[0-9]/.test(senha) || !/[^A-Za-z0-9]/.test(senha) || senha.length < 8)) {
+        setErro('A senha deve ter ao menos 8 caracteres, com maiúscula, minúscula, número e símbolo.')
+        return
+      }
+    }
     const alteracoes = {}
     try {
       Object.keys(selecionado).forEach(chave => {
@@ -232,6 +256,17 @@ export default function AdminDataManager({ visible, onClose }) {
                         <View style={styles.booleanOptions}>
                           {[['true', 'Sim'], ['false', 'Não']].map(([valor, texto]) => (
                             <TouchableOpacity key={valor} disabled={chave === 'id' || salvando} onPress={() => setRascunho(prev => ({ ...prev, [chave]: valor }))} style={[styles.booleanOption, rascunho[chave] === valor && styles.booleanOptionActive]}>
+                              <Text style={[styles.booleanText, rascunho[chave] === valor && styles.booleanTextActive]}>{texto}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      ) : aba === 'acessorios' && chave === 'slot' ? (
+                        <View style={styles.booleanOptions}>
+                          {[
+                            ['chapeu', 'Chapéu'],
+                            ['colar', 'Colar'],
+                          ].map(([valor, texto]) => (
+                            <TouchableOpacity key={valor} disabled={salvando} onPress={() => setRascunho(prev => ({ ...prev, [chave]: valor }))} style={[styles.booleanOption, rascunho[chave] === valor && styles.booleanOptionActive]}>
                               <Text style={[styles.booleanText, rascunho[chave] === valor && styles.booleanTextActive]}>{texto}</Text>
                             </TouchableOpacity>
                           ))}
