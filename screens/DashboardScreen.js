@@ -1,160 +1,37 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, Image, ScrollView, TouchableOpacity,
   StyleSheet, Modal, Dimensions, TextInput, Alert, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme';
+import { listarAlunos, atualizarAluno, listarTurmas, listarPetsDisponiveis, salvarTurma, removerTurmaStorage, listarMissoes, listarIconesMissoes, listarStatusMissoes, salvarMissao, atualizarMissao, definirTurmasMissao, atualizarStatusAlunoMissao, removerMissaoStorage } from '../services/storage';
+import { CORES, MEDALS, RARIDADE_CONFIG, CRITERIOS } from './dashboardConfig';
+import DashboardSidebar from './DashboardSidebar';
 
 const { width } = Dimensions.get('window');
 
-const NAV = [
-  { id: 'overview',   label: 'Visão Geral',  icon: '📊' },
-  { id: 'turmas',     label: 'Turmas',        icon: '👥' },
-  { id: 'missoes',    label: 'Missões',       icon: '🏆' },
-  { id: 'relatorio',  label: 'Relatórios',    icon: '📈' },
-  { id: 'conquistas', label: 'Conquistas',    icon: '🎖️' },
-]
-
-const PETS = ['🐉','🦊','🦅','🐺','🦁','🐯','🦋','🐸','🦉','🐻']
-const CORES = [colors.green, colors.purple, colors.yellow, '#e74c3c', '#3498db', '#e67e22']
-
-const INITIAL_TURMAS = [
-  { id: 1, nome: '2º A', pet: '🐉', estagio: 'Jovem',   xp: 3570, progresso: 57, emocao: '😄', cor: colors.green,  cosmetico: true  },
-  { id: 2, nome: '2º B', pet: '🦊', estagio: 'Jovem',   xp: 2570, progresso: 57, emocao: '😐', cor: colors.purple, cosmetico: false },
-  { id: 3, nome: '2º C', pet: '🦅', estagio: 'Adulto',  xp: 3150, progresso: 15, emocao: '🤩', cor: colors.yellow, cosmetico: true  },
-  { id: 4, nome: '2º D', pet: '🐺', estagio: 'Filhote', xp: 1670, progresso: 67, emocao: '😴', cor: colors.green,  cosmetico: false },
-]
-
-const INITIAL_MISSIONS = [
-  { id: 1, name: 'Horta Escolar',         turma: 'Todas as turmas', alunos: 92, xp: 150, color: colors.greenLight,  textColor: '#006516', icon: '🌱', active: true,  progress: 68, descricao: 'Cuidar da horta escolar' },
-  { id: 2, name: 'Clube de Leitura',      turma: '2º B',            alunos: 18, xp: 100, color: colors.yellowLight, textColor: '#7a5f00', icon: '📖', active: false, progress: 0,  descricao: 'Ler e apresentar um livro' },
-  { id: 3, name: 'Coral da Escola',       turma: '2º C',            alunos: 24, xp: 200, color: colors.purpleLight, textColor: colors.purple, icon: '🎵', active: false, progress: 0, descricao: 'Participar do coral' },
-  { id: 4, name: 'Atletismo Comunitário', turma: '2º D',            alunos: 15, xp: 120, color: '#fde8e8',          textColor: '#c0392b', icon: '🏃', active: false, progress: 0, descricao: 'Corrida comunitária' },
-]
-
-const RANKING = [
-  { name: 'Maria Fernanda', turma: '2º A', xp: 980, pct: 100, initials: 'MF', color: colors.green  },
-  { name: 'João Pedro',     turma: '2º B', xp: 830, pct: 85,  initials: 'JP', color: colors.purple },
-  { name: 'Letícia S.',     turma: '2º C', xp: 710, pct: 72,  initials: 'LS', color: colors.yellow },
-  { name: 'Carlos R.',      turma: '2º D', xp: 570, pct: 58,  initials: 'CR', color: '#888'        },
-]
-
-const BADGES = [
-  { label: 'Guardião da Natureza', color: colors.greenLight,  text: '#006516', icon: '🌿' },
-  { label: 'Estrela em Ascensão',  color: colors.yellowLight, text: '#7a5f00', icon: '⭐' },
-  { label: 'Artista do Coral',     color: colors.purpleLight, text: colors.purple, icon: '🎵' },
-  { label: 'Atleta Comunitário',   color: colors.greenLight,  text: '#006516', icon: '🏃' },
-  { label: 'Leitor Voraz',         color: colors.yellowLight, text: '#7a5f00', icon: '📚' },
-  { label: 'Primeira Missão',      color: colors.purpleLight, text: colors.purple, icon: '🎖️' },
-]
-
-const MEDALS = ['🥇', '🥈', '🥉', '4️⃣']
-
-const RARIDADE_CONFIG = {
-  'Comum':    { color: '#888',         bg: '#f0f0f0',         emoji: '⚪' },
-  'Raro':     { color: colors.green,   bg: colors.greenLight, emoji: '🟢' },
-  'Épico':    { color: colors.purple,  bg: colors.purpleLight,emoji: '🟣' },
-  'Lendário': { color: '#c8960a',      bg: colors.yellowLight,emoji: '🌟' },
-}
-
-const CRITERIOS = [
-  { id: 'primeira_tarefa', label: 'Completar a 1ª missão' },
-  { id: 'total_missoes',   label: 'Completar X missões no total' },
-  { id: 'acumular_xp',     label: 'Acumular X de XP' },
-  { id: 'missao_especifica', label: 'Completar uma missão específica' },
-  { id: 'categoria',       label: 'X missões de uma categoria' },
-]
-
-const INITIAL_CONQUISTAS = [
-  { id: 1, nome: 'Primeira Missão',    emoji: '🎯', raridade: 'Comum',    xp: 50,  criterio: 'primeira_tarefa',  meta: 1,   descricao: 'Complete sua primeira missão extracurricular', desbloqueada: false },
-  { id: 2, nome: 'Guardião da Natureza', emoji: '🌿', raridade: 'Raro',  xp: 100, criterio: 'missao_especifica', meta: 1,   descricao: 'Participe da missão Horta Escolar', missaoAlvo: 'Horta Escolar', desbloqueada: false },
-  { id: 3, nome: 'Estrela em Ascensão', emoji: '⭐', raridade: 'Raro',   xp: 150, criterio: 'acumular_xp',      meta: 500, descricao: 'Acumule 500 XP', desbloqueada: false },
-  { id: 4, nome: 'Artista do Coral',   emoji: '🎵', raridade: 'Épico',   xp: 200, criterio: 'missao_especifica', meta: 1,   descricao: 'Participe do Coral da Escola', missaoAlvo: 'Coral da Escola', desbloqueada: false },
-  { id: 5, nome: 'Maratonista',        emoji: '🏃', raridade: 'Épico',   xp: 250, criterio: 'total_missoes',    meta: 3,   descricao: 'Complete 3 missões no total', desbloqueada: false },
-  { id: 6, nome: 'Lenda Curupira',     emoji: '🌳', raridade: 'Lendário', xp: 500, criterio: 'acumular_xp',    meta: 1000, descricao: 'Acumule 1000 XP', desbloqueada: false },
-]
-
-const STATS_ICONS = [
-  { label: 'Alunos ativos',        icon: '👥', bg: colors.greenLight  },
-  { label: 'Missões abertas',      icon: '🏆', bg: colors.yellowLight },
-  { label: 'Conquistas entregues', icon: '🎖️', bg: colors.purpleLight },
-  { label: 'XP distribuído',       icon: '⭐', bg: '#f0f0f0'          },
-]
-
-const MISSION_ICONS = ['🌱','📖','🎵','🏃','🎨','🔬','🏀','🎭','🌍','🤝']
-
-const INITIAL_ALUNOS = [
-  // 2º A
-  { id: 1,  nome: 'Maria Fernanda',  turmaId: 1, xp: 980, initials: 'MF', cor: colors.green  },
-  { id: 2,  nome: 'Carlos R.',       turmaId: 1, xp: 570, initials: 'CR', cor: colors.green  },
-  { id: 3,  nome: 'Ana Beatriz',     turmaId: 1, xp: 450, initials: 'AB', cor: colors.green  },
-  { id: 4,  nome: 'Lucas M.',        turmaId: 1, xp: 390, initials: 'LM', cor: colors.green  },
-  { id: 5,  nome: 'Sofia A.',        turmaId: 1, xp: 340, initials: 'SA', cor: colors.green  },
-  { id: 6,  nome: 'Gabriel T.',      turmaId: 1, xp: 310, initials: 'GT', cor: colors.green  },
-  { id: 7,  nome: 'Isabela C.',      turmaId: 1, xp: 290, initials: 'IC', cor: colors.green  },
-  { id: 8,  nome: 'Matheus L.',      turmaId: 1, xp: 270, initials: 'ML', cor: colors.green  },
-  { id: 9,  nome: 'Valentina S.',    turmaId: 1, xp: 250, initials: 'VS', cor: colors.green  },
-  { id: 10, nome: 'Felipe O.',       turmaId: 1, xp: 220, initials: 'FO', cor: colors.green  },
-  { id: 11, nome: 'Laura P.',        turmaId: 1, xp: 200, initials: 'LP', cor: colors.green  },
-  { id: 12, nome: 'Davi N.',         turmaId: 1, xp: 180, initials: 'DN', cor: colors.green  },
-  { id: 13, nome: 'Alice F.',        turmaId: 1, xp: 160, initials: 'AF', cor: colors.green  },
-  { id: 14, nome: 'Enzo B.',         turmaId: 1, xp: 140, initials: 'EB', cor: colors.green  },
-  { id: 15, nome: 'Manuela R.',      turmaId: 1, xp: 120, initials: 'MR', cor: colors.green  },
-  // 2º B
-  { id: 16, nome: 'João Pedro',      turmaId: 2, xp: 830, initials: 'JP', cor: colors.purple },
-  { id: 17, nome: 'Ana Lima',        turmaId: 2, xp: 420, initials: 'AL', cor: colors.purple },
-  { id: 18, nome: 'Rodrigo S.',      turmaId: 2, xp: 380, initials: 'RS', cor: colors.purple },
-  { id: 19, nome: 'Camila F.',       turmaId: 2, xp: 350, initials: 'CF', cor: colors.purple },
-  { id: 20, nome: 'Bruno H.',        turmaId: 2, xp: 310, initials: 'BH', cor: colors.purple },
-  { id: 21, nome: 'Fernanda T.',     turmaId: 2, xp: 280, initials: 'FT', cor: colors.purple },
-  { id: 22, nome: 'Gustavo M.',      turmaId: 2, xp: 250, initials: 'GM', cor: colors.purple },
-  { id: 23, nome: 'Juliana P.',      turmaId: 2, xp: 220, initials: 'JP', cor: colors.purple },
-  { id: 24, nome: 'Thiago C.',       turmaId: 2, xp: 190, initials: 'TC', cor: colors.purple },
-  { id: 25, nome: 'Mariana L.',      turmaId: 2, xp: 160, initials: 'ML', cor: colors.purple },
-  { id: 26, nome: 'Leonardo A.',     turmaId: 2, xp: 130, initials: 'LA', cor: colors.purple },
-  { id: 27, nome: 'Patrícia N.',     turmaId: 2, xp: 100, initials: 'PN', cor: colors.purple },
-  // 2º C
-  { id: 28, nome: 'Letícia S.',      turmaId: 3, xp: 710, initials: 'LS', cor: colors.yellow },
-  { id: 29, nome: 'Pedro H.',        turmaId: 3, xp: 390, initials: 'PH', cor: colors.yellow },
-  { id: 30, nome: 'Renata V.',       turmaId: 3, xp: 360, initials: 'RV', cor: colors.yellow },
-  { id: 31, nome: 'Diego M.',        turmaId: 3, xp: 330, initials: 'DM', cor: colors.yellow },
-  { id: 32, nome: 'Natália C.',      turmaId: 3, xp: 300, initials: 'NC', cor: colors.yellow },
-  { id: 33, nome: 'Vitor R.',        turmaId: 3, xp: 270, initials: 'VR', cor: colors.yellow },
-  { id: 34, nome: 'Bianca A.',       turmaId: 3, xp: 240, initials: 'BA', cor: colors.yellow },
-  { id: 35, nome: 'Henrique T.',     turmaId: 3, xp: 210, initials: 'HT', cor: colors.yellow },
-  { id: 36, nome: 'Larissa O.',      turmaId: 3, xp: 180, initials: 'LO', cor: colors.yellow },
-  { id: 37, nome: 'Caio B.',         turmaId: 3, xp: 150, initials: 'CB', cor: colors.yellow },
-  { id: 38, nome: 'Aline F.',        turmaId: 3, xp: 120, initials: 'AF', cor: colors.yellow },
-  { id: 39, nome: 'Marcos P.',       turmaId: 3, xp: 90,  initials: 'MP', cor: colors.yellow },
-  // 2º D
-  { id: 40, nome: 'Bruna T.',        turmaId: 4, xp: 310, initials: 'BT', cor: '#888' },
-  { id: 41, nome: 'Rafael M.',       turmaId: 4, xp: 200, initials: 'RM', cor: '#888' },
-  { id: 42, nome: 'Sabrina L.',      turmaId: 4, xp: 280, initials: 'SL', cor: '#888' },
-  { id: 43, nome: 'Alexandre C.',    turmaId: 4, xp: 250, initials: 'AC', cor: '#888' },
-  { id: 44, nome: 'Priscila N.',     turmaId: 4, xp: 220, initials: 'PN', cor: '#888' },
-  { id: 45, nome: 'Danilo R.',       turmaId: 4, xp: 190, initials: 'DR', cor: '#888' },
-  { id: 46, nome: 'Cristina F.',     turmaId: 4, xp: 160, initials: 'CF', cor: '#888' },
-  { id: 47, nome: 'Eduardo S.',      turmaId: 4, xp: 130, initials: 'ES', cor: '#888' },
-  { id: 48, nome: 'Mônica A.',       turmaId: 4, xp: 100, initials: 'MA', cor: '#888' },
-  { id: 49, nome: 'Fábio T.',        turmaId: 4, xp: 80,  initials: 'FT', cor: '#888' },
-]
 
 export default function DashboardScreen({ professor, onLogout }) {
   const [activeNav, setActiveNav]     = useState('overview')
   const [menuOpen, setMenuOpen]       = useState(false)
-  const [turmas, setTurmas]           = useState(INITIAL_TURMAS)
-  const [missions, setMissions]       = useState(INITIAL_MISSIONS)
-  const [alunos, setAlunos]           = useState(INITIAL_ALUNOS)
-  const [conquistas, setConquistas]   = useState(INITIAL_CONQUISTAS)
+  const [turmas, setTurmas]           = useState([])
+  const [petsDisponiveis, setPetsDisponiveis] = useState([])
+  const [carregandoPets, setCarregandoPets] = useState(false)
+  const [missions, setMissions]       = useState([])
+  const [alunos, setAlunos]           = useState([])
+  const [conquistas, setConquistas]   = useState([])
 
   // Modal de criar turma
   const [modalTurma, setModalTurma]   = useState(false)
-  const [novaTurma, setNovaTurma]     = useState({ nome: '', pet: '🐉', cor: colors.green, alunosNomes: '' })
+  const [novaTurma, setNovaTurma]     = useState({ nome: '', petId: null, cor: colors.green, alunosNomes: '' })
 
   // Modal de criar missão
   const [modalMissao, setModalMissao] = useState(false)
-  const [novaMissao, setNovaMissao]   = useState({ name: '', descricao: '', turma: 'Todas as turmas', xp: '', icon: '🌱', alunos: '' })
+  const [novaMissao, setNovaMissao]   = useState({ name: '', descricao: '', turmaIds: [], dificuldade: null, icon: null })
+  const [errosMissao, setErrosMissao] = useState({})
+  const [iconesMissoes, setIconesMissoes] = useState([])
+  const [missaoEditando, setMissaoEditando] = useState(null)
 
   // Modal de atribuir missão à turma
   const [modalAtribuir, setModalAtribuir] = useState(false)
@@ -193,130 +70,285 @@ export default function DashboardScreen({ professor, onLogout }) {
   const [modalConquista, setModalConquista] = useState(false)
   const [filtroRaridade, setFiltroRaridade] = useState('Todos')
   const [filtroStatus, setFiltroStatus]     = useState('Todos')
-  const [novaConquista, setNovaConquista]   = useState({ nome: '', emoji: '🏆', raridade: 'Comum', xp: '', criterio: 'primeira_tarefa', meta: '', descricao: '', missaoAlvo: '' })
+  const [novaConquista, setNovaConquista]   = useState({ nome: '', emoji: '🏆', raridade: 'Comum', xp: '', criterio: 'primeira_missao', meta: '', descricao: '', missaoAlvo: '' })
   const [modalDetConquista, setModalDetConquista] = useState(false)
   const [conquistaSelecionada, setConquistaSelecionada] = useState(null)
 
   // Busca de aluno
   const [buscaAluno, setBuscaAluno] = useState('')
 
+  useEffect(() => {
+    let ativo = true
+    async function recarregarDados() {
+      const [alunosResult, turmasResult, missoesResult, iconesResult, statusResult] = await Promise.allSettled([
+        listarAlunos(),
+        listarTurmas(professor.id),
+        listarMissoes(professor.id),
+        listarIconesMissoes(),
+        listarStatusMissoes(),
+      ])
+      if (!ativo) return
+
+      if (alunosResult.status === 'fulfilled') setAlunos(alunosResult.value || [])
+      const turmasCarregadas = turmasResult.status === 'fulfilled' ? turmasResult.value : []
+      if (turmasResult.status === 'fulfilled') setTurmas(turmasCarregadas)
+      if (iconesResult.status === 'fulfilled') setIconesMissoes(iconesResult.value || [])
+      if (statusResult.status === 'fulfilled') {
+        setStatusMissao(Object.fromEntries(statusResult.value.map(item => [`${item.missao_id}_${item.aluno_id}`, item.status])))
+      }
+
+      if (missoesResult.status === 'rejected') {
+        Alert.alert('Erro', `Não foi possível carregar as missões: ${missoesResult.reason?.message || 'verifique sua conexão.'}`)
+      } else {
+        setMissions((missoesResult.value || []).map(m => ({
+          ...m,
+          name: m.name || '',
+          descricao: m.descricao || '',
+          turma: (m.turmaIds || []).map(id => turmasCarregadas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', ') || 'Nenhuma turma',
+          xp: Number(m.xp) || 0,
+          icon: m.icone,
+          color: m.color || colors.greenLight,
+          textColor: m.textColor || '#006516',
+          active: m.ativa ?? true,
+          progress: Number(m.progress) || 0,
+        })))
+      }
+    }
+    if (professor?.id) recarregarDados()
+    else { setMissions([]); setTurmas([]); setAlunos([]) }
+    return () => { ativo = false }
+  }, [professor?.id, activeNav])
+
   const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })
 
   // Stats dinâmicos em tempo real
   const totalXP = alunos.reduce((acc, a) => acc + a.xp, 0)
   const xpFormatado = totalXP >= 1000 ? (totalXP / 1000).toFixed(1) + 'k' : String(totalXP)
-  const totalConquistas = missions.filter(m => !m.active).length * 12 // missões concluídas geram conquistas
-
   const stats = [
     { label: 'Alunos ativos',        value: String(alunos.length),                          icon: '👥', bg: colors.greenLight  },
     { label: 'Missões abertas',      value: String(missions.filter(m => m.active).length),  icon: '🏆', bg: colors.yellowLight },
-    { label: 'Conquistas entregues', value: String(totalConquistas),                         icon: '🎖️', bg: colors.purpleLight },
     { label: 'XP distribuído',       value: xpFormatado,                                    icon: '⭐', bg: '#f0f0f0'          },
   ]
 
-  function atribuirMissao(missaoId) {
-    const turmaName = turmaAtribuir.nome
-    setMissions(prev => prev.map(m => {
-      if (m.id !== missaoId) return m
-      const turmasAtuais = m.turma === 'Todas as turmas' ? [] : m.turma.split(', ')
-      if (turmasAtuais.includes(turmaName)) return m // já atribuída
-      const novasTurmas = [...turmasAtuais, turmaName]
-      return { ...m, turma: novasTurmas.join(', ') }
-    }))
+  async function atribuirMissao(missaoId) {
+    const m = missions.find(item => String(item.id) === String(missaoId))
+    if (m && turmaAtribuir) await atualizarTurmaMissao(m, turmaAtribuir.id)
   }
 
-  function desatribuirMissao(missaoId) {
-    const turmaName = turmaAtribuir.nome
-    setMissions(prev => prev.map(m => {
-      if (m.id !== missaoId) return m
-      const turmasAtuais = m.turma === 'Todas as turmas' ? [] : m.turma.split(', ')
-      const novasTurmas = turmasAtuais.filter(t => t !== turmaName)
-      return { ...m, turma: novasTurmas.length === 0 ? 'Nenhuma turma' : novasTurmas.join(', ') }
-    }))
+  async function desatribuirMissao(missaoId) {
+    const m = missions.find(item => String(item.id) === String(missaoId))
+    if (m && turmaAtribuir) await atualizarTurmaMissao(m, turmaAtribuir.id)
   }
 
   function missoesDaTurma(turmaName) {
-    return missions.filter(m => m.turma === 'Todas as turmas' || m.turma.split(', ').includes(turmaName))
+    const turma = turmas.find(t => t.nome === turmaName)
+    return missions.filter(m => (m.turmaIds || []).some(id => String(id) === String(turma?.id)))
   }
 
   function turmaTemMissao(turma, missaoId) {
     const m = missions.find(m => m.id === missaoId)
     if (!m) return false
-    return m.turma === 'Todas as turmas' || m.turma.split(', ').includes(turma.nome)
+    return (m.turmaIds || []).some(id => String(id) === String(turma.id))
   }
 
-  function adicionarTurma() {
+  async function adicionarTurma() {
     if (!novaTurma.nome.trim()) { Alert.alert('Atenção', 'Digite o nome da turma!'); return; }
-    const novaId = Date.now()
-    const nova = { id: novaId, nome: novaTurma.nome, pet: novaTurma.pet, estagio: 'Filhote', xp: 0, progresso: 0, emocao: '😊', cor: novaTurma.cor, cosmetico: false }
-    setTurmas(prev => [...prev, nova])
-
-    // Adiciona alunos se foram informados
-    if (novaTurma.alunosNomes.trim()) {
-      const nomes = novaTurma.alunosNomes.split('\n').map(n => n.trim()).filter(n => n.length > 0)
-      const novosAlunos = nomes.map((nome, i) => ({
-        id: novaId + i + 1,
-        nome,
-        turmaId: novaId,
-        xp: 0,
-        initials: nome.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2),
-        cor: novaTurma.cor,
-      }))
-      setAlunos(prev => [...prev, ...novosAlunos])
+    const petSelecionado = petsDisponiveis.find(pet => String(pet.id) === String(novaTurma.petId));
+    if (!petSelecionado) {
+      Alert.alert('Atenção', 'Não há PET disponível para vincular. Atualize a lista ou cadastre um PET no banco.');
+      return;
+    }
+    if (!professor?.id) {
+      Alert.alert('Erro', 'Não foi possível identificar o professor conectado. Entre novamente e tente criar a turma.');
+      return;
     }
 
-    setNovaTurma({ nome: '', pet: '🐉', cor: colors.green, alunosNomes: '' })
-    setModalTurma(false)
-    Alert.alert('✅ Turma criada!', `A turma "${nova.nome}" foi adicionada com sucesso.`)
+    const alfabetoCodigo = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const codigo = Array.from({ length: 5 }, () =>
+      alfabetoCodigo[Math.floor(Math.random() * alfabetoCodigo.length)]
+    ).join('');
+    const dadosNovaTurma = {
+      nome: novaTurma.nome.trim(),
+      codigo,
+      professorId: professor.id,
+      petId: petSelecionado.id,
+      cor: novaTurma.cor,
+    };
+
+    try {
+      const turmaSalva = await salvarTurma(dadosNovaTurma);
+      const nova = {
+        ...turmaSalva,
+        professorId: turmaSalva.professor_id,
+        petId: turmaSalva.pet.id,
+        pet: turmaSalva.pet.icone,
+        petNome: turmaSalva.pet.nome,
+        estagio: turmaSalva.pet.estagio || 'infantil',
+        xp: Number(turmaSalva.pet.xp) || 0,
+        progresso: Number(turmaSalva.pet.progresso) || 0,
+        emocao: turmaSalva.pet.emocao ?? null,
+        cor: turmaSalva.cor || dadosNovaTurma.cor,
+        cosmetico: Boolean(turmaSalva.pet.cosmetico),
+      };
+      setTurmas(prev => [...prev, nova]);
+      setPetsDisponiveis(prev => prev.filter(pet => String(pet.id) !== String(petSelecionado.id)));
+      setNovaTurma({ nome: '', petId: null, cor: colors.green, alunosNomes: '' });
+      setModalTurma(false);
+      Alert.alert('✅ Turma criada!', `A turma "${nova.nome}" foi salva com sucesso.`);
+    } catch (error) {
+      console.error('Erro ao criar turma:', error);
+      Alert.alert('Erro', `Não foi possível salvar a turma: ${formatarErroSupabase(error)}`);
+    }
+  }
+
+  async function confirmarRemocaoTurma(id) {
+    try {
+      await removerTurmaStorage(id, professor?.id);
+      setTurmas(prev => prev.filter(t => t.id !== id));
+    } catch (error) {
+      console.error('Erro ao remover turma:', error);
+      Alert.alert('Erro', `Não foi possível excluir a turma: ${formatarErroSupabase(error)}`);
+    }
+  }
+
+  async function abrirModalTurma() {
+    setModalTurma(true);
+    setCarregandoPets(true);
+    setPetsDisponiveis([]);
+    setNovaTurma(prev => ({ ...prev, petId: null }));
+
+    try {
+      const disponiveis = await listarPetsDisponiveis();
+      setPetsDisponiveis(disponiveis);
+      setNovaTurma(prev => ({ ...prev, petId: disponiveis[0]?.id || null }));
+    } catch (error) {
+      console.error('Erro ao carregar PETs disponíveis:', error);
+      Alert.alert('Erro', `Não foi possível carregar os PETs: ${formatarErroSupabase(error)}`);
+    } finally {
+      setCarregandoPets(false);
+    }
   }
 
   function removerTurma(id) {
     if (Platform.OS === 'web') {
       if (window.confirm('Tem certeza que deseja remover esta turma?')) {
-        setTurmas(prev => prev.filter(t => t.id !== id))
+        confirmarRemocaoTurma(id);
       }
     } else {
       Alert.alert('Remover turma', 'Tem certeza?', [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Remover', style: 'destructive', onPress: () => setTurmas(prev => prev.filter(t => t.id !== id)) }
+        { text: 'Remover', style: 'destructive', onPress: () => confirmarRemocaoTurma(id) }
       ])
     }
   }
 
-  function adicionarMissao() {
-    if (!novaMissao.name.trim()) { Alert.alert('Atenção', 'Digite o nome da missão!'); return; }
-    if (!novaMissao.xp || isNaN(novaMissao.xp)) { Alert.alert('Atenção', 'Digite um valor de XP válido!'); return; }
-    const nova = {
-      id: Date.now(), name: novaMissao.name, descricao: novaMissao.descricao,
-      turma: novaMissao.turma, alunos: Number(novaMissao.alunos) || 0, xp: Number(novaMissao.xp),
-      color: colors.greenLight, textColor: '#006516', icon: novaMissao.icon,
-      active: true, progress: 0,
+  async function adicionarMissao() {
+    const erros = {
+      nome: novaMissao.name.trim() ? '' : 'Preencha a missão com um nome.',
+      descricao: novaMissao.descricao.trim() ? '' : 'Preencha a descrição da missão.',
+      turmas: novaMissao.turmaIds.length ? '' : 'Escolha pelo menos uma turma.',
+      icone: novaMissao.icon ? '' : (iconesMissoes.length ? 'Escolha um ícone para a missão.' : 'Não há ícones cadastrados para escolher.'),
+      dificuldade: ['facil', 'media', 'dificil'].includes(novaMissao.dificuldade) ? '' : 'Escolha uma dificuldade para a missão.',
     }
-    setMissions([nova, ...missions])
-    setNovaMissao({ name: '', descricao: '', turma: 'Todas as turmas', xp: '', icon: '🌱', alunos: '' })
+    setErrosMissao(erros)
+    if (Object.values(erros).some(Boolean)) {
+      return
+    }
+    const xpPorDificuldade = { facil: 10, media: 20, dificil: 40 }
+    const dados = {
+      id: missaoEditando?.id,
+      nome: novaMissao.name.trim(), descricao: novaMissao.descricao.trim(),
+      turmasIds: novaMissao.turmaIds,
+      dificuldade: novaMissao.dificuldade, xp: xpPorDificuldade[novaMissao.dificuldade],
+      icone: novaMissao.icon, ativa: missaoEditando?.active ?? true, professorId: professor.id,
+    }
+    try {
+      const salva = await salvarMissao(dados)
+      const normalizada = { ...salva, name: salva.nome || salva.name, icon: salva.icone || salva.icon, active: salva.ativa ?? salva.active, turmaIds: dados.turmasIds, turma: dados.turmasIds.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', '), color: colors.greenLight, textColor: '#006516', progress: 0 }
+      setMissions(prev => missaoEditando ? prev.map(m => String(m.id) === String(salva.id) ? { ...m, ...normalizada } : m) : [normalizada, ...prev])
+      setAlunos(await listarAlunos())
+      const turmasAtualizadas = await listarTurmas(professor.id)
+      setTurmas(turmasAtualizadas)
+    } catch (error) {
+      console.error('Erro ao criar/atualizar missão:', error)
+      Alert.alert('Erro', `Não foi possível salvar a missão: ${formatarErroSupabase(error)}`)
+      return
+    }
+    const nomeMissao = dados.nome
+    setNovaMissao({ name: '', descricao: '', turmaIds: [], dificuldade: null, icon: null })
+    setErrosMissao({})
+    setMissaoEditando(null)
     setModalMissao(false)
-    Alert.alert('✅ Missão criada!', `A missão "${nova.name}" foi criada com sucesso.`)
+    Alert.alert('✅ Missão salva!', `A missão "${nomeMissao}" foi salva com sucesso.`)
+  }
+
+  function editarMissao(missao) {
+    setMissaoEditando(missao)
+    setNovaMissao({ name: missao.name, descricao: missao.descricao || '', turmaIds: missao.turmaIds || [], dificuldade: missao.dificuldade || (missao.xp <= 10 ? 'facil' : missao.xp <= 20 ? 'media' : 'dificil'), icon: missao.icon || null })
+    setErrosMissao({})
+    setModalMissao(true)
+  }
+
+  function abrirNovaMissao() {
+    setMissaoEditando(null)
+    setNovaMissao({ name: '', descricao: '', turmaIds: [], dificuldade: null, icon: null })
+    setErrosMissao({})
+    setModalMissao(true)
+  }
+
+  function atualizarCampoMissao(campo, valor) {
+    setNovaMissao(prev => ({ ...prev, [campo]: valor }))
+    const campoErro = campo === 'name' ? 'nome' : campo === 'turmaIds' ? 'turmas' : campo
+    setErrosMissao(prev => ({ ...prev, [campoErro]: '' }))
+  }
+
+  function alternarTodasTurmasMissao() {
+    const todasSelecionadas = turmas.length > 0 && turmas.every(t => novaMissao.turmaIds.some(id => String(id) === String(t.id)))
+    setNovaMissao(prev => ({ ...prev, turmaIds: todasSelecionadas ? [] : turmas.map(t => t.id) }))
+    setErrosMissao(prev => ({ ...prev, turmas: '' }))
+  }
+
+  async function atualizarTurmaMissao(missao, turmaId) {
+    const atuais = missao.turmaIds || []
+    const turmasIds = atuais.some(id => String(id) === String(turmaId))
+      ? atuais.filter(id => String(id) !== String(turmaId))
+      : [...atuais, turmaId]
+    if (!turmasIds.length) { Alert.alert('Atenção', 'A missão precisa estar atribuída a pelo menos uma turma.'); return }
+    try {
+      await definirTurmasMissao(missao.id, professor.id, turmasIds)
+      const nomeTurmas = turmasIds.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', ')
+      setMissions(prev => prev.map(m => m.id === missao.id ? { ...m, turmaIds, turma: nomeTurmas } : m))
+    } catch (error) {
+      Alert.alert('Erro', `Não foi possível atualizar a turma da missão: ${error.message || 'tente novamente.'}`)
+    }
   }
 
   function removerMissao(id) {
+    const confirmarRemocao = async () => {
+      try {
+        await removerMissaoStorage(id)
+        setMissions(prev => prev.filter(m => m.id !== id))
+        setAlunos(await listarAlunos())
+        setTurmas(await listarTurmas(professor.id))
+      } catch (error) {
+        Alert.alert('Erro', `Não foi possível remover a missão: ${error.message || 'tente novamente.'}`)
+      }
+    }
     if (Platform.OS === 'web') {
       if (window.confirm('Tem certeza que deseja remover esta missão?')) {
-        setMissions(prev => prev.filter(m => m.id !== id))
+        confirmarRemocao()
       }
     } else {
       Alert.alert('Remover missão', 'Tem certeza?', [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Remover', style: 'destructive', onPress: () => setMissions(prev => prev.filter(m => m.id !== id)) }
+        { text: 'Remover', style: 'destructive', onPress: confirmarRemocao }
       ])
     }
   }
 
   function alunosDaMissao(missao) {
     if (!missao) return []
-    if (missao.turma === 'Todas as turmas') return alunos
-    const turmasNomes = missao.turma.split(', ')
-    const turmasIds = turmas.filter(t => turmasNomes.includes(t.nome)).map(t => t.id)
-    return alunos.filter(a => turmasIds.includes(a.turmaId))
+    return alunos.filter(a => (missao.turmaIds || []).some(id => String(id) === String(a.turmaId)))
   }
 
   function qtdAlunosMissao(missao) {
@@ -330,17 +362,18 @@ export default function DashboardScreen({ professor, onLogout }) {
     setModalEditAluno(true)
   }
 
-  function salvarEditAluno() {
+  async function salvarEditAluno() {
     if (!alunoNomeEdit.trim()) { Alert.alert('Atenção', 'Digite o nome do aluno!'); return }
     const turmaDestino = alunoTurmaEdit
     const initials = alunoNomeEdit.trim().split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2)
-    setAlunos(prev => prev.map(a => a.id === alunoEditando.id ? {
-      ...a,
+    const novos = {
       nome: alunoNomeEdit.trim(),
       initials,
-      turmaId: turmaDestino?.id || a.turmaId,
-      cor: turmaDestino?.cor || a.cor,
-    } : a))
+      turmaId: turmaDestino?.id || null,
+      cor: turmaDestino?.cor || '#888',
+    }
+    setAlunos(prev => prev.map(a => a.id === alunoEditando.id ? { ...a, ...novos } : a))
+    await atualizarAluno(alunoEditando.id, novos)
     setModalEditAluno(false)
     setAlunoEditando(null)
   }
@@ -353,10 +386,19 @@ export default function DashboardScreen({ professor, onLogout }) {
     setStatusMissao(prev => ({ ...prev, [`${missaoId}_${alunoId}`]: status }))
   }
 
-  function ciclarStatus(missaoId, alunoId) {
+  async function ciclarStatus(missaoId, alunoId) {
     const atual = getStatusAluno(missaoId, alunoId)
     const proximo = atual === 'pendente' ? 'entregue' : atual === 'entregue' ? 'aprovado' : 'pendente'
-    setStatusAluno(missaoId, alunoId, proximo)
+    const missao = missions.find(m => String(m.id) === String(missaoId))
+    if (proximo === 'aprovado' && !missao?.active) { Alert.alert('Missão desativada', 'Não é possível aprovar novas conclusões enquanto a missão estiver desativada.'); return }
+    try {
+      await atualizarStatusAlunoMissao(missaoId, alunoId, proximo)
+      setStatusAluno(missaoId, alunoId, proximo)
+      setAlunos(await listarAlunos())
+      setTurmas(await listarTurmas(professor.id))
+    } catch (error) {
+      Alert.alert('Erro', `Não foi possível atualizar a conclusão: ${formatarErroSupabase(error)}`)
+    }
   }
 
   function adicionarAlunoTurma() {
@@ -375,12 +417,16 @@ export default function DashboardScreen({ professor, onLogout }) {
   }
 
   function removerAluno(alunoId) {
+    const remover = async () => {
+      setAlunos(prev => prev.map(a => a.id === alunoId ? { ...a, turmaId: null } : a))
+      await atualizarAluno(alunoId, { turmaId: null })
+    }
     if (Platform.OS === 'web') {
-      if (window.confirm('Remover aluno da turma?')) setAlunos(prev => prev.filter(a => a.id !== alunoId))
+      if (window.confirm('Remover aluno da turma?')) remover()
     } else {
-      Alert.alert('Remover aluno', 'Tem certeza?', [
+      Alert.alert('Remover da turma', 'Tem certeza?', [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Remover', style: 'destructive', onPress: () => setAlunos(prev => prev.filter(a => a.id !== alunoId)) },
+        { text: 'Remover', style: 'destructive', onPress: remover },
       ])
     }
   }
@@ -445,7 +491,7 @@ export default function DashboardScreen({ professor, onLogout }) {
     setConquistas(prev => prev.map(c => {
       if (c.desbloqueada) return c
       let desbloqueada = false
-      if (c.criterio === 'primeira_tarefa' && (novoHistorico[alunoXP.id] || []).length >= 1) desbloqueada = true
+      if (c.criterio === 'primeira_missao' && (novoHistorico[alunoXP.id] || []).length >= 1) desbloqueada = true
       if (c.criterio === 'acumular_xp' && alunoAtualizado.xp >= c.meta) desbloqueada = true
       if (c.criterio === 'missao_especifica' && c.missaoAlvo === missaoAtual) desbloqueada = true
       return desbloqueada ? { ...c, desbloqueada: true } : c
@@ -458,7 +504,7 @@ export default function DashboardScreen({ professor, onLogout }) {
 
   function adicionarConquista() {
     if (!novaConquista.nome.trim()) { Alert.alert('Atenção', 'Digite o nome da conquista!'); return }
-    const precisaMeta = novaConquista.criterio !== 'primeira_tarefa' && novaConquista.criterio !== 'missao_especifica'
+    const precisaMeta = novaConquista.criterio !== 'primeira_missao' && novaConquista.criterio !== 'missao_especifica'
     if (precisaMeta && (!novaConquista.meta || isNaN(novaConquista.meta))) {
       Alert.alert('Atenção', 'Digite uma meta válida!'); return
     }
@@ -478,7 +524,7 @@ export default function DashboardScreen({ professor, onLogout }) {
       desbloqueada: false,
     }
     setConquistas(prev => [nova, ...prev])
-    setNovaConquista({ nome: '', emoji: '🏆', raridade: 'Comum', xp: '', criterio: 'primeira_tarefa', meta: '', descricao: '', missaoAlvo: '' })
+    setNovaConquista({ nome: '', emoji: '🏆', raridade: 'Comum', xp: '', criterio: 'primeira_missao', meta: '', descricao: '', missaoAlvo: '' })
     setModalConquista(false)
     Alert.alert('✅ Conquista criada!', `"${nova.nome}" foi adicionada.`)
   }
@@ -504,7 +550,7 @@ export default function DashboardScreen({ professor, onLogout }) {
       const totalAprovacoes = Object.values(statusMissao).filter(s => s === 'aprovado').length
       return Math.min(100, Math.round((totalAprovacoes / c.meta) * 100))
     }
-    if (c.criterio === 'primeira_tarefa') {
+    if (c.criterio === 'primeira_missao') {
       return Object.keys(historicoXP).length > 0 ? 100 : 0
     }
     if (c.criterio === 'missao_especifica') {
@@ -530,8 +576,16 @@ export default function DashboardScreen({ professor, onLogout }) {
     setMissions(prev => prev.map(m => m.id === id ? { ...m, alunos: num } : m))
   }
 
-  function toggleMissaoAtiva(id) {
-    setMissions(missions.map(m => m.id === id ? { ...m, active: !m.active } : m))
+  async function toggleMissaoAtiva(id) {
+    const missao = missions.find(m => m.id === id)
+    if (!missao) return
+    const ativa = !missao.active
+    try {
+      await atualizarMissao(id, { ativa })
+      setMissions(prev => prev.map(m => m.id === id ? { ...m, active: ativa, ativa } : m))
+    } catch (error) {
+      Alert.alert('Erro', `Não foi possível atualizar a missão: ${error.message || 'tente novamente.'}`)
+    }
   }
 
   // ─── TELA TURMAS ────────────────────────────────────────
@@ -540,7 +594,7 @@ export default function DashboardScreen({ professor, onLogout }) {
       <View style={{ gap: 14 }}>
         <View style={s.screenHeader}>
           <Text style={s.screenTitle}>👥 Turmas</Text>
-          <TouchableOpacity style={s.btnNew} onPress={() => setModalTurma(true)}>
+          <TouchableOpacity style={s.btnNew} onPress={abrirModalTurma}>
             <Text style={s.btnNewText}>+ Nova Turma</Text>
           </TouchableOpacity>
         </View>
@@ -550,10 +604,11 @@ export default function DashboardScreen({ professor, onLogout }) {
             <View key={t.id} style={s.panel}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 <View style={[s.petAvatarSmall, { borderColor: t.cor }]}>
-                  <Text style={{ fontSize: 28 }}>{t.pet}</Text>
+                  <PetImage uri={t.pet} width={42} height={42} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.turmaName}>{t.nome}</Text>
+                  <Text style={s.turmaEmocao}>Código da turma: {t.codigo}</Text>
                   <Text style={[s.turmaEstagio, { color: t.cor }]}>{t.estagio} · {t.xp} XP</Text>
                   <Text style={s.turmaEmocao}>{t.emocao} {t.progresso}% engajamento</Text>
                 </View>
@@ -611,7 +666,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                   missoesDaTurmaList.map(m => (
                     <View key={m.id} style={[s.missionRow, { paddingVertical: 6 }]}>
                       <View style={[s.missionIcon, { backgroundColor: m.color, width: 28, height: 28 }]}>
-                        <Text style={{ fontSize: 13 }}>{m.icon}</Text>
+                        <Image source={{ uri: m.icon }} style={{ width: 22, height: 22 }} resizeMode="contain" />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={[s.missionName, { fontSize: 12 }]}>{m.name}</Text>
@@ -642,7 +697,7 @@ export default function DashboardScreen({ professor, onLogout }) {
       <View style={{ gap: 14 }}>
         <View style={s.screenHeader}>
           <Text style={s.screenTitle}>🏆 Missões</Text>
-          <TouchableOpacity style={s.btnNew} onPress={() => setModalMissao(true)}>
+          <TouchableOpacity style={s.btnNew} onPress={abrirNovaMissao}>
             <Text style={s.btnNewText}>+ Nova Missão</Text>
           </TouchableOpacity>
         </View>
@@ -650,7 +705,7 @@ export default function DashboardScreen({ professor, onLogout }) {
           <View key={m.id} style={[s.panel, m.active && { borderColor: colors.green, borderWidth: 2 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={[s.missionIcon, { backgroundColor: m.color }]}>
-                <Text style={{ fontSize: 20 }}>{m.icon}</Text>
+                <Image source={{ uri: m.icon }} style={{ width: 30, height: 30 }} resizeMode="contain" />
               </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -666,23 +721,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                       <TouchableOpacity
                         key={t.id}
                         style={[s.turmaPill, atribuida && s.turmaPillActive, { paddingVertical: 3 }]}
-                        onPress={() => {
-                          setTurmaAtribuir(t)
-                          if (atribuida) {
-                            setMissions(prev => prev.map(ms => {
-                              if (ms.id !== m.id) return ms
-                              const lista = ms.turma === 'Todas as turmas' ? [] : ms.turma.split(', ')
-                              const nova = lista.filter(x => x !== t.nome)
-                              return { ...ms, turma: nova.length === 0 ? 'Nenhuma turma' : nova.join(', ') }
-                            }))
-                          } else {
-                            setMissions(prev => prev.map(ms => {
-                              if (ms.id !== m.id) return ms
-                              const lista = ms.turma === 'Todas as turmas' || ms.turma === 'Nenhuma turma' ? [] : ms.turma.split(', ')
-                              return { ...ms, turma: [...lista, t.nome].join(', ') }
-                            }))
-                          }
-                        }}
+                        onPress={() => atualizarTurmaMissao(m, t.id)}
                       >
                         <Text style={[s.turmaPillText, atribuida && s.turmaPillTextActive]}>
                           {atribuida ? '✓ ' : ''}{t.nome}
@@ -692,9 +731,14 @@ export default function DashboardScreen({ professor, onLogout }) {
                   })}
                 </View>
               </View>
-              <TouchableOpacity onPress={() => removerMissao(m.id)} style={s.btnRemove}>
-                <Text style={s.btnRemoveText}>🗑️</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                <TouchableOpacity onPress={() => editarMissao(m)} style={[s.btnToggle, { marginTop: 0, paddingHorizontal: 8, backgroundColor: colors.purpleLight }]}>
+                  <Text style={[s.btnToggleText, { color: colors.purple }]}>✏️</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => removerMissao(m.id)} style={s.btnRemove}>
+                  <Text style={s.btnRemoveText}>🗑️</Text>
+                </TouchableOpacity>
+              </View>
             </View>
             {m.active && (
               <View style={{ marginTop: 10 }}>
@@ -754,25 +798,28 @@ export default function DashboardScreen({ professor, onLogout }) {
 
   // ─── TELA OVERVIEW ──────────────────────────────────────
   function renderOverview() {
+    const missaoDestaque = missions.find(m => m.active)
+    const progressoDestaque = missaoDestaque ? progressoRealMissao(missaoDestaque) : 0
+
     return (
       <>
-        {/* Horta Banner */}
-        <View style={s.hortaBanner}>
-          <View style={{ flex: 1 }}>
-            <Text style={s.hortaTag}>🌱 MISSÃO DA SEMANA</Text>
-            <Text style={s.hortaTitle}>Horta Escolar</Text>
-            <Text style={s.hortaDesc}>72 alunos participando · Todas as turmas · Encerra em 3 dias</Text>
-            <View style={s.progressRow}>
-              <View style={s.progressBg}><View style={[s.progressFill, { width: '68%' }]} /></View>
-              <Text style={s.progressLabel}>68%</Text>
+        {missaoDestaque && (
+          <View style={s.hortaBanner}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.hortaTag}>🏆 MISSÃO ATIVA</Text>
+              <Text style={s.hortaTitle}>{missaoDestaque.name}</Text>
+              <Text style={s.hortaDesc}>
+                {qtdAlunosMissao(missaoDestaque)} alunos participando · {missaoDestaque.turma}
+              </Text>
+              <View style={s.progressRow}>
+                <View style={s.progressBg}>
+                  <View style={[s.progressFill, { width: `${progressoDestaque}%` }]} />
+                </View>
+                <Text style={s.progressLabel}>{progressoDestaque}%</Text>
+              </View>
             </View>
           </View>
-          <View style={s.recompensaCard}>
-            <Text style={s.recompensaLabel}>🎁 Recompensa</Text>
-            <Image source={require('../assets/chapeu-horta.png')} style={s.recompensaImg} resizeMode="contain" />
-            <Text style={s.recompensaNome}>Chapéu Jardineiro #67</Text>
-          </View>
-        </View>
+        )}
 
         {/* Stats */}
         <View style={s.statsGrid}>
@@ -792,7 +839,7 @@ export default function DashboardScreen({ professor, onLogout }) {
             <View key={t.id} style={s.petCard}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                 <View style={[s.petAvatar, { borderColor: t.cor }]}>
-                  <Text style={s.petEmoji}>{t.pet}</Text>
+                  <PetImage uri={t.pet} width={120} height={120} />
                   {t.cosmetico && (
                     <Image source={require('../assets/chapeu-horta.png')} style={s.petChapeu} resizeMode="contain" />
                   )}
@@ -825,7 +872,7 @@ export default function DashboardScreen({ professor, onLogout }) {
           {missions.slice(0, 4).map(m => (
             <View key={m.id} style={[s.missionRow, m.active && { backgroundColor: colors.greenLight, borderRadius: 8, paddingHorizontal: 8 }]}>
               <View style={[s.missionIcon, { backgroundColor: m.color }]}>
-                <Text style={{ fontSize: 16 }}>{m.icon}</Text>
+                <Image source={{ uri: m.icon }} style={{ width: 26, height: 26 }} resizeMode="contain" />
               </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -868,18 +915,6 @@ export default function DashboardScreen({ professor, onLogout }) {
           }
         </View>
 
-        {/* Badges */}
-        <View style={s.panel}>
-          <Text style={s.panelTitle}>Conquistas desbloqueadas esta semana</Text>
-          <View style={s.badgesWrap}>
-            {BADGES.map(b => (
-              <View key={b.label} style={[s.badge, { backgroundColor: b.color }]}>
-                <Text style={{ fontSize: 12 }}>{b.icon}</Text>
-                <Text style={[s.badgeText, { color: b.text }]}>{b.label}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
       </>
     )
   }
@@ -887,35 +922,14 @@ export default function DashboardScreen({ professor, onLogout }) {
   return (
     <SafeAreaView style={s.safe}>
 
-      {/* ── Sidebar Modal ── */}
-      <Modal visible={menuOpen} transparent animationType="slide" onRequestClose={() => setMenuOpen(false)}>
-        <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setMenuOpen(false)} />
-        <View style={s.sidebar}>
-          <View style={s.sidebarLogoRow}>
-            <Image source={require('../assets/logo.png')} style={s.sidebarLogo} resizeMode="contain" />
-            <Text style={s.sidebarLogoText}>CURUPIRA</Text>
-          </View>
-          {NAV.map(item => (
-            <TouchableOpacity key={item.id} style={[s.navItem, activeNav === item.id && s.navActive]}
-              onPress={() => { setActiveNav(item.id); setMenuOpen(false); }}>
-              <Text style={s.navIcon}>{item.icon}</Text>
-              <Text style={[s.navLabel, activeNav === item.id && s.navLabelActive]}>{item.label}</Text>
-            </TouchableOpacity>
-          ))}
-          <View style={s.sidebarBottom}>
-            <View style={s.teacherRow}>
-              <View style={s.teacherAvatar}><Text style={s.teacherInitials}>{(professor?.nome || 'P')[0]}</Text></View>
-              <View>
-                <Text style={s.teacherName}>{professor?.nome || 'Professor'}</Text>
-                <Text style={s.teacherRole}>Área do Professor</Text>
-              </View>
-            </View>
-            <TouchableOpacity onPress={() => { setMenuOpen(false); onLogout && onLogout(); }}>
-              <Text style={s.logoutBtn}>← Sair</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      <DashboardSidebar
+        visible={menuOpen}
+        activeNav={activeNav}
+        professor={professor}
+        onNavigate={(section) => { setActiveNav(section); setMenuOpen(false); }}
+        onClose={() => setMenuOpen(false)}
+        onLogout={() => { setMenuOpen(false); onLogout && onLogout(); }}
+      />
 
       {/* ── Modal Criar Turma ── */}
       <Modal visible={modalTurma} transparent animationType="slide" onRequestClose={() => setModalTurma(false)}>
@@ -929,14 +943,26 @@ export default function DashboardScreen({ professor, onLogout }) {
                 value={novaTurma.nome} onChangeText={t => setNovaTurma({ ...novaTurma, nome: t })} />
 
               <Text style={s.formLabel}>Escolha o pet</Text>
-              <View style={s.petPicker}>
-                {PETS.map(p => (
-                  <TouchableOpacity key={p} style={[s.petOption, novaTurma.pet === p && s.petOptionActive]}
-                    onPress={() => setNovaTurma({ ...novaTurma, pet: p })}>
-                    <Text style={{ fontSize: 22 }}>{p}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              {carregandoPets ? (
+                <Text style={s.emptySubtext}>Carregando PETs disponíveis...</Text>
+              ) : petsDisponiveis.length > 0 ? (
+                <View style={s.petPicker}>
+                  {petsDisponiveis.map(pet => (
+                    <TouchableOpacity
+                      key={pet.id}
+                      style={[s.petOption, String(novaTurma.petId) === String(pet.id) && s.petOptionActive]}
+                      onPress={() => setNovaTurma(prev => ({ ...prev, petId: pet.id }))}
+                    >
+                      <Image source={{ uri: pet.icone }} style={s.petOptionImage} resizeMode="contain" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <View style={s.noPetsState}>
+                  <Text style={s.noPetsGhost}>👻</Text>
+                  <Text style={s.emptySubtext}>Ainda não existem PETs disponíveis. Cadastre ou libere um PET no banco para criar uma turma.</Text>
+                </View>
+              )}
 
               <Text style={s.formLabel}>Cor da turma</Text>
               <View style={s.colorPicker}>
@@ -946,29 +972,15 @@ export default function DashboardScreen({ professor, onLogout }) {
                 ))}
               </View>
 
-              <Text style={s.formLabel}>Alunos da turma (um por linha)</Text>
-              <Text style={{ fontSize: 11, color: colors.muted, fontFamily: fonts.regular, marginBottom: 6 }}>
-                Opcional — você pode adicionar depois
-              </Text>
-              <TextInput
-                style={[s.formInput, { height: 120, textAlignVertical: 'top' }]}
-                placeholder={'Ex:\nMaria Fernanda\nJoão Pedro\nLetícia S.'}
-                placeholderTextColor="#aaa"
-                multiline
-                value={novaTurma.alunosNomes}
-                onChangeText={t => setNovaTurma({ ...novaTurma, alunosNomes: t })}
-              />
-              {novaTurma.alunosNomes.trim().length > 0 && (
-                <Text style={{ fontSize: 12, color: colors.green, fontFamily: fonts.semibold, marginTop: -8 }}>
-                  {novaTurma.alunosNomes.split('\n').filter(n => n.trim()).length} aluno(s) serão adicionados
-                </Text>
-              )}
-
               <View style={s.modalBtns}>
                 <TouchableOpacity style={s.btnCancel} onPress={() => setModalTurma(false)}>
                   <Text style={s.btnCancelText}>Cancelar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={s.btnConfirm} onPress={adicionarTurma}>
+                <TouchableOpacity
+                  style={[s.btnConfirm, (carregandoPets || !petsDisponiveis.length || !novaTurma.petId) && s.btnConfirmDisabled]}
+                  onPress={adicionarTurma}
+                  disabled={carregandoPets || !petsDisponiveis.length || !novaTurma.petId}
+                >
                   <Text style={s.btnConfirmText}>Criar Turma</Text>
                 </TouchableOpacity>
               </View>
@@ -982,52 +994,71 @@ export default function DashboardScreen({ professor, onLogout }) {
         <View style={s.modalOverlay}>
           <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 20 }}>
             <View style={s.modalBox}>
-              <Text style={s.modalTitle}>+ Nova Missão</Text>
+              <Text style={s.modalTitle}>{missaoEditando ? 'Editar Missão' : '+ Nova Missão'}</Text>
 
               <Text style={s.formLabel}>Nome da missão</Text>
               <TextInput style={s.formInput} placeholder="Ex: Horta Escolar..." placeholderTextColor="#aaa"
-                value={novaMissao.name} onChangeText={t => setNovaMissao({ ...novaMissao, name: t })} />
+                value={novaMissao.name} onChangeText={t => atualizarCampoMissao('name', t)} />
+              {!!errosMissao.nome && <Text style={s.validationError}>{errosMissao.nome}</Text>}
 
               <Text style={s.formLabel}>Descrição</Text>
               <TextInput style={[s.formInput, { height: 70, textAlignVertical: 'top' }]}
                 placeholder="Descreva a atividade..." placeholderTextColor="#aaa" multiline
-                value={novaMissao.descricao} onChangeText={t => setNovaMissao({ ...novaMissao, descricao: t })} />
+                value={novaMissao.descricao} onChangeText={t => atualizarCampoMissao('descricao', t)} />
+              {!!errosMissao.descricao && <Text style={s.validationError}>{errosMissao.descricao}</Text>}
 
-              <Text style={s.formLabel}>Turma</Text>
+              <Text style={s.formLabel}>Turmas</Text>
               <View style={s.turmaPickerWrap}>
-                {['Todas as turmas', ...turmas.map(t => t.nome)].map(nome => (
-                  <TouchableOpacity key={nome}
-                    style={[s.turmaPill, novaMissao.turma === nome && s.turmaPillActive]}
-                    onPress={() => setNovaMissao({ ...novaMissao, turma: nome })}>
-                    <Text style={[s.turmaPillText, novaMissao.turma === nome && s.turmaPillTextActive]}>{nome}</Text>
+                <TouchableOpacity
+                  style={[s.turmaPill, turmas.length > 0 && turmas.every(t => novaMissao.turmaIds.some(id => String(id) === String(t.id))) && s.turmaPillActive]}
+                  onPress={alternarTodasTurmasMissao}
+                  disabled={turmas.length === 0}
+                >
+                  <Text style={[s.turmaPillText, turmas.length > 0 && turmas.every(t => novaMissao.turmaIds.some(id => String(id) === String(t.id))) && s.turmaPillTextActive]}>
+                    {turmas.length > 0 && turmas.every(t => novaMissao.turmaIds.some(id => String(id) === String(t.id))) ? '✓ ' : ''}Todas as turmas
+                  </Text>
+                </TouchableOpacity>
+                {turmas.map(t => {
+                  const selecionada = novaMissao.turmaIds.some(id => String(id) === String(t.id))
+                  return <TouchableOpacity key={t.id}
+                    style={[s.turmaPill, selecionada && s.turmaPillActive]}
+                    onPress={() => atualizarCampoMissao('turmaIds', selecionada ? novaMissao.turmaIds.filter(id => String(id) !== String(t.id)) : [...novaMissao.turmaIds, t.id])}>
+                    <Text style={[s.turmaPillText, selecionada && s.turmaPillTextActive]}>{selecionada ? '✓ ' : ''}{t.nome}</Text>
                   </TouchableOpacity>
-                ))}
+                })}
               </View>
+              {!!errosMissao.turmas && <Text style={s.validationError}>{errosMissao.turmas}</Text>}
 
               <Text style={s.formLabel}>Ícone da missão</Text>
               <View style={s.petPicker}>
-                {MISSION_ICONS.map(ic => (
-                  <TouchableOpacity key={ic} style={[s.petOption, novaMissao.icon === ic && s.petOptionActive]}
-                    onPress={() => setNovaMissao({ ...novaMissao, icon: ic })}>
-                    <Text style={{ fontSize: 22 }}>{ic}</Text>
+                {iconesMissoes.map(ic => (
+                  <TouchableOpacity key={ic.id} style={[s.petOption, novaMissao.icon === ic.icone && s.petOptionActive]}
+                    onPress={() => { setNovaMissao(prev => ({ ...prev, icon: ic.icone })); setErrosMissao(prev => ({ ...prev, icone: '' })) }}>
+                    <Image source={{ uri: ic.icone }} style={s.petOptionImage} resizeMode="contain" />
                   </TouchableOpacity>
                 ))}
               </View>
+              {iconesMissoes.length === 0 && <Text style={s.emptySubtext}>Ainda não há imagens de missão cadastradas no banco.</Text>}
+              {!!errosMissao.icone && <Text style={s.validationError}>{errosMissao.icone}</Text>}
 
-              <Text style={s.formLabel}>XP da missão</Text>
-              <TextInput style={s.formInput} placeholder="Ex: 150" placeholderTextColor="#aaa" keyboardType="numeric"
-                value={novaMissao.xp} onChangeText={t => setNovaMissao({ ...novaMissao, xp: t })} />
+              <Text style={s.formLabel}>Dificuldade e XP da missão</Text>
+              <View style={s.turmaPickerWrap}>
+                {[['facil', 'Fácil · 10 XP'], ['media', 'Média · 20 XP'], ['dificil', 'Difícil · 40 XP']].map(([id, label]) => (
+                  <TouchableOpacity key={id} style={[s.turmaPill, novaMissao.dificuldade === id && s.turmaPillActive]} onPress={() => atualizarCampoMissao('dificuldade', id)}>
+                    <Text style={[s.turmaPillText, novaMissao.dificuldade === id && s.turmaPillTextActive]}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {!!errosMissao.dificuldade && <Text style={s.validationError}>{errosMissao.dificuldade}</Text>}
 
-              <Text style={s.formLabel}>Número de alunos participantes</Text>
-              <TextInput style={s.formInput} placeholder="Ex: 25" placeholderTextColor="#aaa" keyboardType="numeric"
-                value={novaMissao.alunos} onChangeText={t => setNovaMissao({ ...novaMissao, alunos: t })} />
+              <Text style={s.formLabel}>Alunos participantes: {alunos.filter(a => novaMissao.turmaIds.some(id => String(id) === String(a.turmaId))).length}</Text>
 
               <View style={s.modalBtns}>
                 <TouchableOpacity style={s.btnCancel} onPress={() => setModalMissao(false)}>
                   <Text style={s.btnCancelText}>Cancelar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={s.btnConfirm} onPress={adicionarMissao}>
-                  <Text style={s.btnConfirmText}>Criar Missão</Text>
+                  <Text style={s.btnConfirmText}>{missaoEditando ? 'Salvar alterações' : 'Criar Missão'}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1105,9 +1136,10 @@ export default function DashboardScreen({ professor, onLogout }) {
                   style={[s.turmaPill, alunoTurmaEdit?.id === t.id && s.turmaPillActive]}
                   onPress={() => setAlunoTurmaEdit(t)}
                 >
-                  <Text style={[s.turmaPillText, alunoTurmaEdit?.id === t.id && s.turmaPillTextActive]}>
-                    {t.pet} {t.nome}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <PetImage uri={t.pet} width={20} height={20} />
+                    <Text style={[s.turmaPillText, alunoTurmaEdit?.id === t.id && s.turmaPillTextActive]}>{t.nome}</Text>
+                  </View>
                 </TouchableOpacity>
               ))}
             </View>
@@ -1150,20 +1182,29 @@ export default function DashboardScreen({ professor, onLogout }) {
               onChangeText={setBuscaAluno}
             />
 
-            {/* Adicionar novo aluno */}
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-              <TextInput
-                style={[s.formInput, { flex: 1, marginBottom: 0 }]}
-                placeholder="Nome do aluno..."
-                placeholderTextColor="#aaa"
-                value={novoAlunoNome}
-                onChangeText={setNovoAlunoNome}
-                onSubmitEditing={adicionarAlunoTurma}
-              />
-              <TouchableOpacity style={[s.btnConfirm, { paddingHorizontal: 16 }]} onPress={adicionarAlunoTurma}>
-                <Text style={s.btnConfirmText}>+</Text>
-              </TouchableOpacity>
-            </View>
+            {/* Designar alunos sem turma */}
+            {alunos.filter(a => !a.turmaId).length > 0 && (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={[s.formLabel, { marginBottom: 6 }]}>Designar para esta turma:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {alunos.filter(a => !a.turmaId).map(a => (
+                      <TouchableOpacity
+                        key={a.id}
+                        style={[s.turmaPill, { borderColor: turmaAtribuir?.cor }]}
+                        onPress={async () => {
+                          const novos = { turmaId: turmaAtribuir.id, cor: turmaAtribuir.cor }
+                          setAlunos(prev => prev.map(al => al.id === a.id ? { ...al, ...novos } : al))
+                          await atualizarAluno(a.id, novos)
+                        }}
+                      >
+                        <Text style={s.turmaPillText}>{a.nome}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
 
             <ScrollView style={{ maxHeight: 340 }}>
               {alunos
@@ -1244,7 +1285,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                 return (
                   <View key={m.id} style={[s.missionRow, { paddingVertical: 10, alignItems: 'center' }]}>
                     <View style={[s.missionIcon, { backgroundColor: m.color }]}>
-                      <Text style={{ fontSize: 16 }}>{m.icon}</Text>
+                <Image source={{ uri: m.icon }} style={{ width: 26, height: 26 }} resizeMode="contain" />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={s.missionName}>{m.name}</Text>
@@ -1345,16 +1386,6 @@ export default function DashboardScreen({ professor, onLogout }) {
                             >
                               <Text style={[s.btnToggleText, { color: statusColor === '#ddd' ? colors.muted : statusColor, fontSize: 11 }]}>{statusLabel}</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity
-                              style={[s.btnToggle, { marginTop: 0, backgroundColor: colors.yellowLight, paddingHorizontal: 8 }]}
-                              onPress={() => {
-                                setAlunoXP(a)
-                                setModalAlunos(false)
-                                setTimeout(() => setModalXP(true), 300)
-                              }}
-                            >
-                              <Text style={[s.btnToggleText, { color: '#7a5f00' }]}>⭐ +XP</Text>
-                            </TouchableOpacity>
                           </View>
                         </View>
                       )
@@ -1434,7 +1465,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                 </>
               )}
 
-              {novaConquista.criterio !== 'primeira_tarefa' && novaConquista.criterio !== 'missao_especifica' && (
+              {novaConquista.criterio !== 'primeira_missao' && novaConquista.criterio !== 'missao_especifica' && (
                 <>
                   <Text style={s.formLabel}>Meta</Text>
                   <TextInput style={s.formInput} placeholder="Ex: 500" placeholderTextColor="#aaa" keyboardType="numeric"
@@ -1497,7 +1528,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                   <Text style={[s.missionMeta, { marginTop: 6 }]}>
                     Critério: {CRITERIOS.find(cr => cr.id === conquistaSelecionada.criterio)?.label}
                     {conquistaSelecionada.missaoAlvo ? ` — ${conquistaSelecionada.missaoAlvo}` : ''}
-                    {conquistaSelecionada.criterio !== 'primeira_tarefa' && conquistaSelecionada.criterio !== 'missao_especifica' ? ` (meta: ${conquistaSelecionada.meta})` : ''}
+                    {conquistaSelecionada.criterio !== 'primeira_missao' && conquistaSelecionada.criterio !== 'missao_especifica' ? ` (meta: ${conquistaSelecionada.meta})` : ''}
                   </Text>
                 </>
               )
@@ -1604,110 +1635,13 @@ export default function DashboardScreen({ professor, onLogout }) {
             <Text style={s.emptySubtext}>Esta funcionalidade será disponibilizada na próxima versão.</Text>
           </View>
         )}
-        {activeNav === 'conquistas' && (() => {
-          const conquistasFiltradas = conquistas
-            .filter(c => filtroRaridade === 'Todos' || c.raridade === filtroRaridade)
-            .filter(c => filtroStatus === 'Todos' || (filtroStatus === 'Desbloqueada' ? c.desbloqueada : !c.desbloqueada))
-          return (
-            <View style={{ gap: 14 }}>
-              <View style={s.screenHeader}>
-                <Text style={s.screenTitle}>🎖️ Conquistas</Text>
-                <TouchableOpacity style={s.btnNew} onPress={() => setModalConquista(true)}>
-                  <Text style={s.btnNewText}>+ Nova</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Filtros */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={{ flexDirection: 'row', gap: 8, paddingBottom: 4 }}>
-                  {['Todos', 'Comum', 'Raro', 'Épico', 'Lendário'].map(r => (
-                    <TouchableOpacity key={r}
-                      style={[s.turmaPill, filtroRaridade === r && s.turmaPillActive]}
-                      onPress={() => setFiltroRaridade(r)}>
-                      <Text style={[s.turmaPillText, filtroRaridade === r && s.turmaPillTextActive]}>{r}</Text>
-                    </TouchableOpacity>
-                  ))}
-                  <View style={{ width: 1, backgroundColor: colors.border, marginHorizontal: 4 }} />
-                  {['Todos', 'Desbloqueada', 'Bloqueada'].map(st => (
-                    <TouchableOpacity key={st}
-                      style={[s.turmaPill, filtroStatus === st && s.turmaPillActive]}
-                      onPress={() => setFiltroStatus(st)}>
-                      <Text style={[s.turmaPillText, filtroStatus === st && s.turmaPillTextActive]}>{st}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-
-              {/* Stats rápidos */}
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={[s.statCard, { flex: 1 }]}>
-                  <Text style={s.statNum}>{conquistas.filter(c => c.desbloqueada).length}</Text>
-                  <Text style={s.statLabel}>Desbloqueadas</Text>
-                </View>
-                <View style={[s.statCard, { flex: 1 }]}>
-                  <Text style={s.statNum}>{conquistas.filter(c => !c.desbloqueada).length}</Text>
-                  <Text style={s.statLabel}>Bloqueadas</Text>
-                </View>
-                <View style={[s.statCard, { flex: 1 }]}>
-                  <Text style={s.statNum}>{conquistas.reduce((acc, c) => c.desbloqueada ? acc + c.xp : acc, 0)}</Text>
-                  <Text style={s.statLabel}>XP total</Text>
-                </View>
-              </View>
-
-              {conquistasFiltradas.length === 0 ? (
-                <View style={s.emptyState}>
-                  <Text style={s.emptyIcon}>🎖️</Text>
-                  <Text style={s.emptyText}>Nenhuma conquista encontrada.</Text>
-                </View>
-              ) : (
-                conquistasFiltradas.map(c => {
-                  const cfg = RARIDADE_CONFIG[c.raridade]
-                  const prog = progressoConquista(c)
-                  return (
-                    <TouchableOpacity key={c.id} style={[s.panel, c.desbloqueada && { borderColor: cfg.color, borderWidth: 2 }]}
-                      onPress={() => { setConquistaSelecionada(c); setModalDetConquista(true) }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                        <View style={[s.statIconWrap, { backgroundColor: cfg.bg, width: 50, height: 50, borderRadius: 12, opacity: c.desbloqueada ? 1 : 0.5 }]}>
-                          <Text style={{ fontSize: 26 }}>{c.emoji}</Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <Text style={[s.missionName, { color: c.desbloqueada ? colors.dark : colors.muted }]}>{c.nome}</Text>
-                            <View style={[s.activePill, { backgroundColor: cfg.bg }]}>
-                              <Text style={[s.activePillText, { color: cfg.color }]}>{cfg.emoji} {c.raridade}</Text>
-                            </View>
-                            {c.desbloqueada && <View style={[s.activePill, { backgroundColor: colors.greenLight }]}>
-                              <Text style={[s.activePillText, { color: colors.green }]}>✅ Desbloqueada</Text>
-                            </View>}
-                          </View>
-                          <Text style={s.missionMeta}>{c.descricao}</Text>
-                          <Text style={[s.missionMeta, { color: colors.yellow, marginTop: 2 }]}>+{c.xp} XP</Text>
-                        </View>
-                        <TouchableOpacity onPress={() => removerConquista(c.id)} style={s.btnRemove}>
-                          <Text style={s.btnRemoveText}>🗑️</Text>
-                        </TouchableOpacity>
-                      </View>
-                      {/* Barra de progresso */}
-                      <View style={{ marginTop: 10 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <Text style={[s.missionMeta, { fontSize: 10 }]}>
-                            {CRITERIOS.find(cr => cr.id === c.criterio)?.label}
-                            {c.missaoAlvo ? ` — ${c.missaoAlvo}` : ''}
-                            {c.criterio !== 'primeira_tarefa' && c.criterio !== 'missao_especifica' ? ` (meta: ${c.meta})` : ''}
-                          </Text>
-                          <Text style={[s.missionProgressTxt, { color: c.desbloqueada ? colors.green : cfg.color }]}>{prog}%</Text>
-                        </View>
-                        <View style={s.missionProgressBgFull}>
-                          <View style={[s.missionProgressFillFull, { width: prog + '%', backgroundColor: c.desbloqueada ? colors.green : cfg.color }]} />
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  )
-                })
-              )}
-            </View>
-          )
-        })()}
+        {activeNav === 'conquistas' && (
+          <View style={s.emptyState}>
+            <Text style={s.emptyIcon}>🎖️</Text>
+            <Text style={s.emptyText}>Conquistas sem dados cadastrados.</Text>
+            <Text style={s.emptySubtext}>Esta área será exibida quando houver conquistas salvas no Supabase.</Text>
+          </View>
+        )}
 
         <View style={{ height: 32 }} />
       </ScrollView>
@@ -1715,27 +1649,35 @@ export default function DashboardScreen({ professor, onLogout }) {
   );
 }
 
+function formatarErroSupabase(error) {
+  const mensagem = error?.message || 'tente novamente.';
+  const detalhe = error?.details || error?.hint;
+  return detalhe ? `${mensagem} (${detalhe})` : mensagem;
+}
+
+function PetImage({ uri, width, height }) {
+  const [imagemFalhou, setImagemFalhou] = useState(false);
+
+  useEffect(() => setImagemFalhou(false), [uri]);
+
+  if (!uri || imagemFalhou) {
+    return <Text style={{ fontSize: Math.min(width, height) * 0.65 }}>🐾</Text>;
+  }
+
+  return (
+    <Image
+      source={{ uri }}
+      style={{ width, height }}
+      resizeMode="contain"
+      onError={() => setImagemFalhou(true)}
+    />
+  );
+}
+
 const s = StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.cream },
   main:        { flex: 1 },
   mainContent: { padding: 14, gap: 14 },
-  overlay:     { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 10 },
-  sidebar:     { position: 'absolute', top: 0, left: 0, bottom: 0, width: 240, backgroundColor: colors.dark, paddingTop: 50, paddingBottom: 24, zIndex: 20 },
-  sidebarLogoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)', marginBottom: 12 },
-  sidebarLogo:    { width: 36, height: 36 },
-  sidebarLogoText:{ fontSize: 14, fontFamily: fonts.extrabold, color: '#fff', letterSpacing: 2 },
-  navItem:        { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 20, borderLeftWidth: 3, borderLeftColor: 'transparent' },
-  navActive:      { borderLeftColor: colors.green, backgroundColor: 'rgba(255,255,255,0.07)' },
-  navIcon:        { fontSize: 16, width: 22, textAlign: 'center' },
-  navLabel:       { fontSize: 13, fontFamily: fonts.medium, color: 'rgba(255,255,255,0.5)' },
-  navLabelActive: { color: '#fff' },
-  sidebarBottom:  { marginTop: 'auto', paddingHorizontal: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', gap: 12 },
-  teacherRow:     { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  teacherAvatar:  { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.purple, alignItems: 'center', justifyContent: 'center' },
-  teacherInitials:{ fontSize: 12, fontFamily: fonts.bold, color: '#fff' },
-  teacherName:    { fontSize: 13, fontFamily: fonts.semibold, color: '#fff' },
-  teacherRole:    { fontSize: 11, fontFamily: fonts.regular, color: 'rgba(255,255,255,0.4)' },
-  logoutBtn:      { fontSize: 12, fontFamily: fonts.semibold, color: 'rgba(255,100,100,0.8)' },
   topBar:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
   topBarLeft:  { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   hamburger:   { padding: 6, gap: 5 },
@@ -1824,10 +1766,14 @@ const s = StyleSheet.create({
   modalBox:     { backgroundColor: colors.white, borderRadius: 16, padding: 20, gap: 12 },
   modalTitle:   { fontSize: 18, fontFamily: fonts.bold, color: colors.dark, marginBottom: 4 },
   formLabel:    { fontSize: 12, fontFamily: fonts.semibold, color: '#444' },
+  validationError:{ fontSize: 12, fontFamily: fonts.semibold, color: '#c62828', marginTop: -7 },
   formInput:    { borderWidth: 1.5, borderColor: colors.border, borderRadius: 8, padding: 11, fontSize: 14, fontFamily: fonts.regular, color: colors.dark, backgroundColor: colors.cream },
   petPicker:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   petOption:    { width: 44, height: 44, borderRadius: 10, borderWidth: 2, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.cream },
+  petOptionImage:{ width: 36, height: 36 },
   petOptionActive:{ borderColor: colors.green, backgroundColor: colors.greenLight },
+  noPetsState:  { alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8 },
+  noPetsGhost:  { fontSize: 32 },
   colorPicker:  { flexDirection: 'row', gap: 10 },
   colorOption:  { width: 32, height: 32, borderRadius: 16 },
   colorOptionActive:{ borderWidth: 3, borderColor: colors.dark },
@@ -1840,6 +1786,7 @@ const s = StyleSheet.create({
   btnCancel:    { flex: 1, padding: 12, borderRadius: 8, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center' },
   btnCancelText:{ fontSize: 14, fontFamily: fonts.semibold, color: colors.muted },
   btnConfirm:   { flex: 1, padding: 12, borderRadius: 8, backgroundColor: colors.green, alignItems: 'center' },
+  btnConfirmDisabled:{ opacity: 0.5 },
   btnConfirmText:{ fontSize: 14, fontFamily: fonts.semibold, color: '#fff' },
 
   // Empty state

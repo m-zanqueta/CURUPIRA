@@ -84,12 +84,9 @@ export default function CriarPerfil({ onVoltar, onCriado }) {
               <Text style={styles.sucessoItemTxt}>Evolua seu pet</Text>
             </View>
           </View>
-          <TouchableOpacity
-            style={styles.btnCriar}
-            onPress={() => onCriado && onCriado({ usuario, email })}
-          >
-            <Text style={styles.btnCriarTxt}>Começar agora →</Text>
-          </TouchableOpacity>
+            <TouchableOpacity style={styles.btnCriar} onPress={onVoltar}>
+              <Text style={styles.btnCriarTxt}>Começar agora →</Text>
+            </TouchableOpacity>
         </View>
       </View>
     )
