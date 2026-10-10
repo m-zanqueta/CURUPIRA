@@ -1,187 +1,222 @@
 import { useState, useEffect } from 'react'
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator,
-  Dimensions, Alert,
+  View, StyleSheet, ScrollView, TouchableOpacity,
+  Dimensions, Alert, StatusBar, Platform, Image,
 } from 'react-native'
-import { cores } from '../constants/cores'
-import { listarAcessoriosLoja, listarItensComprados, comprarItem } from '../services/storage'
+import {
+  Appbar, Chip, Text, ActivityIndicator,
+  Surface, Button,
+} from 'react-native-paper'
+import { colors, fonts } from '../theme'
+import { listarItensComprados, comprarItem, listarAcessoriosLoja } from '../services/storage'
 
-const { width } = Dimensions.get('window')
+const WIN  = Dimensions.get('window')
+const W    = Math.min(WIN.width, 480)
+const CARD = (W - 48) / 2
 
 const CATEGORIAS = [
-  { id: 'chapeu', label: 'Chapéus', icon: '🎩' },
-  { id: 'colar', label: 'Colares', icon: '📿' },
+  { id: 'todos',  label: 'Todos'   },
+  { id: 'chapeu', label: 'Chapéus' },
+  { id: 'colar',  label: 'Colares' },
+  { id: 'fundo',  label: 'Cenários' },
 ]
 
-const PET_EMOJI = '🐉' // padrão da loja
-const MOEDAS_INICIAIS = 1000
-const SLOT_LABEL = { chapeu: 'Chapéu', colar: 'Colar' }
+// Cores de raridade baseadas no tema do projeto
+const RAR_CFG = {
+  comum:    { cor: '#78909C',      bg: 'rgba(120,144,156,0.12)', label: 'COMUM'    },
+  raro:     { cor: colors.green,   bg: colors.greenLight+'33',   label: 'RARO'     },
+  epico:    { cor: colors.purple,  bg: colors.purpleLight+'33',  label: 'ÉPICO'    },
+  lendario: { cor: colors.yellow,  bg: colors.yellowLight+'33',  label: 'LENDÁRIO' },
+}
 
-export default function LojaScreen({ onLogout }) {
-  const [categoriaAtiva, setCategoriaAtiva] = useState('chapeu')
-  const [moedas, setMoedas] = useState(MOEDAS_INICIAIS)
+export default function LojaScreen({ onLogout, aluno, turma }) {
+  const [cat,       setCat]       = useState('todos')
+  const [moedas,    setMoedas]    = useState(aluno?.xp || 1000)
   const [comprados, setComprados] = useState([])
-  const [produtos, setProdutos] = useState([])
-  const [carregando, setCarregando] = useState(true)
-  const [erro, setErro] = useState('')
+  const [produtos,  setProdutos]  = useState([])
+  const [loading,   setLoading]   = useState(true)
+
+  useEffect(() => { listarItensComprados().then(setComprados) }, [])
 
   useEffect(() => {
-    async function carregarLoja() {
-      try {
-        const [itens, compras] = await Promise.all([listarAcessoriosLoja(), listarItensComprados()])
-        setProdutos(itens.map(item => ({
-          ...item,
-          categoria: item.slot,
-          emoji: '',
-        })))
-        setComprados((compras || []).map(String))
-      } catch (error) {
-        setErro(error?.message || 'Não foi possível carregar os itens da loja.')
-      } finally {
-        setCarregando(false)
-      }
-    }
-    carregarLoja()
+    listarAcessoriosLoja()
+      .then(itens => setProdutos(itens || []))
+      .catch(console.error)
+      .finally(() => setLoading(false))
   }, [])
 
-  const produtosFiltrados = produtos.filter(p => p.categoria === categoriaAtiva)
+  const lista = cat === 'todos'
+    ? produtos
+    : produtos.filter(p => p.slot === cat)
 
-  async function handleComprar(produto) {
-    if (comprados.includes(String(produto.id))) return
-    if (moedas < produto.preco) {
-      Alert.alert('Moedas insuficientes', `Você precisa de ${produto.preco} moedas para comprar este item.`)
+  async function handleComprar(p) {
+    if (comprados.includes(p.id)) return
+    if (moedas < p.preco) {
+      Alert.alert('Moedas insuficientes', `Você precisa de ${p.preco} moedas.\nSaldo: ${moedas} moedas.`)
       return
     }
     Alert.alert(
-      `Comprar ${produto.nome}?`,
-      `Custo: ${produto.preco} moedas\nSaldo após: ${moedas - produto.preco} moedas`,
+      `Comprar ${p.nome}?`,
+      `Custo: ${p.preco} moedas\nSaldo após: ${moedas - p.preco} moedas`,
       [
         { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Comprar', onPress: async () => {
-            setMoedas(m => m - produto.preco)
-            setComprados(prev => [...prev, String(produto.id)])
-            await comprarItem(String(produto.id))
-            Alert.alert('✅ Comprado!', `${produto.nome} adicionado ao seu inventário!`)
-          }
-        }
+        { text: 'Comprar', onPress: async () => {
+          setMoedas(m => m - p.preco)
+          setComprados(prev => [...prev, p.id])
+          await comprarItem(p.id)
+          Alert.alert('Comprado!', `${p.nome} foi adicionado ao inventário do seu pet!`)
+        }},
       ]
     )
   }
 
   return (
-    <View style={styles.container}>
+    <View style={s.root}>
+      <StatusBar barStyle="light-content" backgroundColor="#050f05" />
+      <View style={s.bgBase} />
+      <View style={s.bgCard} />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onLogout}>
-          <Text style={styles.voltar}>← Sair</Text>
-        </TouchableOpacity>
-        <Text style={styles.titulo}>🛒 Loja</Text>
-        <View style={styles.moedasWrap}>
-          <Text style={styles.moedasIcon}>⭐</Text>
-          <Text style={styles.moedasVal}>{moedas}</Text>
-        </View>
-      </View>
+      {/* App Bar — react-native-paper Appbar */}
+      <Appbar.Header style={[s.appBar, { backgroundColor: 'transparent' }]} statusBarHeight={Platform.OS === 'android' ? 0 : undefined}>
+        <Appbar.BackAction onPress={onLogout} color="#fff" />
+        <Appbar.Content title="Loja" titleStyle={s.appBarTitle} />
+        {/* Chip de moedas */}
+        <Chip
+          style={s.moedasChip}
+          textStyle={s.moedasVal}
+          icon={() => <Text style={{ fontSize: 14 }}>⭐</Text>}
+          compact
+        >
+          {moedas.toLocaleString('pt-BR')}
+        </Chip>
+      </Appbar.Header>
 
-      {/* Pet preview */}
-      <View style={styles.petPreview}>
-        <View style={styles.petCirculo}>
-          <Text style={styles.petEmoji}>{PET_EMOJI}</Text>
+      {/* Hero Card — react-native-paper Surface */}
+      <Surface style={s.heroCard} elevation={2}>
+        <View style={{ flex: 1, gap: 4 }}>
+          <Text variant="titleMedium" style={s.heroTitle}>Loja do Curupira</Text>
+          <Text variant="bodySmall" style={s.heroSub}>
+            {comprados.length} {comprados.length === 1 ? 'item' : 'itens'} no inventário
+          </Text>
+          <Text variant="labelSmall" style={s.heroDica}>Itens comprados aparecem no seu pet</Text>
         </View>
-        <View>
-          <Text style={styles.petLabel}>Seu pet</Text>
-          <Text style={styles.petSub}>{comprados.length} itens comprados</Text>
+        <View style={s.heroPetCircle}>
+          {turma?.pet
+            ? <Image source={{ uri: turma.pet }} style={{ width: 42, height: 42 }} resizeMode="contain" />
+            : <Image source={require('../assets/logo.png')} style={{ width: 36, height: 36 }} resizeMode="contain" />
+          }
         </View>
-      </View>
+      </Surface>
 
-      {/* Categorias */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categorias}>
+      {/* Filter Chips — react-native-paper Chip */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filtrosRow}>
         {CATEGORIAS.map(c => (
-          <TouchableOpacity
+          <Chip
             key={c.id}
-            style={[styles.categoriaBtn, categoriaAtiva === c.id && styles.categoriaBtnAtiva]}
-            onPress={() => setCategoriaAtiva(c.id)}
+            selected={cat === c.id}
+            onPress={() => setCat(c.id)}
+            style={[s.filterChip, cat === c.id && s.filterChipAtivo]}
+            textStyle={[s.filterChipLabel, cat === c.id && { color: '#00C853' }]}
+            selectedColor="#00C853"
+            showSelectedCheck
+            compact
           >
-            <Text style={styles.categoriaIcon}>{c.icon}</Text>
-            <Text style={[styles.categoriaLabel, categoriaAtiva === c.id && styles.categoriaLabelAtiva]}>
-              {c.label}
-            </Text>
-          </TouchableOpacity>
+            {c.label}
+          </Chip>
         ))}
       </ScrollView>
 
       {/* Produtos */}
-      <ScrollView contentContainerStyle={styles.grid}>
-        {carregando && <ActivityIndicator color={cores.verde} style={styles.loading} />}
-        {!!erro && <Text style={styles.error}>{erro}</Text>}
-        {!carregando && !erro && produtosFiltrados.length === 0 && <Text style={styles.empty}>Nenhum item disponível nesta categoria.</Text>}
-        {produtosFiltrados.map(p => {
-          const comprado = comprados.includes(String(p.id))
-          const semMoedas = moedas < p.preco && !comprado
-          return (
-            <View key={p.id} style={[styles.card, comprado && styles.cardComprado]}>
-              <View style={styles.cardRaridade}>
-                <Text style={styles.cardRaridadeText}>{SLOT_LABEL[p.slot] || 'Acessório'}</Text>
-              </View>
-              {p.imagem ? <Image source={{ uri: p.imagem }} style={styles.cardImage} resizeMode="contain" /> : <Text style={styles.cardEmoji}>{p.emoji || '🎁'}</Text>}
-              <Text style={styles.cardNome}>{p.nome}</Text>
-              <TouchableOpacity
-                style={[
-                  styles.cardBtn,
-                  comprado && styles.cardBtnComprado,
-                  semMoedas && styles.cardBtnSemMoedas,
-                ]}
-                onPress={() => handleComprar(p)}
-                disabled={comprado}
-              >
-                <Text style={[styles.cardBtnTxt, comprado && { color: '#888' }]}>
-                  {comprado ? '✅ Comprado' : `⭐ ${p.preco}`}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )
-        })}
-      </ScrollView>
+      {loading ? (
+        <View style={s.centralWrap}>
+          <ActivityIndicator animating color={colors.green} size="large" />
+          <Text variant="bodyMedium" style={s.centralTxt}>Carregando itens... ⏳</Text>
+        </View>
+      ) : lista.length === 0 ? (
+        <View style={s.centralWrap}>
+          <Text style={{ fontSize: 48 }}>🛒</Text>
+          <Text variant="titleMedium" style={s.centralTitulo}>Nenhum item disponível</Text>
+          <Text variant="bodyMedium" style={s.centralTxt}>Novos itens em breve!</Text>
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={s.grade} showsVerticalScrollIndicator={false}>
+          {lista.map(p => {
+            const comprado  = comprados.includes(p.id)
+            const semMoedas = !comprado && moedas < p.preco
+            const rar       = RAR_CFG[p.raridade?.toLowerCase()] || RAR_CFG.comum
+            return (
+              /* Card — react-native-paper Surface */
+              <Surface key={p.id} style={[s.prodCard, comprado && { borderColor: '#00C853', borderWidth: 2 }]} elevation={1}>
+                {/* Badge raridade */}
+                <View style={[s.rarBadge, { backgroundColor: rar.bg }]}>
+                  <Text variant="labelSmall" style={[s.rarLabel, { color: rar.cor }]}>{rar.label}</Text>
+                </View>
 
+                {/* Imagem do Supabase Storage — upada pelo ADM */}
+                <View style={[s.prodImgWrap, p.slot === 'fundo' && s.prodImgWrapFundo]}>
+                  {p.imagem
+                    ? <Image
+                        source={{ uri: p.imagem }}
+                        style={{ width: '100%', height: '100%', borderRadius: p.slot === 'fundo' ? 12 : 0 }}
+                        resizeMode={p.slot === 'fundo' ? 'cover' : 'contain'}
+                      />
+                    : <View style={s.prodImgPlaceholder} />
+                  }
+                </View>
+
+                <Text variant="labelMedium" style={s.prodNome} numberOfLines={2}>{p.nome}</Text>
+
+                {/* Botão — react-native-paper Button */}
+                <Button
+                  mode={comprado ? 'outlined' : semMoedas ? 'outlined' : 'contained'}
+                  onPress={() => handleComprar(p)}
+                  disabled={comprado}
+                  buttonColor={!comprado && !semMoedas ? rar.cor : undefined}
+                  textColor={comprado ? '#00C853' : semMoedas ? '#ff6b6b' : '#fff'}
+                  style={s.prodBtn}
+                  labelStyle={s.prodBtnLabel}
+                  compact
+                >
+                  {comprado ? 'No inventário' : `${p.preco} moedas`}
+                </Button>
+              </Surface>
+            )
+          })}
+          <View style={{ height: 24 }} />
+        </ScrollView>
+      )}
     </View>
   )
 }
 
-const cardW = (width - 48) / 2
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: cores.branco },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16, backgroundColor: cores.verde },
-  voltar: { color: cores.branco, fontSize: 14, fontWeight: '600' },
-  titulo: { color: cores.branco, fontSize: 20, fontWeight: 'bold' },
-  moedasWrap: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  moedasIcon: { fontSize: 14 },
-  moedasVal: { color: cores.branco, fontSize: 14, fontWeight: 'bold' },
-  petPreview: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 20, paddingVertical: 16, backgroundColor: cores.verde, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
-  petCirculo: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  petEmoji: { fontSize: 36 },
-  petLabel: { color: cores.branco, fontSize: 16, fontWeight: 'bold' },
-  petSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
-  categorias: { paddingHorizontal: 16, paddingVertical: 12, flexGrow: 0 },
-  categoriaBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5, borderColor: '#ddd', marginRight: 8, backgroundColor: '#f9f9f9' },
-  categoriaBtnAtiva: { borderColor: cores.verde, backgroundColor: '#e6f7ea' },
-  categoriaIcon: { fontSize: 16 },
-  categoriaLabel: { fontSize: 13, color: '#888', fontWeight: '500' },
-  categoriaLabelAtiva: { color: cores.verde, fontWeight: 'bold' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, padding: 16 },
-  card: { width: cardW, backgroundColor: '#f9f9f9', borderRadius: 14, padding: 14, alignItems: 'center', gap: 8, borderWidth: 1.5, borderColor: '#eee' },
-  cardComprado: { borderColor: cores.verde, backgroundColor: '#e6f7ea' },
-  cardRaridade: { backgroundColor: '#e6f7ea', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12, alignSelf: 'center' },
-  cardRaridadeText: { color: cores.verde, fontSize: 10, fontWeight: 'bold' },
-  cardImage: { width: 96, height: 96 },
-  cardEmoji: { fontSize: 48 },
-  cardNome: { fontSize: 13, fontWeight: '600', color: cores.preto, textAlign: 'center' },
-  cardBtn: { backgroundColor: cores.verde, borderRadius: 20, paddingVertical: 8, paddingHorizontal: 16, width: '100%', alignItems: 'center' },
-  cardBtnComprado: { backgroundColor: '#eee' },
-  cardBtnSemMoedas: { backgroundColor: '#f5c5c5' },
-  cardBtnTxt: { color: cores.branco, fontSize: 13, fontWeight: 'bold' },
-  loading: { width: '100%', marginTop: 30 },
-  error: { width: '100%', color: '#c62828', textAlign: 'center', fontSize: 12, padding: 12 },
-  empty: { width: '100%', color: '#777', textAlign: 'center', fontSize: 13, padding: 24 },
+const s = StyleSheet.create({
+  root:               { flex: 1 },
+  bgBase:             { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#050f05' },
+  bgCard:             { position: 'absolute', top: '15%', left: 0, right: 0, bottom: 0, backgroundColor: '#0a1a0a', borderTopLeftRadius: 32, borderTopRightRadius: 32 },
+  appBar:             { elevation: 0 },
+  appBarTitle:        { fontSize: 20, fontFamily: fonts.extrabold, color: '#fff', letterSpacing: 0.5 },
+  moedasChip:         { backgroundColor: colors.yellowLight+'22', borderColor: colors.yellow+'66', borderWidth: 1.5, marginRight: 8 },
+  moedasVal:          { fontSize: 13, fontFamily: fonts.bold, color: colors.yellow },
+  heroCard:           { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 16, backgroundColor: colors.greenLight+'18', borderRadius: 20, borderWidth: 1.5, borderColor: colors.green+'33', padding: 16 },
+  heroTitle:          { fontFamily: fonts.extrabold, color: colors.cream },
+  heroSub:            { fontFamily: fonts.semibold, color: colors.green },
+  heroDica:           { fontFamily: fonts.regular, color: 'rgba(245,244,217,0.4)' },
+  heroPetCircle:      { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.green+'22', borderWidth: 2, borderColor: colors.green+'55', alignItems: 'center', justifyContent: 'center', marginLeft: 12 },
+  filtrosRow:         { paddingHorizontal: 16, paddingBottom: 14, gap: 8, flexDirection: 'row' },
+  filterChip:         { borderWidth: 1.5, borderColor: 'rgba(245,244,217,0.12)', backgroundColor: 'rgba(245,244,217,0.06)' },
+  filterChipAtivo:    { borderColor: colors.green, backgroundColor: colors.green+'22' },
+  filterChipLabel:    { fontSize: 13, fontFamily: fonts.semibold, color: 'rgba(245,244,217,0.5)' },
+  grade:              { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 14 },
+  prodCard:           { width: CARD, borderRadius: 20, borderWidth: 1.5, borderColor: 'rgba(245,244,217,0.1)', backgroundColor: 'rgba(245,244,217,0.04)', padding: 14, alignItems: 'center', gap: 8 },
+  rarBadge:           { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, alignSelf: 'center' },
+  rarLabel:           { fontSize: 9, fontFamily: fonts.bold, letterSpacing: 1 },
+  prodImgWrap:        { width: CARD - 28, height: CARD - 28, alignItems: 'center', justifyContent: 'center' },
+  prodImgWrapFundo:   { width: CARD - 28, height: (CARD - 28) * 1.4, borderRadius: 12, overflow: 'hidden' },
+  prodImgPlaceholder: { width: '100%', height: '100%', backgroundColor: 'rgba(245,244,217,0.06)', borderRadius: 12 },
+  prodNome:           { fontFamily: fonts.semibold, color: colors.cream, textAlign: 'center' },
+  prodBtn:            { width: '100%', borderRadius: 20 },
+  prodBtnLabel:       { fontSize: 12, fontFamily: fonts.bold },
+  centralWrap:        { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  centralTitulo:      { fontFamily: fonts.bold, color: colors.cream },
+  centralTxt:         { fontFamily: fonts.regular, color: 'rgba(245,244,217,0.4)' },
 })
