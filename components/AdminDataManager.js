@@ -161,8 +161,8 @@ export default function AdminDataManager({ visible, onClose }) {
       .map(chave => [chave, `Preencha ${rotuloCampo(chave).toLowerCase()}.`]))
     setErrosCampos(faltantes)
     if (Object.keys(faltantes).length) return
-    if (aba === 'acessorios' && !['chapeu', 'colar'].includes(rascunho.slot)) {
-      setErro('Escolha Chapéu ou Colar para o tipo do acessório.')
+    if (aba === 'acessorios' && !['chapeu', 'colar', 'fundo'].includes(rascunho.slot)) {
+      setErro('Escolha Chapéu, Colar ou Cenário para o tipo do item.')
       return
     }
     if (aba === 'professores') {
@@ -285,6 +285,7 @@ export default function AdminDataManager({ visible, onClose }) {
                           {[
                             ['chapeu', 'Chapéu'],
                             ['colar', 'Colar'],
+                            ['fundo', 'Cenário'],
                           ].map(([valor, texto]) => (
                             <TouchableOpacity key={valor} disabled={salvando} onPress={() => {
                               setRascunho(prev => ({ ...prev, [chave]: valor }))

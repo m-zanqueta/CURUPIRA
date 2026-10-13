@@ -193,6 +193,7 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
 
   const [chapeu,     setChapeu]     = useState(null)
   const [colar,      setColar]      = useState(null)
+  const [cenario,    setCenario]    = useState(null)
   const [modal,      setModal]      = useState(null)
   const [particulas, setParticulas] = useState([])
   const [todosItens, setTodosItens] = useState([])
@@ -210,6 +211,7 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
 
   const chapeusDispo = todosItens.filter(i => i.slot === 'chapeu' && comprados.includes(i.id))
   const colaresDispo = todosItens.filter(i => i.slot === 'colar'  && comprados.includes(i.id))
+  const cenariosDispo = todosItens.filter(i => i.slot === 'fundo'  && comprados.includes(i.id))
 
   const escalaA  = useRef(new Animated.Value(1)).current
   const balancoA = useRef(new Animated.Value(0)).current
@@ -269,9 +271,10 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
 
   return (
     <View style={s.root}>
+      {cenario?.imagem && <Image source={{ uri: cenario.imagem }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />}
       <StatusBar barStyle="light-content" />
-      <View style={[s.bgTopo, { backgroundColor: cfg.bgTopo }]} />
-      <View style={[s.bgChao, { backgroundColor: cfg.bgChao }]} />
+      <View style={[s.bgTopo, { backgroundColor: cenario ? 'rgba(0,0,0,0.25)' : cfg.bgTopo }]} />
+      <View style={[s.bgChao, { backgroundColor: cenario ? 'rgba(0,0,0,0.2)' : cfg.bgChao }]} />
 
       {/* App Bar — react-native-paper Appbar */}
       <Appbar.Header style={[s.appBar, { backgroundColor: 'transparent' }]} statusBarHeight={Platform.OS === 'android' ? 0 : undefined}>
@@ -349,6 +352,7 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
       <Surface style={s.botoesRow} elevation={4}>
         <BotaoRPG label="Chapéu"  cor={colors.green}  iconeVazio="🪖" itemEquipado={chapeu} onPress={() => setModal('chapeus')} />
         <BotaoRPG label="Colar"   cor={colors.purple} iconeVazio="📿" itemEquipado={colar}  onPress={() => setModal('colares')} />
+        <BotaoRPG label="Cenário" cor={colors.yellow} iconeVazio="🏞️" itemEquipado={cenario} onPress={() => setModal('cenarios')} />
         {onLoja && (
           <TouchableOpacity onPress={onLoja} activeOpacity={0.8} style={s.btnWrap}>
             <Surface style={[s.btnRPG, { borderColor: colors.yellow, backgroundColor: colors.yellow+'20' }]} elevation={2}>
@@ -369,6 +373,11 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
         visible={modal === 'colares'} titulo="Colares e Medalhas"
         itens={colaresDispo} selecionado={colar} cor={colors.purple}
         carregando={carregando} onSel={setColar} onFechar={() => setModal(null)}
+      />
+      <ModalItens
+        visible={modal === 'cenarios'} titulo="Cenários"
+        itens={cenariosDispo} selecionado={cenario} cor={colors.yellow}
+        carregando={carregando} onSel={setCenario} onFechar={() => setModal(null)}
       />
     </View>
   )
