@@ -84,7 +84,7 @@ export default function App() {
           setTela('dashboardAdmin')
           return
         }
-        if (sessao?.tipo === 'professor' && sessao.usuario?.id) {
+        if (['professor', 'coordenador'].includes(sessao?.tipo) && sessao.usuario?.id) {
           setProfessor(sessao.usuario)
           setTela('dashboardProfessor')
           return
@@ -137,7 +137,7 @@ export default function App() {
   }
 
   async function entrarAreaProfessor(usuario) {
-    const tipo = usuario?.tipo === 'admin' ? 'admin' : 'professor'
+    const tipo = ['admin', 'coordenador'].includes(usuario?.tipo) ? usuario.tipo : 'professor'
     try {
       await salvarSessaoApp({ tipo, usuario: usuarioSemSenha(usuario) })
     } catch (error) {

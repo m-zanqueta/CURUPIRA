@@ -208,14 +208,15 @@ export async function listarAcessoriosLoja() {
 
 // ── Turmas e Pets (ATUALIZADO) ─────────────────────────────────────────
 
-export async function listarTurmas(professorId) {
+export async function listarTurmas(professorId, incluirTodas = false) {
   if (!professorId) return [];
 
   try {
-    const { data: turmas, error: turmasError } = await supabase
+    let consultaTurmas = supabase
       .from('turmas')
-      .select('id, nome, codigo, professor_id, cor')
-      .eq('professor_id', professorId);
+      .select('id, nome, codigo, professor_id, cor');
+    if (!incluirTodas) consultaTurmas = consultaTurmas.eq('professor_id', professorId);
+    const { data: turmas, error: turmasError } = await consultaTurmas;
     if (turmasError) throw turmasError;
     if (!turmas?.length) return [];
 
@@ -363,8 +364,11 @@ export async function removerTurmaStorage(id, professorId) {
 
 // ── Missões e Conquistas (NOVOS) ─────────────────────────────────────────
 
-export async function listarMissoes(professorId) {
-  const { data, error } = await supabase.from('missoes').select('*').eq('professorId', professorId).order('id', { ascending: false });
+export async function listarMissoes(professorId, incluirTodas = false) {
+  if (!professorId) return [];
+  let consultaMissoes = supabase.from('missoes').select('*');
+  if (!incluirTodas) consultaMissoes = consultaMissoes.eq('professorId', professorId);
+  const { data, error } = await consultaMissoes.order('id', { ascending: false });
   if (error) throw error;
   const ids = (data || []).map(m => m.id);
   const { data: vinculos, error: vinculosError } = ids.length
@@ -377,7 +381,7 @@ export async function listarMissoes(professorId) {
     porMissao.set(String(v.missao_id), [...(porMissao.get(String(v.missao_id)) || []), v.turma_id]);
     statusPorMissao.set(String(v.missao_id), { ...(statusPorMissao.get(String(v.missao_id)) || {}), [String(v.turma_id)]: v.ativa ?? true });
   });
-  return (data || []).map(m => ({ ...m, name: m.nome, icon: m.icone, active: m.ativa, turmaIds: porMissao.get(String(m.id)) || [], turmaAtivas: statusPorMissao.get(String(m.id)) || {} }));
+  return (data || []).map(m => ({ ...m, professorId: m.professorId, name: m.nome, icon: m.icone, active: m.ativa, turmaIds: porMissao.get(String(m.id)) || [], turmaAtivas: statusPorMissao.get(String(m.id)) || {} }));
 }
 
 export async function listarIconesMissoes() {

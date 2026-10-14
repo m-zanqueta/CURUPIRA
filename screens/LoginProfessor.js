@@ -60,7 +60,7 @@ export default function LoginProfessor({ onLogin, onAdminLogin, onSouAluno }) {
               <View style={[styles.dot, { backgroundColor: cores.amarelo }]}>
                 <Text style={[styles.dotTxt, { color: cores.preto }]}>✓</Text>
               </View>
-              <Text style={styles.featureTxt}>Crie missões e recompensas</Text>
+              <Text style={styles.featureTxt}>Acompanhe tarefas e resultados</Text>
             </View>
             <View style={styles.featureRow}>
               <View style={[styles.dot, { backgroundColor: cores.roxo }]}>
@@ -73,7 +73,7 @@ export default function LoginProfessor({ onLogin, onAdminLogin, onSouAluno }) {
 
         <View style={styles.form}>
           <Text style={styles.titulo}>Bem-vindo(a) de volta!</Text>
-          <Text style={styles.subtitulo}>Portal exclusivo para professores</Text>
+          <Text style={styles.subtitulo}>Portal para professores e coordenadores</Text>
 
           <Text style={styles.label}>Usuário</Text>
           <TextInput

@@ -13,6 +13,7 @@ const { width } = Dimensions.get('window');
 
 
 export default function DashboardScreen({ professor, onLogout }) {
+  const isCoordenador = professor?.tipo === 'coordenador'
   const [activeNav, setActiveNav]     = useState('overview')
   const [menuOpen, setMenuOpen]       = useState(false)
   const [turmas, setTurmas]           = useState([])
@@ -89,8 +90,8 @@ export default function DashboardScreen({ professor, onLogout }) {
     async function recarregarDados() {
       const [alunosResult, turmasResult, missoesResult, iconesResult, statusResult] = await Promise.allSettled([
         listarAlunos(),
-        listarTurmas(professor.id),
-        listarMissoes(professor.id),
+        listarTurmas(professor.id, isCoordenador),
+        listarMissoes(professor.id, isCoordenador),
         listarIconesMissoes(),
         listarStatusMissoes(),
       ])
@@ -124,7 +125,7 @@ export default function DashboardScreen({ professor, onLogout }) {
     if (professor?.id) recarregarDados()
     else { setMissions([]); setTurmas([]); setAlunos([]) }
     return () => { ativo = false }
-  }, [professor?.id, activeNav])
+  }, [professor?.id, isCoordenador, activeNav])
 
   const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })
 
@@ -142,7 +143,7 @@ export default function DashboardScreen({ professor, onLogout }) {
 
   function atribuirMissao(missaoId) {
     const m = missions.find(item => String(item.id) === String(missaoId))
-    if (m && turmaAtribuir) solicitarVinculoMissao(m, turmaAtribuir)
+    if (m && turmaAtribuir && String(m.professorId) === String(turmaAtribuir.professorId)) solicitarVinculoMissao(m, turmaAtribuir)
   }
 
   function missoesDaTurma(turma) {
@@ -189,7 +190,7 @@ export default function DashboardScreen({ professor, onLogout }) {
     const turmasIds = [...atuais, turmaId]
     setMissaoEmAcao(true)
     try {
-      await definirTurmasMissao(missao.id, professor.id, turmasIds)
+      await definirTurmasMissao(missao.id, missao.professorId || professor.id, turmasIds)
       const nomeTurmas = turmasIds.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', ')
       setMissions(prev => prev.map(m => String(m.id) === String(missao.id)
         ? { ...m, turmaIds: turmasIds, turma: nomeTurmas, turmaAtivas: { ...(m.turmaAtivas || {}), [String(turmaId)]: true } }
@@ -219,14 +220,14 @@ export default function DashboardScreen({ professor, onLogout }) {
     if (missaoEmAcao) return
     setMissaoEmAcao(true)
     try {
-      await removerMissaoDaTurmaStorage(missao.id, professor.id, turma.id)
+      await removerMissaoDaTurmaStorage(missao.id, missao.professorId || professor.id, turma.id)
       const turmaIds = (missao.turmaIds || []).filter(id => String(id) !== String(turma.id))
       const turmaAtivas = { ...(missao.turmaAtivas || {}) }
       delete turmaAtivas[String(turma.id)]
       const nomeTurmas = turmaIds.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', ')
       setMissions(prev => prev.map(item => String(item.id) === String(missao.id) ? { ...item, turmaIds, turmaAtivas, turma: nomeTurmas || 'Nenhuma turma' } : item))
       const resultados = await Promise.allSettled([
-        listarAlunos(), listarTurmas(professor.id), listarStatusMissoes(),
+        listarAlunos(), listarTurmas(professor.id, isCoordenador), listarStatusMissoes(),
       ])
       if (resultados[0].status === 'fulfilled') setAlunos(resultados[0].value || [])
       if (resultados[1].status === 'fulfilled') setTurmas(resultados[1].value || [])
@@ -254,7 +255,7 @@ export default function DashboardScreen({ professor, onLogout }) {
     if (missaoEmAcao) return
     setMissaoEmAcao(true)
     try {
-      await definirAtivaMissaoTurma(missao.id, professor.id, turma.id, ativa)
+      await definirAtivaMissaoTurma(missao.id, missao.professorId || professor.id, turma.id, ativa)
       setMissions(prev => prev.map(item => String(item.id) === String(missao.id)
         ? { ...item, turmaAtivas: { ...(item.turmaAtivas || {}), [String(turma.id)]: ativa } }
         : item))
@@ -421,7 +422,7 @@ export default function DashboardScreen({ professor, onLogout }) {
       const normalizada = { ...salva, name: salva.nome || salva.name, icon: salva.icone || salva.icon, active: salva.ativa ?? salva.active, turmaIds: turmaIdsSalvas, turmaAtivas: salva.turmaAtivas || {}, turma: turmaIdsSalvas.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', '), color: colors.greenLight, textColor: '#006516', progress: 0 }
       setMissions(prev => missaoEditando ? prev.map(m => String(m.id) === String(salva.id) ? { ...m, ...normalizada } : m) : [normalizada, ...prev])
       setAlunos(await listarAlunos())
-      const turmasAtualizadas = await listarTurmas(professor.id)
+      const turmasAtualizadas = await listarTurmas(professor.id, isCoordenador)
       setTurmas(turmasAtualizadas)
     } catch (error) {
       console.error('Erro ao criar/atualizar missão:', error)
@@ -468,7 +469,7 @@ export default function DashboardScreen({ professor, onLogout }) {
       setMissions(prev => prev.filter(m => String(m.id) !== String(id)))
       setStatusMissao(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => !key.startsWith(`${id}_`))))
       setAlunos(await listarAlunos())
-      setTurmas(await listarTurmas(professor.id))
+      setTurmas(await listarTurmas(professor.id, isCoordenador))
     } catch (error) {
       Alert.alert('Erro', `Não foi possível remover a missão: ${formatarErroSupabase(error)}`)
     }
@@ -538,7 +539,7 @@ export default function DashboardScreen({ professor, onLogout }) {
       await atualizarStatusAlunoMissao(missaoId, alunoId, proximo)
       setStatusAluno(missaoId, alunoId, proximo)
       setAlunos(await listarAlunos())
-      setTurmas(await listarTurmas(professor.id))
+      setTurmas(await listarTurmas(professor.id, isCoordenador))
     } catch (error) {
       Alert.alert('Erro', `Não foi possível atualizar a conclusão: ${formatarErroSupabase(error)}`)
     }
