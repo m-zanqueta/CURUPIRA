@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Image,
 } from 'react-native'
-import { buscarProfessor } from '../services/storage'
+import { buscarCoordenador, buscarProfessor } from '../services/storage'
 import { cores } from '../constants/cores'
 
 export default function LoginProfessor({ onLogin, onAdminLogin, onSouAluno }) {
@@ -26,6 +26,19 @@ export default function LoginProfessor({ onLogin, onAdminLogin, onSouAluno }) {
       onAdminLogin?.({ nome: 'Administrador', tipo: 'admin' })
       return
     }
+    let coordenador = null
+    try {
+      coordenador = await buscarCoordenador(emailNormalizado, senha)
+    } catch (error) {
+      // Se a migração ainda não foi aplicada, mantém o login atual dos professores.
+      console.warn('Não foi possível consultar a tabela de coordenadores:', error.message)
+    }
+    if (coordenador) {
+      setErro('')
+      onLogin(coordenador)
+      return
+    }
+
     const encontrado = await buscarProfessor(emailNormalizado, senha)
     if (!encontrado) {
       setErro('Usuário ou senha incorretos.')

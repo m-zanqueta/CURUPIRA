@@ -92,6 +92,16 @@ export async function buscarProfessor(emailDigitado, senhaDigitada) {
   }
 }
 
+export async function buscarCoordenador(emailDigitado, senhaDigitada) {
+  const { data, error } = await supabase.rpc('login_coordenador', {
+    p_email: emailDigitado.trim().toLowerCase(),
+    p_senha: senhaDigitada,
+  })
+
+  if (error) throw error
+  return Array.isArray(data) ? data[0] || null : data || null
+}
+
 export async function salvarProfessor(dados) {
   const { data, error } = await supabase
     .from('professores')
