@@ -19,30 +19,47 @@ const PET_SIZE = W * 0.72
 const FUNDO_PADRAO = require('../assets/fundo-floresta.png')
 // Pet vem do Supabase Storage via turma.pet (URL pública).
 // As coordenadas dos acessórios serão ajustadas separadamente por pet.
+// Calibração das imagens do Supabase (1024x1024, quadrada).
+// posChapeu converte um ponto (x,y) da imagem original em top/left/w
+// da caixa do chapéu (que tem altura = 0.6 * largura).
+const IMG_W = 1024
+const IMG_H = 1024
+const LETTERBOX = 0
+const HAT_ART = { cx: 0.49, base: 0.52, w: 0.38 }
+
+function posChapeu({ x, y, largura }) {
+  const w = (largura / IMG_W) / HAT_ART.w
+  const h = w * 0.6
+  return {
+    w,
+    left: x / IMG_W - HAT_ART.cx * w,
+    top:  LETTERBOX + y / IMG_W - HAT_ART.base * h,
+  }
+}
 const PET_CFG = {
   default: {
     cor: colors.green,
     bgCeu: '#061208',
     bgMeio: '#0d2410',
     bgChao: '#1a4020',
-    chapeu: { top: -0.13, left: 0.18, w: 0.62 },
-    colar: { top: 0.23, left: 0.28, w: 0.45 },
+    chapeu: posChapeu({ x: 516, y: 220, largura: 250 }),
+    colar: { top: 0.50, left: 0.28, w: 0.45 },
   },
   arara: {
     cor: '#42A5F5',
     bgCeu: '#020810',
     bgMeio: '#061525',
     bgChao: '#0d2a50',
-    chapeu: { top: -0.10, left: 0.20, w: 0.60 },
-    colar: { top: 0.25, left: 0.28, w: 0.44 },
+    chapeu: posChapeu({ x: 516, y: 220, largura: 280 }),
+    colar: { top: 0.55, left: 0.28, w: 0.44 },
   },
   onca: {
     cor: colors.yellow,
     bgCeu: '#120800',
     bgMeio: '#241200',
     bgChao: '#3d2000',
-    chapeu: { top: -0.12, left: 0.18, w: 0.62 },
-    colar: { top: 0.24, left: 0.26, w: 0.48 },
+    chapeu: posChapeu({ x: 516, y: 220, largura: 280 }),
+    colar: { top: 0.55, left: 0.26, w: 0.48 },
   },
 }
 
