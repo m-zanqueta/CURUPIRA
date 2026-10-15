@@ -199,6 +199,7 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
 
   const [chapeu,     setChapeu]     = useState(null)
   const [colar,      setColar]      = useState(null)
+  const [cenario,    setCenario]    = useState(null)
   const [modal,      setModal]      = useState(null)
   const [particulas, setParticulas] = useState([])
   const [todosItens, setTodosItens] = useState([])
@@ -215,6 +216,7 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
 
   const chapeusDispo = todosItens.filter(i => i.slot === 'chapeu' && comprados.includes(i.id))
   const colaresDispo = todosItens.filter(i => i.slot === 'colar'  && comprados.includes(i.id))
+  const cenariosDispo = todosItens.filter(i => i.slot === 'fundo' && comprados.includes(i.id))
 
   const escalaA  = useRef(new Animated.Value(1)).current
   const balancoA = useRef(new Animated.Value(0)).current
@@ -278,7 +280,7 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
 
       {/* Fundo — imagem do banco tem prioridade, senão usa floresta padrão */}
       <Image
-        source={turma?.fundo ? { uri: turma.fundo } : FUNDO_PADRAO}
+        source={cenario?.imagem ? { uri: cenario.imagem } : turma?.fundo ? { uri: turma.fundo } : FUNDO_PADRAO}
         style={StyleSheet.absoluteFill}
         resizeMode="cover"
       />
@@ -369,7 +371,7 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
         {/* Barra de ações */}
         <Surface style={s.acoes} elevation={4}>
           <BotaoCosmético label="Chapéu"  cor={colors.green}  iconeVazio="🪖" itemEquipado={chapeu} onPress={() => setModal('chapeus')} />
-          <BotaoCosmético label="Cenário" cor={cfg.cor}       iconeVazio="🌳" itemEquipado={null}   onPress={() => setModal('fundos')} />
+          <BotaoCosmético label="Cenário" cor={colors.yellow} iconeVazio="🌳" itemEquipado={cenario} onPress={() => setModal('cenarios')} />
           <BotaoCosmético label="Colar"   cor={colors.purple} iconeVazio="📿" itemEquipado={colar}  onPress={() => setModal('colares')} />
           {onLoja && (
             <TouchableOpacity onPress={onLoja} activeOpacity={0.8} style={s.btnCosmWrap}>
@@ -393,6 +395,11 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
         visible={modal==='colares'} titulo="Colares e Medalhas"
         itens={colaresDispo} selecionado={colar} cor={colors.purple}
         carregando={carregando} onSel={setColar} onFechar={() => setModal(null)}
+      />
+      <ModalItens
+        visible={modal==='cenarios'} titulo="Cenários"
+        itens={cenariosDispo} selecionado={cenario} cor={colors.yellow}
+        carregando={carregando} onSel={setCenario} onFechar={() => setModal(null)}
       />
     </View>
   )

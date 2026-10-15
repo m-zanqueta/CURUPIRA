@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme';
-import { listarAlunos, atualizarAluno, listarTurmas, listarPetsDisponiveis, salvarTurma, removerTurmaStorage, listarMissoes, listarIconesMissoes, listarStatusMissoes, salvarMissao, atualizarMissao, definirTurmasMissao, atualizarStatusAlunoMissao, removerMissaoStorage } from '../services/storage';
+import { listarAlunos, atualizarAluno, listarTurmas, listarProfessoresParaTurma, listarPetsParaTurma, salvarTurma, removerTurmaStorage, listarMissoes, listarIconesMissoes, listarStatusMissoes, salvarMissao, atualizarMissao, definirTurmasMissao, definirAtivaMissaoTurma, removerMissaoDaTurma as removerMissaoDaTurmaStorage, atualizarStatusAlunoMissao, removerMissaoStorage } from '../services/storage';
 import { CORES, MEDALS, RARIDADE_CONFIG, CRITERIOS } from './dashboardConfig';
 import DashboardSidebar from './DashboardSidebar';
 
@@ -13,10 +13,12 @@ const { width } = Dimensions.get('window');
 
 
 export default function DashboardScreen({ professor, onLogout }) {
+  const isCoordenador = professor?.tipo === 'coordenador'
   const [activeNav, setActiveNav]     = useState('overview')
   const [menuOpen, setMenuOpen]       = useState(false)
   const [turmas, setTurmas]           = useState([])
-  const [petsDisponiveis, setPetsDisponiveis] = useState([])
+  const [petsParaTurma, setPetsParaTurma] = useState([])
+  const [professoresParaTurma, setProfessoresParaTurma] = useState([])
   const [carregandoPets, setCarregandoPets] = useState(false)
   const [missions, setMissions]       = useState([])
   const [alunos, setAlunos]           = useState([])
@@ -24,7 +26,8 @@ export default function DashboardScreen({ professor, onLogout }) {
 
   // Modal de criar turma
   const [modalTurma, setModalTurma]   = useState(false)
-  const [novaTurma, setNovaTurma]     = useState({ nome: '', petId: null, cor: colors.green, alunosNomes: '' })
+  const [novaTurma, setNovaTurma]     = useState({ nome: '', petId: null, cor: colors.green })
+  const [errosTurma, setErrosTurma] = useState({})
 
   // Modal de criar missão
   const [modalMissao, setModalMissao] = useState(false)
@@ -36,10 +39,14 @@ export default function DashboardScreen({ professor, onLogout }) {
   // Modal de atribuir missão à turma
   const [modalAtribuir, setModalAtribuir] = useState(false)
   const [turmaAtribuir, setTurmaAtribuir] = useState(null)
+  const [confirmacaoMissao, setConfirmacaoMissao] = useState(null)
+  const [missaoEmAcao, setMissaoEmAcao] = useState(false)
 
   // Modal de alunos da turma
   const [modalAlunosTurma, setModalAlunosTurma] = useState(false)
-  const [novoAlunoNome, setNovoAlunoNome]       = useState('')
+  const [modalResumoTurma, setModalResumoTurma] = useState(false)
+  const [abaDetalhesTurma, setAbaDetalhesTurma] = useState('resumo')
+  const [filtroTarefasTurma, setFiltroTarefasTurma] = useState('todas')
 
   // Modal de alunos da missão
   const [modalAlunos, setModalAlunos]   = useState(false)
@@ -49,12 +56,13 @@ export default function DashboardScreen({ professor, onLogout }) {
   const [modalXP, setModalXP]     = useState(false)
   const [alunoXP, setAlunoXP]     = useState(null)
   const [xpValor, setXpValor]     = useState('')
+  const [erroXP, setErroXP] = useState('')
 
   // Modal de editar aluno
   const [modalEditAluno, setModalEditAluno] = useState(false)
   const [alunoEditando, setAlunoEditando]   = useState(null)
   const [alunoNomeEdit, setAlunoNomeEdit]   = useState('')
-  const [alunoTurmaEdit, setAlunoTurmaEdit] = useState(null)
+  const [erroAlunoEdit, setErroAlunoEdit] = useState('')
 
   // Status de missão por aluno { missaoId_alunoId: 'pendente' | 'entregue' | 'aprovado' }
   const [statusMissao, setStatusMissao] = useState({})
@@ -71,6 +79,7 @@ export default function DashboardScreen({ professor, onLogout }) {
   const [filtroRaridade, setFiltroRaridade] = useState('Todos')
   const [filtroStatus, setFiltroStatus]     = useState('Todos')
   const [novaConquista, setNovaConquista]   = useState({ nome: '', emoji: '🏆', raridade: 'Comum', xp: '', criterio: 'primeira_missao', meta: '', descricao: '', missaoAlvo: '' })
+  const [errosConquista, setErrosConquista] = useState({})
   const [modalDetConquista, setModalDetConquista] = useState(false)
   const [conquistaSelecionada, setConquistaSelecionada] = useState(null)
 
@@ -82,8 +91,8 @@ export default function DashboardScreen({ professor, onLogout }) {
     async function recarregarDados() {
       const [alunosResult, turmasResult, missoesResult, iconesResult, statusResult] = await Promise.allSettled([
         listarAlunos(),
-        listarTurmas(professor.id),
-        listarMissoes(professor.id),
+        listarTurmas(professor.id, isCoordenador),
+        listarMissoes(professor.id, isCoordenador),
         listarIconesMissoes(),
         listarStatusMissoes(),
       ])
@@ -117,7 +126,7 @@ export default function DashboardScreen({ professor, onLogout }) {
     if (professor?.id) recarregarDados()
     else { setMissions([]); setTurmas([]); setAlunos([]) }
     return () => { ativo = false }
-  }, [professor?.id, activeNav])
+  }, [professor?.id, isCoordenador, activeNav])
 
   const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })
 
@@ -126,40 +135,153 @@ export default function DashboardScreen({ professor, onLogout }) {
   const xpFormatado = totalXP >= 1000 ? (totalXP / 1000).toFixed(1) + 'k' : String(totalXP)
   const stats = [
     { label: 'Alunos ativos',        value: String(alunos.length),                          icon: '👥', bg: colors.greenLight  },
-    { label: 'Missões abertas',      value: String(missions.filter(m => m.active).length),  icon: '🏆', bg: colors.yellowLight },
+    { label: 'Tarefas ativas nas turmas', value: String(missions.reduce((total, m) => total + (m.turmaIds || []).filter(id => {
+      const turma = turmas.find(item => String(item.id) === String(id))
+      return turma && missaoAtivaNaTurma(m, turma)
+    }).length, 0)), icon: '🏆', bg: colors.yellowLight },
     { label: 'XP distribuído',       value: xpFormatado,                                    icon: '⭐', bg: '#f0f0f0'          },
   ]
 
-  async function atribuirMissao(missaoId) {
+  function atribuirMissao(missaoId) {
     const m = missions.find(item => String(item.id) === String(missaoId))
-    if (m && turmaAtribuir) await atualizarTurmaMissao(m, turmaAtribuir.id)
+    if (isCoordenador && m && turmaAtribuir && String(m.professorId) === String(turmaAtribuir.professorId)) solicitarVinculoMissao(m, turmaAtribuir)
   }
 
-  async function desatribuirMissao(missaoId) {
-    const m = missions.find(item => String(item.id) === String(missaoId))
-    if (m && turmaAtribuir) await atualizarTurmaMissao(m, turmaAtribuir.id)
-  }
-
-  function missoesDaTurma(turmaName) {
-    const turma = turmas.find(t => t.nome === turmaName)
+  function missoesDaTurma(turma) {
     return missions.filter(m => (m.turmaIds || []).some(id => String(id) === String(turma?.id)))
   }
 
+  function alunosDaTurma(turma) {
+    return turma ? alunos.filter(a => String(a.turmaId) === String(turma.id)) : []
+  }
+
+  function abrirResumoTurma(turma, aba = 'resumo') {
+    setTurmaAtribuir(turma)
+    setAbaDetalhesTurma(aba)
+    setFiltroTarefasTurma('todas')
+    setModalResumoTurma(true)
+  }
+
   function turmaTemMissao(turma, missaoId) {
-    const m = missions.find(m => m.id === missaoId)
+    const m = missions.find(m => String(m.id) === String(missaoId))
     if (!m) return false
     return (m.turmaIds || []).some(id => String(id) === String(turma.id))
   }
 
-  async function adicionarTurma() {
-    if (!novaTurma.nome.trim()) { Alert.alert('Atenção', 'Digite o nome da turma!'); return; }
-    const petSelecionado = petsDisponiveis.find(pet => String(pet.id) === String(novaTurma.petId));
-    if (!petSelecionado) {
-      Alert.alert('Atenção', 'Não há PET disponível para vincular. Atualize a lista ou cadastre um PET no banco.');
-      return;
+  function missaoAtivaNaTurma(missao, turma) {
+    if (!missao || !turma) return false
+    return missao.turmaAtivas?.[String(turma.id)] ?? true
+  }
+
+  function solicitarVinculoMissao(missao, turma) {
+    const jaVinculada = turmaTemMissao(turma, missao.id)
+    if (jaVinculada) return
+    setConfirmacaoMissao({
+      titulo: 'Atribuir tarefa à turma?',
+      mensagem: `“${missao.name}” será adicionada a “${turma.nome}”. Os alunos dessa turma poderão enviar a tarefa enquanto ela estiver ativa.`,
+      textoConfirmar: 'Atribuir tarefa',
+      onConfirmar: () => atualizarTurmaMissao(missao, turma.id),
+    })
+  }
+
+  async function atualizarTurmaMissao(missao, turmaId) {
+    if (missaoEmAcao) return
+    const atuais = missao.turmaIds || []
+    if (atuais.some(id => String(id) === String(turmaId))) return
+    const turmasIds = [...atuais, turmaId]
+    setMissaoEmAcao(true)
+    try {
+      await definirTurmasMissao(missao.id, missao.professorId || professor.id, turmasIds)
+      const nomeTurmas = turmasIds.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', ')
+      setMissions(prev => prev.map(m => String(m.id) === String(missao.id)
+        ? { ...m, turmaIds: turmasIds, turma: nomeTurmas, turmaAtivas: { ...(m.turmaAtivas || {}), [String(turmaId)]: true } }
+        : m))
+    } catch (error) {
+      console.error('Erro ao atualizar turmas da missão:', error)
+      Alert.alert('Erro', `Não foi possível atualizar as turmas da missão: ${formatarErroSupabase(error)}`)
+    } finally {
+      setMissaoEmAcao(false)
     }
-    if (!professor?.id) {
-      Alert.alert('Erro', 'Não foi possível identificar o professor conectado. Entre novamente e tente criar a turma.');
+  }
+
+  function solicitarRemocaoMissaoTurma(missao, turma) {
+    const ativaNestaTurma = missaoAtivaNaTurma(missao, turma)
+    setConfirmacaoMissao({
+      titulo: 'Remover tarefa desta turma?',
+      mensagem: `Ao remover “${missao.name}” de “${turma.nome}”, todos os alunos dessa turma que concluíram a tarefa perderão o XP recebido por ela. O progresso será apagado e ninguém poderá enviar essa tarefa nessa turma. As outras turmas não serão alteradas.${ativaNestaTurma ? ' Se quiser mantê-la vinculada, mas impedir novos envios sem retirar XP, escolha “Desativar e manter XP”.' : ''}`,
+      textoConfirmar: 'Remover e estornar XP',
+      textoAlternativo: ativaNestaTurma ? 'Desativar e manter XP' : undefined,
+      perigoso: true,
+      onConfirmar: () => executarRemocaoMissaoTurma(missao, turma),
+      onAlternativo: ativaNestaTurma ? () => salvarAtivacaoMissaoTurma(missao, turma, false) : undefined,
+    })
+  }
+
+  async function executarRemocaoMissaoTurma(missao, turma) {
+    if (missaoEmAcao) return
+    setMissaoEmAcao(true)
+    try {
+      await removerMissaoDaTurmaStorage(missao.id, missao.professorId || professor.id, turma.id)
+      const turmaIds = (missao.turmaIds || []).filter(id => String(id) !== String(turma.id))
+      const turmaAtivas = { ...(missao.turmaAtivas || {}) }
+      delete turmaAtivas[String(turma.id)]
+      const nomeTurmas = turmaIds.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', ')
+      setMissions(prev => prev.map(item => String(item.id) === String(missao.id) ? { ...item, turmaIds, turmaAtivas, turma: nomeTurmas || 'Nenhuma turma' } : item))
+      const resultados = await Promise.allSettled([
+        listarAlunos(), listarTurmas(professor.id, isCoordenador), listarStatusMissoes(),
+      ])
+      if (resultados[0].status === 'fulfilled') setAlunos(resultados[0].value || [])
+      if (resultados[1].status === 'fulfilled') setTurmas(resultados[1].value || [])
+      if (resultados[2].status === 'fulfilled') setStatusMissao(Object.fromEntries((resultados[2].value || []).map(item => [`${item.missao_id}_${item.aluno_id}`, item.status])))
+    } catch (error) {
+      Alert.alert('Erro', `Não foi possível remover a tarefa da turma: ${formatarErroSupabase(error)}`)
+    } finally {
+      setMissaoEmAcao(false)
+    }
+  }
+
+  function solicitarAlteracaoAtivaMissaoTurma(missao, turma) {
+    const ativa = !missaoAtivaNaTurma(missao, turma)
+    setConfirmacaoMissao({
+      titulo: ativa ? 'Ativar tarefa nesta turma?' : 'Desativar tarefa nesta turma?',
+      mensagem: ativa
+        ? `“${missao.name}” ficará disponível novamente para os alunos de “${turma.nome}”.`
+        : `Em “${turma.nome}”, os alunos que já concluíram “${missao.name}” manterão o XP. Quem ainda não concluiu não poderá enviá-la enquanto estiver desativada. A tarefa continuará vinculada à turma e poderá ser reativada depois.`,
+      textoConfirmar: ativa ? 'Ativar tarefa' : 'Desativar e manter XP',
+      onConfirmar: () => salvarAtivacaoMissaoTurma(missao, turma, ativa),
+    })
+  }
+
+  async function salvarAtivacaoMissaoTurma(missao, turma, ativa) {
+    if (missaoEmAcao) return
+    setMissaoEmAcao(true)
+    try {
+      await definirAtivaMissaoTurma(missao.id, missao.professorId || professor.id, turma.id, ativa)
+      setMissions(prev => prev.map(item => String(item.id) === String(missao.id)
+        ? { ...item, turmaAtivas: { ...(item.turmaAtivas || {}), [String(turma.id)]: ativa } }
+        : item))
+    } catch (error) {
+      Alert.alert('Erro', `Não foi possível ${ativa ? 'ativar' : 'desativar'} a tarefa: ${formatarErroSupabase(error)}`)
+    } finally {
+      setMissaoEmAcao(false)
+    }
+  }
+
+  async function adicionarTurma() {
+    const petSelecionado = petsParaTurma.find(pet => String(pet.id) === String(novaTurma.petId) && pet.disponivel);
+    const professorResponsavel = professoresParaTurma.find(item => String(item.id) === String(novaTurma.professorId));
+    const novosErros = {
+      nome: novaTurma.nome.trim() ? '' : 'Preencha o nome da turma.',
+      professor: isCoordenador ? (professorResponsavel ? '' : 'Escolha o professor responsável pela turma.') : '',
+      pet: petSelecionado ? '' : petsParaTurma.some(pet => pet.disponivel)
+        ? 'Escolha um PET disponível para vincular à turma.'
+        : 'Não há PET disponível. Cadastre ou libere um PET antes de criar a turma.',
+    };
+    setErrosTurma(novosErros);
+    if (Object.values(novosErros).some(Boolean)) return;
+    const professorIdResponsavel = isCoordenador ? professorResponsavel?.id : professor?.id;
+    if (!professorIdResponsavel) {
+      Alert.alert('Erro', 'Não foi possível identificar o professor responsável. Escolha um professor e tente novamente.');
       return;
     }
 
@@ -170,7 +292,7 @@ export default function DashboardScreen({ professor, onLogout }) {
     const dadosNovaTurma = {
       nome: novaTurma.nome.trim(),
       codigo,
-      professorId: professor.id,
+      professorId: professorIdResponsavel,
       petId: petSelecionado.id,
       cor: novaTurma.cor,
     };
@@ -191,8 +313,11 @@ export default function DashboardScreen({ professor, onLogout }) {
         cosmetico: Boolean(turmaSalva.pet.cosmetico),
       };
       setTurmas(prev => [...prev, nova]);
-      setPetsDisponiveis(prev => prev.filter(pet => String(pet.id) !== String(petSelecionado.id)));
-      setNovaTurma({ nome: '', petId: null, cor: colors.green, alunosNomes: '' });
+      setPetsParaTurma(prev => prev.map(pet => String(pet.id) === String(petSelecionado.id)
+        ? { ...pet, turma_id: turmaSalva.id, turmaNome: nova.nome, disponivel: false }
+        : pet));
+      setNovaTurma({ nome: '', petId: null, cor: colors.green });
+      setErrosTurma({});
       setModalTurma(false);
       Alert.alert('✅ Turma criada!', `A turma "${nova.nome}" foi salva com sucesso.`);
     } catch (error) {
@@ -205,6 +330,7 @@ export default function DashboardScreen({ professor, onLogout }) {
     try {
       await removerTurmaStorage(id, professor?.id);
       setTurmas(prev => prev.filter(t => t.id !== id));
+      setModalResumoTurma(false);
     } catch (error) {
       console.error('Erro ao remover turma:', error);
       Alert.alert('Erro', `Não foi possível excluir a turma: ${formatarErroSupabase(error)}`);
@@ -212,21 +338,38 @@ export default function DashboardScreen({ professor, onLogout }) {
   }
 
   async function abrirModalTurma() {
+    if (!isCoordenador) return;
     setModalTurma(true);
     setCarregandoPets(true);
-    setPetsDisponiveis([]);
+    setErrosTurma({});
+    setPetsParaTurma([]);
     setNovaTurma(prev => ({ ...prev, petId: null }));
 
     try {
-      const disponiveis = await listarPetsDisponiveis();
-      setPetsDisponiveis(disponiveis);
-      setNovaTurma(prev => ({ ...prev, petId: disponiveis[0]?.id || null }));
+      const [pets, professores] = await Promise.all([
+        listarPetsParaTurma(),
+        listarProfessoresParaTurma(),
+      ]);
+      setPetsParaTurma(pets);
+      setProfessoresParaTurma(professores);
+      const primeiroDisponivel = pets.find(pet => pet.disponivel);
+      setNovaTurma(prev => ({ ...prev, petId: primeiroDisponivel?.id || null, professorId: '' }));
     } catch (error) {
       console.error('Erro ao carregar PETs disponíveis:', error);
       Alert.alert('Erro', `Não foi possível carregar os PETs: ${formatarErroSupabase(error)}`);
     } finally {
       setCarregandoPets(false);
     }
+  }
+
+  function avisarPetJaEscolhido(pet) {
+    const nomeTurma = pet.turmaNome || `Turma ${pet.turma_id}`;
+    const mensagem = `Este PET já foi escolhido pela turma "${nomeTurma}".`;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.alert(mensagem);
+      return;
+    }
+    Alert.alert('PET indisponível', mensagem);
   }
 
   function removerTurma(id) {
@@ -242,11 +385,11 @@ export default function DashboardScreen({ professor, onLogout }) {
     }
   }
 
-  async function adicionarMissao() {
+  async function adicionarMissao(confirmada = false) {
     const erros = {
       nome: novaMissao.name.trim() ? '' : 'Preencha a missão com um nome.',
       descricao: novaMissao.descricao.trim() ? '' : 'Preencha a descrição da missão.',
-      turmas: novaMissao.turmaIds.length ? '' : 'Escolha pelo menos uma turma.',
+      turmas: (missaoEditando || novaMissao.turmaIds.length) ? '' : 'Escolha pelo menos uma turma.',
       icone: novaMissao.icon ? '' : (iconesMissoes.length ? 'Escolha um ícone para a missão.' : 'Não há ícones cadastrados para escolher.'),
       dificuldade: ['facil', 'media', 'dificil'].includes(novaMissao.dificuldade) ? '' : 'Escolha uma dificuldade para a missão.',
     }
@@ -262,12 +405,33 @@ export default function DashboardScreen({ professor, onLogout }) {
       dificuldade: novaMissao.dificuldade, xp: xpPorDificuldade[novaMissao.dificuldade],
       icone: novaMissao.icon, ativa: missaoEditando?.active ?? true, professorId: professor.id,
     }
+    if (!confirmada) {
+      const nomesTurmas = dados.turmasIds.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', ')
+      const turmasAntes = missaoEditando?.turmaIds || []
+      const novasTurmas = dados.turmasIds.filter(id => !turmasAntes.some(anterior => String(anterior) === String(id)))
+      const turmasRemovidas = turmasAntes.filter(id => !dados.turmasIds.some(novo => String(novo) === String(id)))
+      const nomeNovasTurmas = novasTurmas.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', ')
+      const nomeTurmasRemovidas = turmasRemovidas.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', ')
+      const resumoVinculos = !missaoEditando
+        ? `A nova missão será vinculada a: ${nomesTurmas}.`
+        : novasTurmas.length || turmasRemovidas.length
+          ? `Turmas que receberão a missão: ${nomeNovasTurmas || 'nenhuma'}. Turmas das quais será removida: ${nomeTurmasRemovidas || 'nenhuma'}. O XP já ganho continua com os alunos ao remover apenas o vínculo.`
+          : `A missão continuará vinculada a: ${nomesTurmas}.`
+      setConfirmacaoMissao({
+        titulo: missaoEditando ? 'Confirmar alterações?' : 'Criar missão?',
+        mensagem: `${resumoVinculos}\n\n${missaoEditando ? 'Salvar as alterações da missão' : 'Criar a missão'} “${dados.nome}” valendo ${dados.xp} XP? Conclusões já aprovadas serão ajustadas para esse valor.`,
+        textoConfirmar: missaoEditando ? 'Salvar alterações' : 'Criar missão',
+        onConfirmar: () => adicionarMissao(true),
+      })
+      return
+    }
     try {
       const salva = await salvarMissao(dados)
-      const normalizada = { ...salva, name: salva.nome || salva.name, icon: salva.icone || salva.icon, active: salva.ativa ?? salva.active, turmaIds: dados.turmasIds, turma: dados.turmasIds.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', '), color: colors.greenLight, textColor: '#006516', progress: 0 }
+      const turmaIdsSalvas = salva.turmaIds || dados.turmasIds
+      const normalizada = { ...salva, name: salva.nome || salva.name, icon: salva.icone || salva.icon, active: salva.ativa ?? salva.active, turmaIds: turmaIdsSalvas, turmaAtivas: salva.turmaAtivas || {}, turma: turmaIdsSalvas.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', '), color: colors.greenLight, textColor: '#006516', progress: 0 }
       setMissions(prev => missaoEditando ? prev.map(m => String(m.id) === String(salva.id) ? { ...m, ...normalizada } : m) : [normalizada, ...prev])
       setAlunos(await listarAlunos())
-      const turmasAtualizadas = await listarTurmas(professor.id)
+      const turmasAtualizadas = await listarTurmas(professor.id, isCoordenador)
       setTurmas(turmasAtualizadas)
     } catch (error) {
       console.error('Erro ao criar/atualizar missão:', error)
@@ -308,42 +472,28 @@ export default function DashboardScreen({ professor, onLogout }) {
     setErrosMissao(prev => ({ ...prev, turmas: '' }))
   }
 
-  async function atualizarTurmaMissao(missao, turmaId) {
-    const atuais = missao.turmaIds || []
-    const turmasIds = atuais.some(id => String(id) === String(turmaId))
-      ? atuais.filter(id => String(id) !== String(turmaId))
-      : [...atuais, turmaId]
-    if (!turmasIds.length) { Alert.alert('Atenção', 'A missão precisa estar atribuída a pelo menos uma turma.'); return }
+  async function executarExclusaoMissao(id) {
     try {
-      await definirTurmasMissao(missao.id, professor.id, turmasIds)
-      const nomeTurmas = turmasIds.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', ')
-      setMissions(prev => prev.map(m => m.id === missao.id ? { ...m, turmaIds, turma: nomeTurmas } : m))
+      await removerMissaoStorage(id)
+      setMissions(prev => prev.filter(m => String(m.id) !== String(id)))
+      setStatusMissao(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => !key.startsWith(`${id}_`))))
+      setAlunos(await listarAlunos())
+      setTurmas(await listarTurmas(professor.id, isCoordenador))
     } catch (error) {
-      Alert.alert('Erro', `Não foi possível atualizar a turma da missão: ${error.message || 'tente novamente.'}`)
+      Alert.alert('Erro', `Não foi possível remover a missão: ${formatarErroSupabase(error)}`)
     }
   }
 
   function removerMissao(id) {
-    const confirmarRemocao = async () => {
-      try {
-        await removerMissaoStorage(id)
-        setMissions(prev => prev.filter(m => m.id !== id))
-        setAlunos(await listarAlunos())
-        setTurmas(await listarTurmas(professor.id))
-      } catch (error) {
-        Alert.alert('Erro', `Não foi possível remover a missão: ${error.message || 'tente novamente.'}`)
-      }
-    }
-    if (Platform.OS === 'web') {
-      if (window.confirm('Tem certeza que deseja remover esta missão?')) {
-        confirmarRemocao()
-      }
-    } else {
-      Alert.alert('Remover missão', 'Tem certeza?', [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Remover', style: 'destructive', onPress: confirmarRemocao }
-      ])
-    }
+    const missao = missions.find(item => String(item.id) === String(id))
+    if (!missao) return
+    setConfirmacaoMissao({
+      titulo: 'Excluir missão de todas as turmas?',
+      mensagem: `Ao excluir “${missao.name}” do sistema, todos os alunos de todas as turmas vinculadas perderão o XP recebido por ela. Para afetar apenas uma turma, cancele e use a aba Tarefas dentro das especificações daquela turma.`,
+      textoConfirmar: 'Excluir e estornar todo o XP',
+      perigoso: true,
+      onConfirmar: () => executarExclusaoMissao(id),
+    })
   }
 
   function alunosDaMissao(missao) {
@@ -358,19 +508,16 @@ export default function DashboardScreen({ professor, onLogout }) {
   function abrirEditAluno(aluno) {
     setAlunoEditando(aluno)
     setAlunoNomeEdit(aluno.nome)
-    setAlunoTurmaEdit(turmas.find(t => t.id === aluno.turmaId) || null)
+    setErroAlunoEdit('')
     setModalEditAluno(true)
   }
 
   async function salvarEditAluno() {
-    if (!alunoNomeEdit.trim()) { Alert.alert('Atenção', 'Digite o nome do aluno!'); return }
-    const turmaDestino = alunoTurmaEdit
+    if (!alunoNomeEdit.trim()) { setErroAlunoEdit('Preencha o nome do aluno.'); return }
     const initials = alunoNomeEdit.trim().split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2)
     const novos = {
       nome: alunoNomeEdit.trim(),
       initials,
-      turmaId: turmaDestino?.id || null,
-      cor: turmaDestino?.cor || '#888',
     }
     setAlunos(prev => prev.map(a => a.id === alunoEditando.id ? { ...a, ...novos } : a))
     await atualizarAluno(alunoEditando.id, novos)
@@ -387,33 +534,25 @@ export default function DashboardScreen({ professor, onLogout }) {
   }
 
   async function ciclarStatus(missaoId, alunoId) {
+    if (!isCoordenador) return
     const atual = getStatusAluno(missaoId, alunoId)
     const proximo = atual === 'pendente' ? 'entregue' : atual === 'entregue' ? 'aprovado' : 'pendente'
     const missao = missions.find(m => String(m.id) === String(missaoId))
-    if (proximo === 'aprovado' && !missao?.active) { Alert.alert('Missão desativada', 'Não é possível aprovar novas conclusões enquanto a missão estiver desativada.'); return }
+    const aluno = alunos.find(item => String(item.id) === String(alunoId))
+    const turmaAluno = turmas.find(item => String(item.id) === String(aluno?.turmaId))
+    const ativaNestaTurma = missao && turmaAluno && missaoAtivaNaTurma(missao, turmaAluno)
+    if (!ativaNestaTurma && (proximo !== 'pendente' || atual === 'aprovado')) {
+      Alert.alert('Tarefa desativada', 'Nesta turma não é possível enviar, aprovar ou alterar o progresso da tarefa. O XP aprovado permanece como está.');
+      return
+    }
     try {
       await atualizarStatusAlunoMissao(missaoId, alunoId, proximo)
       setStatusAluno(missaoId, alunoId, proximo)
       setAlunos(await listarAlunos())
-      setTurmas(await listarTurmas(professor.id))
+      setTurmas(await listarTurmas(professor.id, isCoordenador))
     } catch (error) {
       Alert.alert('Erro', `Não foi possível atualizar a conclusão: ${formatarErroSupabase(error)}`)
     }
-  }
-
-  function adicionarAlunoTurma() {
-    if (!novoAlunoNome.trim() || !turmaAtribuir) return
-    const initials = novoAlunoNome.trim().split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2)
-    const novo = {
-      id: Date.now(),
-      nome: novoAlunoNome.trim(),
-      turmaId: turmaAtribuir.id,
-      xp: 0,
-      initials,
-      cor: turmaAtribuir.cor,
-    }
-    setAlunos(prev => [...prev, novo])
-    setNovoAlunoNome('')
   }
 
   function removerAluno(alunoId) {
@@ -444,7 +583,8 @@ export default function DashboardScreen({ professor, onLogout }) {
 
   function darXP() {
     const val = parseInt(xpValor)
-    if (!val || val <= 0) { Alert.alert('Atenção', 'Digite um valor de XP válido!'); return }
+    if (!val || val <= 0) { setErroXP('Preencha uma quantidade de XP válida, maior que zero.'); return }
+    setErroXP('')
 
     // Limita o XP ao máximo da missão se vier de uma missão
     const limite = missaoAlunos?.xp || Infinity
@@ -503,14 +643,17 @@ export default function DashboardScreen({ professor, onLogout }) {
   }
 
   function adicionarConquista() {
-    if (!novaConquista.nome.trim()) { Alert.alert('Atenção', 'Digite o nome da conquista!'); return }
     const precisaMeta = novaConquista.criterio !== 'primeira_missao' && novaConquista.criterio !== 'missao_especifica'
-    if (precisaMeta && (!novaConquista.meta || isNaN(novaConquista.meta))) {
-      Alert.alert('Atenção', 'Digite uma meta válida!'); return
+    const xpTexto = novaConquista.xp.trim()
+    const novosErros = {
+      nome: novaConquista.nome.trim() ? '' : 'Preencha o nome da conquista.',
+      descricao: novaConquista.descricao.trim() ? '' : 'Preencha a descrição da conquista.',
+      xp: xpTexto !== '' && Number.isInteger(Number(xpTexto)) && Number(xpTexto) >= 0 ? '' : 'Preencha um valor inteiro de XP igual ou maior que zero.',
+      meta: !precisaMeta || (novaConquista.meta.trim() !== '' && Number.isFinite(Number(novaConquista.meta)) && Number(novaConquista.meta) > 0) ? '' : 'Preencha uma meta numérica maior que zero.',
+      missaoAlvo: novaConquista.criterio !== 'missao_especifica' || novaConquista.missaoAlvo ? '' : 'Escolha uma missão alvo.',
     }
-    if (novaConquista.criterio === 'missao_especifica' && !novaConquista.missaoAlvo) {
-      Alert.alert('Atenção', 'Selecione a missão alvo!'); return
-    }
+    setErrosConquista(novosErros)
+    if (Object.values(novosErros).some(Boolean)) return
     const nova = {
       id: Date.now(),
       nome: novaConquista.nome.trim(),
@@ -525,8 +668,14 @@ export default function DashboardScreen({ professor, onLogout }) {
     }
     setConquistas(prev => [nova, ...prev])
     setNovaConquista({ nome: '', emoji: '🏆', raridade: 'Comum', xp: '', criterio: 'primeira_missao', meta: '', descricao: '', missaoAlvo: '' })
+    setErrosConquista({})
     setModalConquista(false)
     Alert.alert('✅ Conquista criada!', `"${nova.nome}" foi adicionada.`)
+  }
+
+  function atualizarCampoConquista(campo, valor) {
+    setNovaConquista(prev => ({ ...prev, [campo]: valor }))
+    setErrosConquista(prev => ({ ...prev, [campo]: '' }))
   }
 
   function removerConquista(id) {
@@ -576,106 +725,70 @@ export default function DashboardScreen({ professor, onLogout }) {
     setMissions(prev => prev.map(m => m.id === id ? { ...m, alunos: num } : m))
   }
 
-  async function toggleMissaoAtiva(id) {
-    const missao = missions.find(m => m.id === id)
-    if (!missao) return
-    const ativa = !missao.active
-    try {
-      await atualizarMissao(id, { ativa })
-      setMissions(prev => prev.map(m => m.id === id ? { ...m, active: ativa, ativa } : m))
-    } catch (error) {
-      Alert.alert('Erro', `Não foi possível atualizar a missão: ${error.message || 'tente novamente.'}`)
-    }
-  }
-
   // ─── TELA TURMAS ────────────────────────────────────────
   function renderTurmas() {
     return (
       <View style={{ gap: 14 }}>
         <View style={s.screenHeader}>
           <Text style={s.screenTitle}>👥 Turmas</Text>
-          <TouchableOpacity style={s.btnNew} onPress={abrirModalTurma}>
+          {isCoordenador && <TouchableOpacity style={s.btnNew} onPress={abrirModalTurma}>
             <Text style={s.btnNewText}>+ Nova Turma</Text>
-          </TouchableOpacity>
+          </TouchableOpacity>}
         </View>
         {turmas.map(t => {
-          const missoesDaTurmaList = missoesDaTurma(t.nome)
+          const missoesDaTurmaList = missoesDaTurma(t)
+          const missoesAtivas = missoesDaTurmaList.filter(m => missaoAtivaNaTurma(m, t))
+          const missoesDesativadas = missoesDaTurmaList.length - missoesAtivas.length
+          const alunosTurma = alunosDaTurma(t)
           return (
             <View key={t.id} style={s.panel}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={[s.petAvatarSmall, { borderColor: t.cor }]}>
-                  <PetImage uri={t.pet} width={42} height={42} />
+              <TouchableOpacity activeOpacity={0.8} onPress={() => abrirResumoTurma(t)}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={[s.petAvatarSmall, { borderColor: t.cor }]}>
+                    <PetImage uri={t.pet} width={42} height={42} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.turmaName}>{t.nome}</Text>
+                    <Text style={s.turmaEstagio}>{alunosTurma.length} aluno(s) · {missoesAtivas.length} tarefa(s) ativa(s){missoesDesativadas ? ` · ${missoesDesativadas} desativada(s)` : ''}</Text>
+                    <Text style={[s.turmaEstagio, { color: t.cor }]}>{t.estagio} · PET com {Number(t.xp) || 0} XP</Text>
+                    <Text style={s.turmaEmocao}>{t.emocao || 'Sem emoção definida'} · {Number(t.progresso) || 0}% de progresso do PET</Text>
+                  </View>
+                  <TouchableOpacity onPress={(event) => { event.stopPropagation?.(); abrirResumoTurma(t, 'informacoes') }} style={[s.btnToggle, { marginTop: 0, padding: 7, backgroundColor: colors.cream }]} accessibilityLabel={`Informações da turma ${t.nome}`}>
+                    <Text style={{ fontSize: 17, color: colors.dark, fontFamily: fonts.bold }}>ⓘ</Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.turmaName}>{t.nome}</Text>
-                  <Text style={s.turmaEmocao}>Código da turma: {t.codigo}</Text>
-                  <Text style={[s.turmaEstagio, { color: t.cor }]}>{t.estagio} · {t.xp} XP</Text>
-                  <Text style={s.turmaEmocao}>{t.emocao} {t.progresso}% engajamento</Text>
-                </View>
-                <TouchableOpacity onPress={() => removerTurma(t.id)} style={s.btnRemove}>
-                  <Text style={s.btnRemoveText}>🗑️</Text>
-                </TouchableOpacity>
-              </View>
+              </TouchableOpacity>
               <View style={[s.petXpBgFull, { marginTop: 10 }]}>
-                <View style={[s.petXpFillFull, { width: t.progresso + '%', backgroundColor: t.cor }]} />
+                <View style={[s.petXpFillFull, { width: `${Math.max(0, Math.min(100, Number(t.progresso) || 0))}%`, backgroundColor: t.cor }]} />
               </View>
 
               {/* Alunos da turma */}
               <View style={{ marginTop: 12, gap: 6 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={s.formLabel}>
-                    Alunos ({alunos.filter(a => a.turmaId === t.id).length})
+                    Alunos ({alunosTurma.length})
                   </Text>
                   <TouchableOpacity
                     style={[s.btnNew, { paddingVertical: 5, paddingHorizontal: 10, backgroundColor: colors.purple }]}
                     onPress={() => { setTurmaAtribuir(t); setModalAlunosTurma(true) }}
                   >
-                    <Text style={[s.btnNewText, { fontSize: 11 }]}>👤 Ver alunos</Text>
+                    <Text style={[s.btnNewText, { fontSize: 11 }]}>👤 Listar alunos</Text>
                   </TouchableOpacity>
-                </View>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                  {alunos.filter(a => a.turmaId === t.id).slice(0, 5).map(a => (
-                    <View key={a.id} style={[s.badge, { backgroundColor: colors.cream }]}>
-                      <Text style={[s.badgeText, { color: t.cor }]}>{a.nome.split(' ')[0]}</Text>
-                    </View>
-                  ))}
-                  {alunos.filter(a => a.turmaId === t.id).length > 5 && (
-                    <View style={[s.badge, { backgroundColor: colors.cream }]}>
-                      <Text style={[s.badgeText, { color: colors.muted }]}>
-                        +{alunos.filter(a => a.turmaId === t.id).length - 5} mais
-                      </Text>
-                    </View>
-                  )}
                 </View>
               </View>
 
-              {/* Missões da turma */}
+              {/* Gerenciamento das tarefas fica nas especificações da turma */}
               <View style={{ marginTop: 12, gap: 6 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={s.formLabel}>Missões atribuídas ({missoesDaTurmaList.length})</Text>
+                  <Text style={s.formLabel}>Tarefas ({missoesDaTurmaList.length})</Text>
                   <TouchableOpacity
                     style={[s.btnNew, { paddingVertical: 5, paddingHorizontal: 10 }]}
-                    onPress={() => { setTurmaAtribuir(t); setModalAtribuir(true) }}
+                    onPress={() => abrirResumoTurma(t, 'tarefas')}
                   >
-                    <Text style={[s.btnNewText, { fontSize: 11 }]}>+ Atribuir missão</Text>
+                    <Text style={[s.btnNewText, { fontSize: 11 }]}>Gerenciar tarefas</Text>
                   </TouchableOpacity>
                 </View>
-                {missoesDaTurmaList.length === 0 ? (
-                  <Text style={{ fontSize: 12, color: colors.muted, fontFamily: fonts.regular }}>Nenhuma missão atribuída.</Text>
-                ) : (
-                  missoesDaTurmaList.map(m => (
-                    <View key={m.id} style={[s.missionRow, { paddingVertical: 6 }]}>
-                      <View style={[s.missionIcon, { backgroundColor: m.color, width: 28, height: 28 }]}>
-                        <Image source={{ uri: m.icon }} style={{ width: 22, height: 22 }} resizeMode="contain" />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[s.missionName, { fontSize: 12 }]}>{m.name}</Text>
-                        <Text style={[s.missionMeta, { fontSize: 10 }]}>+{m.xp} XP</Text>
-                      </View>
-                      {m.active && <View style={s.activePill}><Text style={s.activePillText}>ativa</Text></View>}
-                    </View>
-                  ))
-                )}
+                <Text style={{ fontSize: 12, color: colors.muted, fontFamily: fonts.regular }}>{missoesAtivas.length} ativa(s) · {missoesDesativadas} desativada(s)</Text>
               </View>
             </View>
           )
@@ -684,7 +797,7 @@ export default function DashboardScreen({ professor, onLogout }) {
           <View style={s.emptyState}>
             <Text style={s.emptyIcon}>👥</Text>
             <Text style={s.emptyText}>Nenhuma turma cadastrada.</Text>
-            <Text style={s.emptySubtext}>Clique em "+ Nova Turma" para começar.</Text>
+            <Text style={s.emptySubtext}>{isCoordenador ? 'Clique em "+ Nova Turma" para cadastrar uma turma e vincular um PET.' : 'As turmas aparecerão aqui para acompanhamento.'}</Text>
           </View>
         )}
       </View>
@@ -696,10 +809,7 @@ export default function DashboardScreen({ professor, onLogout }) {
     return (
       <View style={{ gap: 14 }}>
         <View style={s.screenHeader}>
-          <Text style={s.screenTitle}>🏆 Missões</Text>
-          <TouchableOpacity style={s.btnNew} onPress={abrirNovaMissao}>
-            <Text style={s.btnNewText}>+ Nova Missão</Text>
-          </TouchableOpacity>
+          <Text style={s.screenTitle}>🏆 Tarefas</Text>
         </View>
         {missions.map(m => (
           <View key={m.id} style={[s.panel, m.active && { borderColor: colors.green, borderWidth: 2 }]}>
@@ -712,32 +822,27 @@ export default function DashboardScreen({ professor, onLogout }) {
                   <Text style={s.missionName}>{m.name}</Text>
                   {m.active && <View style={s.activePill}><Text style={s.activePillText}>ativa</Text></View>}
                 </View>
-                <Text style={s.missionMeta}>{m.turma} · {qtdAlunosMissao(m)} alunos · +{m.xp} XP</Text>
-                {/* Atribuir turmas */}
+                <Text style={s.missionMeta}>{(m.turmaIds || []).length} turma(s) · {qtdAlunosMissao(m)} alunos · +{m.xp} XP</Text>
+                {/* As ações de vínculo e ativação ficam nas especificações da turma. */}
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
-                  {turmas.map(t => {
+                  {(m.turmaIds || []).map(id => {
+                    const t = turmas.find(item => String(item.id) === String(id))
+                    if (!t) return null
                     const atribuida = turmaTemMissao(t, m.id)
                     return (
                       <TouchableOpacity
                         key={t.id}
                         style={[s.turmaPill, atribuida && s.turmaPillActive, { paddingVertical: 3 }]}
-                        onPress={() => atualizarTurmaMissao(m, t.id)}
+                        onPress={() => abrirResumoTurma(t, 'tarefas')}
                       >
                         <Text style={[s.turmaPillText, atribuida && s.turmaPillTextActive]}>
-                          {atribuida ? '✓ ' : ''}{t.nome}
+                          {atribuida ? (missaoAtivaNaTurma(m, t) ? '✓ ' : 'Ⅱ ') : ''}{t.nome}{atribuida && !missaoAtivaNaTurma(m, t) ? ' · desativada' : ''}
                         </Text>
                       </TouchableOpacity>
                     )
                   })}
+                  {(m.turmaIds || []).length === 0 && <Text style={s.missionMeta}>Sem turma vinculada. Atribua pela aba Tarefas de uma turma.</Text>}
                 </View>
-              </View>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                <TouchableOpacity onPress={() => editarMissao(m)} style={[s.btnToggle, { marginTop: 0, paddingHorizontal: 8, backgroundColor: colors.purpleLight }]}>
-                  <Text style={[s.btnToggleText, { color: colors.purple }]}>✏️</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => removerMissao(m.id)} style={s.btnRemove}>
-                  <Text style={s.btnRemoveText}>🗑️</Text>
-                </TouchableOpacity>
               </View>
             </View>
             {m.active && (
@@ -775,21 +880,14 @@ export default function DashboardScreen({ professor, onLogout }) {
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[s.btnToggle, { backgroundColor: m.active ? '#fde8e8' : colors.greenLight }]}
-              onPress={() => toggleMissaoAtiva(m.id)}
-            >
-              <Text style={[s.btnToggleText, { color: m.active ? '#c0392b' : colors.green }]}>
-                {m.active ? '⏸ Pausar missão' : '▶ Ativar missão'}
-              </Text>
-            </TouchableOpacity>
+            <Text style={[s.missionMeta, { marginTop: 8 }]}>{isCoordenador ? 'Para gerenciar esta tarefa, abra a turma correspondente.' : 'Acompanhamento disponível para consulta. As alterações são feitas pela coordenação.'}</Text>
           </View>
         ))}
         {missions.length === 0 && (
           <View style={s.emptyState}>
             <Text style={s.emptyIcon}>🏆</Text>
-            <Text style={s.emptyText}>Nenhuma missão cadastrada.</Text>
-            <Text style={s.emptySubtext}>Clique em "+ Nova Missão" para começar.</Text>
+                <Text style={s.emptyText}>Nenhuma tarefa cadastrada.</Text>
+            <Text style={s.emptySubtext}>As tarefas cadastradas aparecerão aqui.</Text>
           </View>
         )}
       </View>
@@ -798,7 +896,10 @@ export default function DashboardScreen({ professor, onLogout }) {
 
   // ─── TELA OVERVIEW ──────────────────────────────────────
   function renderOverview() {
-    const missaoDestaque = missions.find(m => m.active)
+    const missaoDestaque = missions.find(m => m.active && (m.turmaIds || []).some(id => {
+      const turma = turmas.find(item => String(item.id) === String(id))
+      return turma && missaoAtivaNaTurma(m, turma)
+    }))
     const progressoDestaque = missaoDestaque ? progressoRealMissao(missaoDestaque) : 0
 
     return (
@@ -806,7 +907,7 @@ export default function DashboardScreen({ professor, onLogout }) {
         {missaoDestaque && (
           <View style={s.hortaBanner}>
             <View style={{ flex: 1 }}>
-              <Text style={s.hortaTag}>🏆 MISSÃO ATIVA</Text>
+              <Text style={s.hortaTag}>🏆 TAREFA ATIVA</Text>
               <Text style={s.hortaTitle}>{missaoDestaque.name}</Text>
               <Text style={s.hortaDesc}>
                 {qtdAlunosMissao(missaoDestaque)} alunos participando · {missaoDestaque.turma}
@@ -864,7 +965,7 @@ export default function DashboardScreen({ professor, onLogout }) {
         {/* Missions preview */}
         <View style={s.panel}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <Text style={s.panelTitle}>Missões recentes</Text>
+            <Text style={s.panelTitle}>Tarefas recentes</Text>
             <TouchableOpacity onPress={() => setActiveNav('missoes')}>
               <Text style={{ fontSize: 12, color: colors.green, fontFamily: fonts.semibold }}>Ver todas →</Text>
             </TouchableOpacity>
@@ -940,27 +1041,67 @@ export default function DashboardScreen({ professor, onLogout }) {
 
               <Text style={s.formLabel}>Nome da turma</Text>
               <TextInput style={s.formInput} placeholder="Ex: 3º A, Turma B..." placeholderTextColor="#aaa"
-                value={novaTurma.nome} onChangeText={t => setNovaTurma({ ...novaTurma, nome: t })} />
+                value={novaTurma.nome} onChangeText={t => { setNovaTurma(prev => ({ ...prev, nome: t })); setErrosTurma(prev => ({ ...prev, nome: '' })) }} />
+              {!!errosTurma.nome && <Text style={s.validationError}>{errosTurma.nome}</Text>}
+
+              <Text style={s.formLabel}>Professor responsável</Text>
+              {professoresParaTurma.length ? (
+                <View style={s.petPicker}>
+                  {professoresParaTurma.map(item => (
+                    <TouchableOpacity key={item.id}
+                      style={[s.turmaPill, String(novaTurma.professorId) === String(item.id) && s.turmaPillActive]}
+                      onPress={() => {
+                        setNovaTurma(prev => ({ ...prev, professorId: item.id }));
+                        setErrosTurma(prev => ({ ...prev, professor: '' }));
+                      }}>
+                      <Text style={[s.turmaPillText, String(novaTurma.professorId) === String(item.id) && s.turmaPillTextActive]}>{item.nome}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <Text style={s.emptySubtext}>Nenhum professor cadastrado para receber a turma.</Text>
+              )}
+              {!!errosTurma.professor && <Text style={s.validationError}>{errosTurma.professor}</Text>}
 
               <Text style={s.formLabel}>Escolha o pet</Text>
               {carregandoPets ? (
                 <Text style={s.emptySubtext}>Carregando PETs disponíveis...</Text>
-              ) : petsDisponiveis.length > 0 ? (
+              ) : petsParaTurma.length > 0 ? (
                 <View style={s.petPicker}>
-                  {petsDisponiveis.map(pet => (
+                  {petsParaTurma.map(pet => (
                     <TouchableOpacity
                       key={pet.id}
-                      style={[s.petOption, String(novaTurma.petId) === String(pet.id) && s.petOptionActive]}
-                      onPress={() => setNovaTurma(prev => ({ ...prev, petId: pet.id }))}
+                      style={[
+                        s.petOption,
+                        !pet.disponivel && s.petOptionUnavailable,
+                        pet.disponivel && String(novaTurma.petId) === String(pet.id) && s.petOptionActive,
+                      ]}
+                        onPress={() => {
+                          if (pet.disponivel) {
+                            setNovaTurma(prev => ({ ...prev, petId: pet.id }))
+                            setErrosTurma(prev => ({ ...prev, pet: '' }))
+                          } else avisarPetJaEscolhido(pet)
+                        }}
+                      accessibilityLabel={pet.disponivel ? pet.nome : `${pet.nome}, já vinculado à turma ${pet.turmaNome}`}
                     >
-                      <Image source={{ uri: pet.icone }} style={s.petOptionImage} resizeMode="contain" />
+                      <Image
+                        source={{ uri: pet.icone }}
+                        style={[
+                          s.petOptionImage,
+                          !pet.disponivel && (Platform.OS === 'web' ? s.petOptionImageGrayScale : s.petOptionImageGrayTint),
+                        ]}
+                        resizeMode="contain"
+                      />
                     </TouchableOpacity>
                   ))}
+                  <Text style={s.petPickerHint}>PETs em preto e branco já pertencem a outra turma. Toque para ver qual.</Text>
+                  {!!errosTurma.pet && <Text style={s.validationError}>{errosTurma.pet}</Text>}
                 </View>
               ) : (
                 <View style={s.noPetsState}>
                   <Text style={s.noPetsGhost}>👻</Text>
                   <Text style={s.emptySubtext}>Ainda não existem PETs disponíveis. Cadastre ou libere um PET no banco para criar uma turma.</Text>
+                  {!!errosTurma.pet && <Text style={s.validationError}>{errosTurma.pet}</Text>}
                 </View>
               )}
 
@@ -977,9 +1118,9 @@ export default function DashboardScreen({ professor, onLogout }) {
                   <Text style={s.btnCancelText}>Cancelar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[s.btnConfirm, (carregandoPets || !petsDisponiveis.length || !novaTurma.petId) && s.btnConfirmDisabled]}
+                  style={[s.btnConfirm, carregandoPets && s.btnConfirmDisabled]}
                   onPress={adicionarTurma}
-                  disabled={carregandoPets || !petsDisponiveis.length || !novaTurma.petId}
+                  disabled={carregandoPets}
                 >
                   <Text style={s.btnConfirmText}>Criar Turma</Text>
                 </TouchableOpacity>
@@ -1007,27 +1148,33 @@ export default function DashboardScreen({ professor, onLogout }) {
                 value={novaMissao.descricao} onChangeText={t => atualizarCampoMissao('descricao', t)} />
               {!!errosMissao.descricao && <Text style={s.validationError}>{errosMissao.descricao}</Text>}
 
-              <Text style={s.formLabel}>Turmas</Text>
-              <View style={s.turmaPickerWrap}>
-                <TouchableOpacity
-                  style={[s.turmaPill, turmas.length > 0 && turmas.every(t => novaMissao.turmaIds.some(id => String(id) === String(t.id))) && s.turmaPillActive]}
-                  onPress={alternarTodasTurmasMissao}
-                  disabled={turmas.length === 0}
-                >
-                  <Text style={[s.turmaPillText, turmas.length > 0 && turmas.every(t => novaMissao.turmaIds.some(id => String(id) === String(t.id))) && s.turmaPillTextActive]}>
-                    {turmas.length > 0 && turmas.every(t => novaMissao.turmaIds.some(id => String(id) === String(t.id))) ? '✓ ' : ''}Todas as turmas
-                  </Text>
-                </TouchableOpacity>
-                {turmas.map(t => {
-                  const selecionada = novaMissao.turmaIds.some(id => String(id) === String(t.id))
-                  return <TouchableOpacity key={t.id}
-                    style={[s.turmaPill, selecionada && s.turmaPillActive]}
-                    onPress={() => atualizarCampoMissao('turmaIds', selecionada ? novaMissao.turmaIds.filter(id => String(id) !== String(t.id)) : [...novaMissao.turmaIds, t.id])}>
-                    <Text style={[s.turmaPillText, selecionada && s.turmaPillTextActive]}>{selecionada ? '✓ ' : ''}{t.nome}</Text>
-                  </TouchableOpacity>
-                })}
-              </View>
-              {!!errosMissao.turmas && <Text style={s.validationError}>{errosMissao.turmas}</Text>}
+              {missaoEditando ? (
+                <Text style={s.missionMeta}>As turmas desta tarefa são gerenciadas na aba Tarefas dentro das especificações de cada turma.</Text>
+              ) : (
+                <>
+                  <Text style={s.formLabel}>Turmas iniciais</Text>
+                  <View style={s.turmaPickerWrap}>
+                    <TouchableOpacity
+                      style={[s.turmaPill, turmas.length > 0 && turmas.every(t => novaMissao.turmaIds.some(id => String(id) === String(t.id))) && s.turmaPillActive]}
+                      onPress={alternarTodasTurmasMissao}
+                      disabled={turmas.length === 0}
+                    >
+                      <Text style={[s.turmaPillText, turmas.length > 0 && turmas.every(t => novaMissao.turmaIds.some(id => String(id) === String(t.id))) && s.turmaPillTextActive]}>
+                        {turmas.length > 0 && turmas.every(t => novaMissao.turmaIds.some(id => String(id) === String(t.id))) ? '✓ ' : ''}Todas as turmas
+                      </Text>
+                    </TouchableOpacity>
+                    {turmas.map(t => {
+                      const selecionada = novaMissao.turmaIds.some(id => String(id) === String(t.id))
+                      return <TouchableOpacity key={t.id}
+                        style={[s.turmaPill, selecionada && s.turmaPillActive]}
+                        onPress={() => atualizarCampoMissao('turmaIds', selecionada ? novaMissao.turmaIds.filter(id => String(id) !== String(t.id)) : [...novaMissao.turmaIds, t.id])}>
+                        <Text style={[s.turmaPillText, selecionada && s.turmaPillTextActive]}>{selecionada ? '✓ ' : ''}{t.nome}</Text>
+                      </TouchableOpacity>
+                    })}
+                  </View>
+                  {!!errosMissao.turmas && <Text style={s.validationError}>{errosMissao.turmas}</Text>}
+                </>
+              )}
 
               <Text style={s.formLabel}>Ícone da missão</Text>
               <View style={s.petPicker}>
@@ -1125,32 +1272,11 @@ export default function DashboardScreen({ professor, onLogout }) {
               placeholder="Nome completo..."
               placeholderTextColor="#aaa"
               value={alunoNomeEdit}
-              onChangeText={setAlunoNomeEdit}
+              onChangeText={valor => { setAlunoNomeEdit(valor); setErroAlunoEdit('') }}
             />
+            {!!erroAlunoEdit && <Text style={s.validationError}>{erroAlunoEdit}</Text>}
 
-            <Text style={s.formLabel}>Turma</Text>
-            <View style={s.turmaPickerWrap}>
-              {turmas.map(t => (
-                <TouchableOpacity
-                  key={t.id}
-                  style={[s.turmaPill, alunoTurmaEdit?.id === t.id && s.turmaPillActive]}
-                  onPress={() => setAlunoTurmaEdit(t)}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                    <PetImage uri={t.pet} width={20} height={20} />
-                    <Text style={[s.turmaPillText, alunoTurmaEdit?.id === t.id && s.turmaPillTextActive]}>{t.nome}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {alunoTurmaEdit && alunoEditando && alunoTurmaEdit.id !== alunoEditando.turmaId && (
-              <View style={{ backgroundColor: colors.yellowLight, borderRadius: 8, padding: 10, marginTop: 4 }}>
-                <Text style={{ fontSize: 12, fontFamily: fonts.semibold, color: '#7a5f00' }}>
-                  ⚠️ O aluno será movido para a turma {alunoTurmaEdit.nome}
-                </Text>
-              </View>
-            )}
+            <Text style={s.missionMeta}>A turma do aluno não pode ser alterada por aqui. O vínculo é feito pelo código da turma.</Text>
 
             <View style={s.modalBtns}>
               <TouchableOpacity style={s.btnCancel} onPress={() => setModalEditAluno(false)}>
@@ -1164,13 +1290,173 @@ export default function DashboardScreen({ professor, onLogout }) {
         </View>
       </Modal>
 
+      {/* ── Resumo e informações da turma ── */}
+      <Modal visible={modalResumoTurma} transparent animationType="slide" onRequestClose={() => setModalResumoTurma(false)}>
+        <View style={s.modalOverlay}>
+          <View style={[s.modalBox, { maxHeight: '90%' }]}>
+            {turmaAtribuir && (() => {
+              const turmaAlunos = alunosDaTurma(turmaAtribuir)
+              const turmaMissoes = missoesDaTurma(turmaAtribuir)
+              const turmaMissoesAtivas = turmaMissoes.filter(m => missaoAtivaNaTurma(m, turmaAtribuir))
+              const turmaMissoesDesativadas = turmaMissoes.filter(m => !missaoAtivaNaTurma(m, turmaAtribuir))
+              const turmaMissoesVisiveis = filtroTarefasTurma === 'ativas'
+                ? turmaMissoesAtivas
+                : filtroTarefasTurma === 'inativas' ? turmaMissoesDesativadas : turmaMissoes
+              const xpTotalAlunos = turmaAlunos.reduce((total, aluno) => total + (Number(aluno.xp) || 0), 0)
+              const mediaXP = turmaAlunos.length ? Math.round(xpTotalAlunos / turmaAlunos.length) : 0
+              const totalConclusoes = turmaMissoes.reduce((total, missao) => total + turmaAlunos.filter(aluno => getStatusAluno(missao.id, aluno.id) === 'aprovado').length, 0)
+              const totalPossivel = turmaMissoes.length * turmaAlunos.length
+              const progressoMissoes = totalPossivel ? Math.round(totalConclusoes / totalPossivel * 100) : 0
+              return <>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={[s.petAvatarSmall, { borderColor: turmaAtribuir.cor }]}><PetImage uri={turmaAtribuir.pet} width={42} height={42} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.modalTitle}>{turmaAtribuir.nome}</Text>
+                    <Text style={s.missionMeta}>{turmaAlunos.length} alunos · {turmaMissoes.length} missões</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setModalResumoTurma(false)} style={s.btnRemove} accessibilityLabel="Fechar">
+                    <Text style={{ fontSize: 20, color: colors.muted }}>×</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity onPress={() => setAbaDetalhesTurma('resumo')} style={[s.turmaPill, { flex: 1, alignItems: 'center' }, abaDetalhesTurma === 'resumo' && s.turmaPillActive]}>
+                    <Text style={[s.turmaPillText, abaDetalhesTurma === 'resumo' && s.turmaPillTextActive]}>Resumo</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setAbaDetalhesTurma('tarefas')} style={[s.turmaPill, { flex: 1, alignItems: 'center' }, abaDetalhesTurma === 'tarefas' && s.turmaPillActive]}>
+                    <Text style={[s.turmaPillText, abaDetalhesTurma === 'tarefas' && s.turmaPillTextActive]}>Tarefas</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setAbaDetalhesTurma('informacoes')} style={[s.turmaPill, { flex: 1, alignItems: 'center' }, abaDetalhesTurma === 'informacoes' && s.turmaPillActive]}>
+                    <Text style={[s.turmaPillText, abaDetalhesTurma === 'informacoes' && s.turmaPillTextActive]}>ⓘ Info</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {abaDetalhesTurma === 'informacoes' ? (
+                  <ScrollView>
+                    <Text style={s.formLabel}>Código para entrada dos alunos</Text>
+                    <View style={[s.statCard, { marginTop: 6, marginBottom: 12 }]}>
+                      <Text selectable style={[s.statNum, { fontSize: 24, letterSpacing: 2 }]}>{turmaAtribuir.codigo || 'Não definido'}</Text>
+                      <Text style={s.statLabel}>Compartilhe este código com os alunos</Text>
+                    </View>
+                    <Text style={s.formLabel}>PET vinculado</Text>
+                    <Text style={[s.missionMeta, { marginTop: 4, marginBottom: 12 }]}>{turmaAtribuir.petNome || 'PET'} · {turmaAtribuir.estagio || 'Estágio não definido'}</Text>
+                    {!isCoordenador && <TouchableOpacity style={[s.btnRemove, { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#fde8e8', borderRadius: 8, paddingHorizontal: 12 }]} onPress={() => removerTurma(turmaAtribuir.id)}>
+                      <Text style={{ color: '#c0392b', fontFamily: fonts.semibold }}>🗑️ Excluir turma</Text>
+                    </TouchableOpacity>}
+                  </ScrollView>
+                ) : abaDetalhesTurma === 'tarefas' ? (
+                  <ScrollView style={{ maxHeight: 440 }}>
+                    <Text style={[s.missionMeta, { marginBottom: 8 }]}>A ativação é independente por turma. Desativar mantém o XP já ganho; remover apaga o progresso e estorna o XP dos alunos desta turma.</Text>
+                    <Text style={s.formLabel}>Mostrar tarefas</Text>
+                    <View style={[s.turmaPickerWrap, { marginBottom: 8 }]}>
+                      {[
+                        { id: 'ativas', label: `Ativas (${turmaMissoesAtivas.length})` },
+                        { id: 'inativas', label: `Inativas (${turmaMissoesDesativadas.length})` },
+                        { id: 'todas', label: `Todas (${turmaMissoes.length})` },
+                      ].map(opcao => (
+                        <TouchableOpacity key={opcao.id} onPress={() => setFiltroTarefasTurma(opcao.id)} style={[s.turmaPill, filtroTarefasTurma === opcao.id && s.turmaPillActive]}>
+                          <Text style={[s.turmaPillText, filtroTarefasTurma === opcao.id && s.turmaPillTextActive]}>{opcao.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {isCoordenador ? (
+                      <TouchableOpacity style={[s.btnNew, { alignSelf: 'flex-start', marginBottom: 8 }]} onPress={() => setModalAtribuir(true)}>
+                        <Text style={s.btnNewText}>+ Atribuir tarefa existente</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={[s.missionMeta, { marginBottom: 8 }]}>Você pode consultar tarefas e progresso. A coordenação gerencia os vínculos e a disponibilidade.</Text>
+                    )}
+                    {turmaMissoes.length === 0 ? (
+                      <Text style={[s.missionMeta, { textAlign: 'center', paddingVertical: 20 }]}>Nenhuma tarefa vinculada a esta turma.</Text>
+                    ) : turmaMissoesVisiveis.length === 0 ? (
+                      <Text style={[s.missionMeta, { textAlign: 'center', paddingVertical: 20 }]}>
+                        {filtroTarefasTurma === 'ativas' ? 'Não há tarefas ativas nesta turma.' : 'Não há tarefas inativas nesta turma.'}
+                      </Text>
+                    ) : turmaMissoesVisiveis.map(m => {
+                      const ativaNestaTurma = missaoAtivaNaTurma(m, turmaAtribuir)
+                      return (
+                        <View key={m.id} style={[s.missionRow, { paddingVertical: 9, flexWrap: 'wrap' }]}>
+                          <View style={[s.missionIcon, { backgroundColor: m.color, width: 34, height: 34 }]}>
+                            <Image source={{ uri: m.icon }} style={{ width: 26, height: 26 }} resizeMode="contain" />
+                          </View>
+                          <View style={{ flex: 1, minWidth: 130 }}>
+                            <Text style={s.missionName}>{m.name}</Text>
+                            <Text style={s.missionMeta}>+{m.xp} XP · {ativaNestaTurma ? 'Disponível aos alunos' : 'Desativada nesta turma'}</Text>
+                          </View>
+                      {isCoordenador && <>
+                        <TouchableOpacity disabled={missaoEmAcao} onPress={() => solicitarAlteracaoAtivaMissaoTurma(m, turmaAtribuir)} style={[s.btnToggle, { marginTop: 0, paddingVertical: 6, backgroundColor: ativaNestaTurma ? colors.yellowLight : colors.greenLight }]}>
+                          <Text style={[s.btnToggleText, { color: ativaNestaTurma ? '#7a5f00' : colors.green }]}>{ativaNestaTurma ? 'Desativar' : 'Ativar'}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity disabled={missaoEmAcao} onPress={() => solicitarRemocaoMissaoTurma(m, turmaAtribuir)} style={[s.btnToggle, { marginTop: 0, paddingVertical: 6, backgroundColor: '#fde8e8' }]}>
+                          <Text style={[s.btnToggleText, { color: '#c0392b' }]}>Remover</Text>
+                        </TouchableOpacity>
+                      </>}
+                        </View>
+                      )
+                    })}
+                  </ScrollView>
+                ) : (
+                  <ScrollView style={{ flexShrink: 1 }}>
+                    <Text style={[s.formLabel, { marginBottom: 6 }]}>Progresso do PET · {turmaAtribuir.estagio || 'Estágio não definido'}</Text>
+                    <View style={[s.petXpBgFull, { marginBottom: 6 }]}>
+                      <View style={[s.petXpFillFull, { width: `${Math.max(0, Math.min(100, Number(turmaAtribuir.progresso) || 0))}%`, backgroundColor: turmaAtribuir.cor }]} />
+                    </View>
+                    <Text style={[s.missionMeta, { marginBottom: 10 }]}>{Number(turmaAtribuir.xp) || 0} XP acumulados no PET · {Number(turmaAtribuir.progresso) || 0}% do estágio</Text>
+
+                    <Text style={[s.formLabel, { marginBottom: 6 }]}>Indicadores da turma</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {[
+                        { label: 'Alunos', value: turmaAlunos.length },
+                        { label: 'XP total dos alunos', value: xpTotalAlunos },
+                        { label: 'Média de XP por aluno', value: mediaXP },
+                        { label: 'Tarefas ativas', value: turmaMissoesAtivas.length },
+                        { label: 'Tarefas desativadas', value: turmaMissoesDesativadas.length },
+                        { label: 'Conclusões aprovadas', value: `${totalConclusoes}/${totalPossivel}` },
+                        { label: 'Conclusão das missões', value: `${progressoMissoes}%` },
+                      ].map(indicador => (
+                        <View key={indicador.label} style={[s.statCard, { width: '48%', minWidth: 120, flexGrow: 1 }]}>
+                          <Text style={[s.statNum, { fontSize: 19 }]}>{indicador.value}</Text>
+                          <Text style={s.statLabel}>{indicador.label}</Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    <Text style={[s.formLabel, { marginTop: 12, marginBottom: 6 }]}>Desempenho por missão</Text>
+                    {turmaMissoes.length === 0 ? <Text style={s.missionMeta}>Nenhuma missão atribuída a esta turma.</Text> : turmaMissoes.map(missao => {
+                      const aprovados = turmaAlunos.filter(aluno => getStatusAluno(missao.id, aluno.id) === 'aprovado').length
+                      const entregues = turmaAlunos.filter(aluno => getStatusAluno(missao.id, aluno.id) === 'entregue').length
+                      return <View key={missao.id} style={[s.missionRow, { paddingVertical: 8 }]}>
+                        <View style={[s.missionIcon, { backgroundColor: missao.color, width: 32, height: 32 }]}><Image source={{ uri: missao.icon }} style={{ width: 24, height: 24 }} resizeMode="contain" /></View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.missionName}>{missao.name}</Text>
+                          <Text style={s.missionMeta}>{aprovados} aprovados · {entregues} entregues · {turmaAlunos.length} alunos</Text>
+                        </View>
+                        <Text style={[s.missionProgressTxt, { color: missaoAtivaNaTurma(missao, turmaAtribuir) ? colors.green : colors.muted }]}>{missaoAtivaNaTurma(missao, turmaAtribuir) ? 'Ativa' : 'Desativada'}</Text>
+                      </View>
+                    })}
+
+                    <Text style={[s.formLabel, { marginTop: 12, marginBottom: 6 }]}>XP individual dos alunos</Text>
+                    <Text style={[s.missionMeta, { marginBottom: 8 }]}>
+                      {turmaAlunos.length ? `XP total: ${xpTotalAlunos} · média: ${mediaXP} XP por aluno` : 'Nenhum aluno entrou nesta turma ainda.'}
+                    </Text>
+                    <TouchableOpacity style={[s.btnNew, { alignSelf: 'flex-start', backgroundColor: colors.purple }]} onPress={() => { setModalResumoTurma(false); setBuscaAluno(''); setModalAlunosTurma(true) }}>
+                      <Text style={s.btnNewText}>👤 Listar alunos e XP individual</Text>
+                    </TouchableOpacity>
+                  </ScrollView>
+                )}
+              </>
+            })()}
+          </View>
+        </View>
+      </Modal>
+
       {/* ── Modal Alunos da Turma ── */}
       <Modal visible={modalAlunosTurma} transparent animationType="slide" onRequestClose={() => setModalAlunosTurma(false)}>
         <View style={s.modalOverlay}>
           <View style={[s.modalBox, { maxHeight: '90%' }]}>
-            <Text style={s.modalTitle}>👥 {turmaAtribuir?.nome}</Text>
+            <Text style={s.modalTitle}>👥 Alunos · {turmaAtribuir?.nome}</Text>
             <Text style={[s.formLabel, { marginBottom: 10 }]}>
-              {alunos.filter(a => a.turmaId === turmaAtribuir?.id).length} aluno(s)
+              {alunosDaTurma(turmaAtribuir).length} aluno(s)
             </Text>
 
             {/* Busca */}
@@ -1182,33 +1468,9 @@ export default function DashboardScreen({ professor, onLogout }) {
               onChangeText={setBuscaAluno}
             />
 
-            {/* Designar alunos sem turma */}
-            {alunos.filter(a => !a.turmaId).length > 0 && (
-              <View style={{ marginBottom: 12 }}>
-                <Text style={[s.formLabel, { marginBottom: 6 }]}>Designar para esta turma:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {alunos.filter(a => !a.turmaId).map(a => (
-                      <TouchableOpacity
-                        key={a.id}
-                        style={[s.turmaPill, { borderColor: turmaAtribuir?.cor }]}
-                        onPress={async () => {
-                          const novos = { turmaId: turmaAtribuir.id, cor: turmaAtribuir.cor }
-                          setAlunos(prev => prev.map(al => al.id === a.id ? { ...al, ...novos } : al))
-                          await atualizarAluno(a.id, novos)
-                        }}
-                      >
-                        <Text style={s.turmaPillText}>{a.nome}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
-              </View>
-            )}
-
             <ScrollView style={{ maxHeight: 340 }}>
               {alunos
-                .filter(a => a.turmaId === turmaAtribuir?.id)
+                .filter(a => String(a.turmaId) === String(turmaAtribuir?.id))
                 .filter(a => a.nome.toLowerCase().includes(buscaAluno.toLowerCase()))
                 .length === 0 ? (
                 <Text style={{ color: colors.muted, fontFamily: fonts.regular, fontSize: 13, textAlign: 'center', paddingVertical: 20 }}>
@@ -1216,7 +1478,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                 </Text>
               ) : (
                 alunos
-                  .filter(a => a.turmaId === turmaAtribuir?.id)
+                  .filter(a => String(a.turmaId) === String(turmaAtribuir?.id))
                   .filter(a => a.nome.toLowerCase().includes(buscaAluno.toLowerCase()))
                   .sort((a, b) => b.xp - a.xp)
                   .map((a, i) => (
@@ -1239,72 +1501,68 @@ export default function DashboardScreen({ professor, onLogout }) {
                       >
                         <Text style={[s.btnToggleText, { color: colors.muted }]}>📋</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[s.btnToggle, { marginTop: 0, backgroundColor: colors.purpleLight, paddingHorizontal: 8 }]}
-                        onPress={() => {
-                          setModalAlunosTurma(false)
-                          setTimeout(() => abrirEditAluno(a), 300)
-                        }}
-                      >
-                        <Text style={[s.btnToggleText, { color: colors.purple }]}>✏️</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[s.btnToggle, { marginTop: 0, backgroundColor: colors.yellowLight, paddingHorizontal: 8 }]}
-                        onPress={() => {
-                          setAlunoXP(a)
-                          setModalAlunosTurma(false)
-                          setTimeout(() => setModalXP(true), 300)
-                        }}
-                      >
-                        <Text style={[s.btnToggleText, { color: '#7a5f00' }]}>⭐</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => removerAluno(a.id)} style={[s.btnRemove, { marginLeft: 2 }]}>
-                        <Text style={s.btnRemoveText}>🗑️</Text>
-                      </TouchableOpacity>
+                        {!isCoordenador && <>
+                          <TouchableOpacity
+                            style={[s.btnToggle, { marginTop: 0, backgroundColor: colors.purpleLight, paddingHorizontal: 8 }]}
+                            onPress={() => {
+                              setModalAlunosTurma(false)
+                              setTimeout(() => abrirEditAluno(a), 300)
+                            }}
+                          >
+                            <Text style={[s.btnToggleText, { color: colors.purple }]}>✏️</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[s.btnToggle, { marginTop: 0, backgroundColor: colors.yellowLight, paddingHorizontal: 8 }]}
+                            onPress={() => {
+                              setAlunoXP(a)
+                              setXpValor('')
+                              setErroXP('')
+                              setModalAlunosTurma(false)
+                              setTimeout(() => setModalXP(true), 300)
+                            }}
+                          >
+                            <Text style={[s.btnToggleText, { color: '#7a5f00' }]}>⭐</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => removerAluno(a.id)} style={[s.btnRemove, { marginLeft: 2 }]}>
+                            <Text style={s.btnRemoveText}>🗑️</Text>
+                          </TouchableOpacity>
+                        </>}
                     </View>
                   ))
               )}
             </ScrollView>
 
-            <TouchableOpacity style={[s.btnConfirm, { marginTop: 12 }]} onPress={() => { setModalAlunosTurma(false); setNovoAlunoNome(''); setBuscaAluno('') }}>
+            <TouchableOpacity style={[s.btnConfirm, { marginTop: 12 }]} onPress={() => { setModalAlunosTurma(false); setBuscaAluno('') }}>
               <Text style={s.btnConfirmText}>Concluído</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* ── Modal Atribuir Missão ── */}
+      {/* ── Modal Atribuir tarefa à turma ── */}
       <Modal visible={modalAtribuir} transparent animationType="slide" onRequestClose={() => setModalAtribuir(false)}>
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
-            <Text style={s.modalTitle}>📋 Atribuir Missão</Text>
+            <Text style={s.modalTitle}>📋 Atribuir tarefa</Text>
             <Text style={[s.formLabel, { marginBottom: 8 }]}>Turma: {turmaAtribuir?.nome}</Text>
+            <Text style={s.missionMeta}>Escolha uma tarefa cadastrada para disponibilizá-la nesta turma. As outras turmas não serão afetadas.</Text>
             <ScrollView style={{ maxHeight: 320 }}>
-              {missions.map(m => {
-                const jaAtribuida = turmaAtribuir ? turmaTemMissao(turmaAtribuir, m.id) : false
-                return (
-                  <View key={m.id} style={[s.missionRow, { paddingVertical: 10, alignItems: 'center' }]}>
-                    <View style={[s.missionIcon, { backgroundColor: m.color }]}>
-                <Image source={{ uri: m.icon }} style={{ width: 26, height: 26 }} resizeMode="contain" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.missionName}>{m.name}</Text>
-                      <Text style={s.missionMeta}>+{m.xp} XP</Text>
-                    </View>
-                    <TouchableOpacity
-                      style={[s.btnToggle, {
-                        backgroundColor: jaAtribuida ? '#fde8e8' : colors.greenLight,
-                        marginTop: 0, paddingHorizontal: 12
-                      }]}
-                      onPress={() => jaAtribuida ? desatribuirMissao(m.id) : atribuirMissao(m.id)}
-                    >
-                      <Text style={[s.btnToggleText, { color: jaAtribuida ? '#c0392b' : colors.green }]}>
-                        {jaAtribuida ? '✕ Remover' : '+ Atribuir'}
-                      </Text>
-                    </TouchableOpacity>
+              {missions.filter(m => turmaAtribuir && String(m.professorId) === String(turmaAtribuir.professorId) && !turmaTemMissao(turmaAtribuir, m.id)).map(m => (
+                <View key={m.id} style={[s.missionRow, { paddingVertical: 10, alignItems: 'center' }]}>
+                  <View style={[s.missionIcon, { backgroundColor: m.color }]}>
+                    <Image source={{ uri: m.icon }} style={{ width: 26, height: 26 }} resizeMode="contain" />
                   </View>
-                )
-              })}
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.missionName}>{m.name}</Text>
+                    <Text style={s.missionMeta}>+{m.xp} XP · vinculada a {(m.turmaIds || []).length} turma(s)</Text>
+                  </View>
+                  <TouchableOpacity disabled={missaoEmAcao} style={[s.btnToggle, { backgroundColor: colors.greenLight, marginTop: 0, paddingHorizontal: 12 }]} onPress={() => atribuirMissao(m.id)}>
+                    <Text style={[s.btnToggleText, { color: colors.green }]}>+ Atribuir</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {missions.filter(m => turmaAtribuir && String(m.professorId) === String(turmaAtribuir.professorId)).length === 0 && <Text style={[s.missionMeta, { textAlign: 'center', paddingVertical: 20 }]}>Não há tarefas do professor responsável por esta turma para atribuir.</Text>}
+              {missions.filter(m => turmaAtribuir && String(m.professorId) === String(turmaAtribuir.professorId)).length > 0 && turmaAtribuir && missions.filter(m => String(m.professorId) === String(turmaAtribuir.professorId)).every(m => turmaTemMissao(turmaAtribuir, m.id)) && <Text style={[s.missionMeta, { textAlign: 'center', paddingVertical: 20 }]}>Todas as tarefas disponíveis já estão nesta turma.</Text>}
             </ScrollView>
             <TouchableOpacity style={[s.btnConfirm, { marginTop: 8 }]} onPress={() => setModalAtribuir(false)}>
               <Text style={s.btnConfirmText}>Concluído</Text>
@@ -1380,12 +1638,18 @@ export default function DashboardScreen({ professor, onLogout }) {
                             >
                               <Text style={[s.btnToggleText, { color: colors.muted }]}>📋</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity
-                              style={[s.btnToggle, { marginTop: 0, backgroundColor: statusColor + '30', paddingHorizontal: 8, borderWidth: 1, borderColor: statusColor }]}
-                              onPress={() => ciclarStatus(missaoAlunos?.id, a.id)}
-                            >
-                              <Text style={[s.btnToggleText, { color: statusColor === '#ddd' ? colors.muted : statusColor, fontSize: 11 }]}>{statusLabel}</Text>
-                            </TouchableOpacity>
+                            {isCoordenador ? (
+                              <TouchableOpacity
+                                style={[s.btnToggle, { marginTop: 0, backgroundColor: statusColor + '30', paddingHorizontal: 8, borderWidth: 1, borderColor: statusColor }]}
+                                onPress={() => ciclarStatus(missaoAlunos?.id, a.id)}
+                              >
+                                <Text style={[s.btnToggleText, { color: statusColor === '#ddd' ? colors.muted : statusColor, fontSize: 11 }]}>{statusLabel}</Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <View style={[s.btnToggle, { marginTop: 0, backgroundColor: statusColor + '30', paddingHorizontal: 8, borderWidth: 1, borderColor: statusColor }]}>
+                                <Text style={[s.btnToggleText, { color: statusColor === '#ddd' ? colors.muted : statusColor, fontSize: 11 }]}>{statusLabel}</Text>
+                              </View>
+                            )}
                           </View>
                         </View>
                       )
@@ -1422,11 +1686,13 @@ export default function DashboardScreen({ professor, onLogout }) {
 
               <Text style={s.formLabel}>Nome</Text>
               <TextInput style={s.formInput} placeholder="Ex: Guardião da Natureza" placeholderTextColor="#aaa"
-                value={novaConquista.nome} onChangeText={t => setNovaConquista({ ...novaConquista, nome: t })} />
+                value={novaConquista.nome} onChangeText={t => atualizarCampoConquista('nome', t)} />
+              {!!errosConquista.nome && <Text style={s.validationError}>{errosConquista.nome}</Text>}
 
               <Text style={s.formLabel}>Descrição</Text>
               <TextInput style={s.formInput} placeholder="Descreva o critério..." placeholderTextColor="#aaa"
-                value={novaConquista.descricao} onChangeText={t => setNovaConquista({ ...novaConquista, descricao: t })} />
+                value={novaConquista.descricao} onChangeText={t => atualizarCampoConquista('descricao', t)} />
+              {!!errosConquista.descricao && <Text style={s.validationError}>{errosConquista.descricao}</Text>}
 
               <Text style={s.formLabel}>Raridade</Text>
               <View style={s.turmaPickerWrap}>
@@ -1445,7 +1711,10 @@ export default function DashboardScreen({ professor, onLogout }) {
               {CRITERIOS.map(cr => (
                 <TouchableOpacity key={cr.id}
                   style={[s.turmaPill, { marginBottom: 6, width: '100%' }, novaConquista.criterio === cr.id && s.turmaPillActive]}
-                  onPress={() => setNovaConquista({ ...novaConquista, criterio: cr.id })}>
+                  onPress={() => {
+                    setNovaConquista(prev => ({ ...prev, criterio: cr.id, missaoAlvo: cr.id === 'missao_especifica' ? prev.missaoAlvo : '' }))
+                    setErrosConquista(prev => ({ ...prev, criterio: '', meta: '', missaoAlvo: '' }))
+                  }}>
                   <Text style={[s.turmaPillText, novaConquista.criterio === cr.id && s.turmaPillTextActive]}>{cr.label}</Text>
                 </TouchableOpacity>
               ))}
@@ -1457,11 +1726,12 @@ export default function DashboardScreen({ professor, onLogout }) {
                     {missions.map(m => (
                       <TouchableOpacity key={m.id}
                         style={[s.turmaPill, novaConquista.missaoAlvo === m.name && s.turmaPillActive]}
-                        onPress={() => setNovaConquista({ ...novaConquista, missaoAlvo: m.name, meta: 1 })}>
+                        onPress={() => { atualizarCampoConquista('missaoAlvo', m.name); setNovaConquista(prev => ({ ...prev, missaoAlvo: m.name, meta: '1' })) }}>
                         <Text style={[s.turmaPillText, novaConquista.missaoAlvo === m.name && s.turmaPillTextActive]}>{m.icon} {m.name}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
+                  {!!errosConquista.missaoAlvo && <Text style={s.validationError}>{errosConquista.missaoAlvo}</Text>}
                 </>
               )}
 
@@ -1469,13 +1739,15 @@ export default function DashboardScreen({ professor, onLogout }) {
                 <>
                   <Text style={s.formLabel}>Meta</Text>
                   <TextInput style={s.formInput} placeholder="Ex: 500" placeholderTextColor="#aaa" keyboardType="numeric"
-                    value={novaConquista.meta} onChangeText={t => setNovaConquista({ ...novaConquista, meta: t })} />
+                    value={String(novaConquista.meta)} onChangeText={t => atualizarCampoConquista('meta', t)} />
+                  {!!errosConquista.meta && <Text style={s.validationError}>{errosConquista.meta}</Text>}
                 </>
               )}
 
               <Text style={s.formLabel}>XP da conquista</Text>
               <TextInput style={s.formInput} placeholder="Ex: 100" placeholderTextColor="#aaa" keyboardType="numeric"
-                value={novaConquista.xp} onChangeText={t => setNovaConquista({ ...novaConquista, xp: t })} />
+                value={novaConquista.xp} onChangeText={t => atualizarCampoConquista('xp', t)} />
+              {!!errosConquista.xp && <Text style={s.validationError}>{errosConquista.xp}</Text>}
 
               <View style={s.modalBtns}>
                 <TouchableOpacity style={s.btnCancel} onPress={() => setModalConquista(false)}>
@@ -1578,7 +1850,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                 <TouchableOpacity
                   key={v}
                   style={[s.turmaPill, xpValor === String(v) && s.turmaPillActive]}
-                  onPress={() => setXpValor(String(v))}
+                  onPress={() => { setXpValor(String(v)); setErroXP('') }}
                 >
                   <Text style={[s.turmaPillText, xpValor === String(v) && s.turmaPillTextActive]}>+{v}</Text>
                 </TouchableOpacity>
@@ -1590,8 +1862,9 @@ export default function DashboardScreen({ professor, onLogout }) {
               placeholderTextColor="#aaa"
               keyboardType="numeric"
               value={xpValor}
-              onChangeText={setXpValor}
+              onChangeText={valor => { setXpValor(valor); setErroXP('') }}
             />
+            {!!erroXP && <Text style={s.validationError}>{erroXP}</Text>}
 
             <View style={s.modalBtns}>
               <TouchableOpacity style={s.btnCancel} onPress={() => { setModalXP(false); setXpValor('') }}>
@@ -1601,6 +1874,45 @@ export default function DashboardScreen({ professor, onLogout }) {
                 <Text style={s.btnConfirmText}>Confirmar XP</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Confirmações para criar, vincular, ocultar ou excluir missões */}
+      <Modal visible={Boolean(confirmacaoMissao)} transparent animationType="fade" onRequestClose={() => setConfirmacaoMissao(null)}>
+        <View style={s.modalOverlay}>
+          <View style={s.modalBox}>
+            <Text style={s.modalTitle}>{confirmacaoMissao?.titulo}</Text>
+            <Text style={[s.missionMeta, { color: colors.dark, fontSize: 13, lineHeight: 19 }]}>{confirmacaoMissao?.mensagem}</Text>
+            <View style={s.modalBtns}>
+              <TouchableOpacity style={s.btnCancel} onPress={() => setConfirmacaoMissao(null)} disabled={missaoEmAcao}>
+                <Text style={s.btnCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.btnConfirm, confirmacaoMissao?.perigoso && { backgroundColor: '#c0392b' }, missaoEmAcao && s.btnConfirmDisabled]}
+                disabled={missaoEmAcao}
+                onPress={async () => {
+                  const acao = confirmacaoMissao?.onConfirmar
+                  setConfirmacaoMissao(null)
+                  await acao?.()
+                }}
+              >
+                <Text style={s.btnConfirmText}>{missaoEmAcao ? 'Salvando...' : (confirmacaoMissao?.textoConfirmar || 'Confirmar')}</Text>
+              </TouchableOpacity>
+            </View>
+            {confirmacaoMissao?.onAlternativo && (
+              <TouchableOpacity
+                style={[s.btnToggle, { marginTop: 0, backgroundColor: colors.greenLight }]}
+                disabled={missaoEmAcao}
+                onPress={async () => {
+                  const acao = confirmacaoMissao?.onAlternativo
+                  setConfirmacaoMissao(null)
+                  await acao?.()
+                }}
+              >
+                <Text style={[s.btnToggleText, { color: colors.green }]}>{confirmacaoMissao.textoAlternativo}</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Modal>
@@ -1618,11 +1930,6 @@ export default function DashboardScreen({ professor, onLogout }) {
               <Text style={s.pageSub}>{turmas.length} turmas · {alunos.length} alunos · Semana de {today}</Text>
             </View>
           </View>
-          {activeNav === 'overview' && (
-            <TouchableOpacity style={s.btnNew} onPress={() => setActiveNav('missoes')}>
-              <Text style={s.btnNewText}>+ Nova Missão</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {activeNav === 'overview'   && renderOverview()}
@@ -1635,14 +1942,6 @@ export default function DashboardScreen({ professor, onLogout }) {
             <Text style={s.emptySubtext}>Esta funcionalidade será disponibilizada na próxima versão.</Text>
           </View>
         )}
-        {activeNav === 'conquistas' && (
-          <View style={s.emptyState}>
-            <Text style={s.emptyIcon}>🎖️</Text>
-            <Text style={s.emptyText}>Conquistas sem dados cadastrados.</Text>
-            <Text style={s.emptySubtext}>Esta área será exibida quando houver conquistas salvas no Supabase.</Text>
-          </View>
-        )}
-
         <View style={{ height: 32 }} />
       </ScrollView>
     </SafeAreaView>
@@ -1770,8 +2069,12 @@ const s = StyleSheet.create({
   formInput:    { borderWidth: 1.5, borderColor: colors.border, borderRadius: 8, padding: 11, fontSize: 14, fontFamily: fonts.regular, color: colors.dark, backgroundColor: colors.cream },
   petPicker:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   petOption:    { width: 44, height: 44, borderRadius: 10, borderWidth: 2, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.cream },
+  petOptionUnavailable:{ borderColor: '#b9b9b9', backgroundColor: '#ededed' },
   petOptionImage:{ width: 36, height: 36 },
+  petOptionImageGrayScale:{ filter: 'grayscale(100%)' },
+  petOptionImageGrayTint:{ tintColor: '#777' },
   petOptionActive:{ borderColor: colors.green, backgroundColor: colors.greenLight },
+  petPickerHint:{ width: '100%', color: colors.muted, fontSize: 11, fontFamily: fonts.regular },
   noPetsState:  { alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8 },
   noPetsGhost:  { fontSize: 32 },
   colorPicker:  { flexDirection: 'row', gap: 10 },

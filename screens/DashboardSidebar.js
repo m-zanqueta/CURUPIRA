@@ -23,7 +23,7 @@ export default function DashboardSidebar({ visible, activeNav, professor, onNavi
             <View style={styles.teacherAvatar}><Text style={styles.teacherInitials}>{(professor?.nome || 'P')[0]}</Text></View>
             <View>
               <Text style={styles.teacherName}>{professor?.nome || 'Professor'}</Text>
-              <Text style={styles.teacherRole}>Área do Professor</Text>
+              <Text style={styles.teacherRole}>{professor?.tipo === 'coordenador' ? 'Área do Coordenador' : 'Área do Professor'}</Text>
             </View>
           </View>
           <TouchableOpacity onPress={onLogout}><Text style={styles.logout}>← Sair</Text></TouchableOpacity>

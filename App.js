@@ -45,7 +45,7 @@ const tema = {
   },
 }
 import { colors } from './theme'
-import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral } from './services/storage'
+import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp } from './services/storage'
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
@@ -72,11 +72,55 @@ export default function App() {
   })
 
   useEffect(() => {
+    let ativo = true
     async function init() {
-      await inicializarProfessores()
-      setTimeout(() => navegarCom('login'), 2500)
+      try {
+        await inicializarProfessores()
+        const sessao = await obterSessaoApp()
+        if (!ativo) return
+
+        if (sessao?.tipo === 'admin' && sessao.usuario) {
+          setProfessor({ ...sessao.usuario, tipo: 'admin' })
+          setTela('dashboardAdmin')
+          return
+        }
+        if (['professor', 'coordenador'].includes(sessao?.tipo) && sessao.usuario?.id) {
+          setProfessor(sessao.usuario)
+          setTela('dashboardProfessor')
+          return
+        }
+        if (sessao?.tipo === 'aluno' && sessao.usuario?.id) {
+          const alunoSalvo = sessao.usuario
+          setAluno(alunoSalvo)
+          if (!alunoSalvo.turmaId) {
+            setTela('entrarTurma')
+            return
+          }
+          const [turma, progresso] = await Promise.all([
+            buscarTurmaDoAluno(alunoSalvo.turmaId),
+            consultarProgressoGeral(alunoSalvo.id),
+          ])
+          if (!ativo) return
+          setAluno(alunoSalvo)
+          setTurmaAluno(turma)
+          setProgressoAluno(progresso)
+          setTela('pet')
+          return
+        }
+        if (sessao?.tipo === 'loja') {
+          setAluno(sessao.usuario || null)
+          setTela('loja')
+          return
+        }
+
+        setTela('login')
+      } catch (error) {
+        console.error('Não foi possível restaurar a sessão salva:', error)
+        if (ativo) setTela('login')
+      }
     }
     if (fontsLoaded) init()
+    return () => { ativo = false }
   }, [fontsLoaded])
 
   function navegarCom(destino) {
@@ -86,12 +130,29 @@ export default function App() {
     })
   }
 
-  function entrarAreaProfessor(usuario) {
+  function usuarioSemSenha(usuario) {
+    if (!usuario) return null
+    const { senha, ...dados } = usuario
+    return dados
+  }
+
+  async function entrarAreaProfessor(usuario) {
+    const tipo = ['admin', 'coordenador'].includes(usuario?.tipo) ? usuario.tipo : 'professor'
+    try {
+      await salvarSessaoApp({ tipo, usuario: usuarioSemSenha(usuario) })
+    } catch (error) {
+      console.error('Não foi possível salvar a sessão do professor:', error)
+    }
     setProfessor(usuario)
     navegarCom(usuario?.tipo === 'admin' ? 'dashboardAdmin' : 'dashboardProfessor')
   }
 
   async function handleLoginAluno(alunoLogado) {
+    try {
+      await salvarSessaoApp({ tipo: 'aluno', usuario: usuarioSemSenha(alunoLogado) })
+    } catch (error) {
+      console.error('Não foi possível salvar a sessão do aluno:', error)
+    }
     const [turma, progresso] = await Promise.all([
       buscarTurmaDoAluno(alunoLogado.turmaId),
       consultarProgressoGeral(alunoLogado.id),
@@ -104,32 +165,62 @@ export default function App() {
   }
 
   async function handleLoginGeral(alunoLogado) {
-    // Email especial da loja
     if (alunoLogado.email === 'loja@gmail.com') {
+      try {
+        await salvarSessaoApp({ tipo: 'loja', usuario: usuarioSemSenha(alunoLogado) })
+      } catch (error) {
+        console.error('Não foi possível salvar a sessão da loja:', error)
+      }
+      setAluno(alunoLogado)
       navegarCom('loja')
       return
     }
 
     setAluno(alunoLogado)
-
-    // ── NOVO: aluno sem turma → tela de código ──
     if (!alunoLogado.turmaId) {
+      try {
+        await salvarSessaoApp({ tipo: 'aluno', usuario: usuarioSemSenha(alunoLogado) })
+      } catch (error) {
+        console.error('Não foi possível salvar a sessão do aluno:', error)
+      }
       navegarCom('entrarTurma')
       return
     }
-
-    // Aluno com turma → fluxo normal
-    handleLoginAluno(alunoLogado)
+    await handleLoginAluno(alunoLogado)
   }
 
-  // Aluno entrou via código da turma
   async function handleEntrarTurma(alunoAtualizado, turma) {
+    try {
+      await salvarSessaoApp({ tipo: 'aluno', usuario: usuarioSemSenha(alunoAtualizado) })
+    } catch (error) {
+      console.error('Não foi possível atualizar a sessão do aluno:', error)
+    }
     const progresso = await consultarProgressoGeral(alunoAtualizado.id)
     setAluno(alunoAtualizado)
     setTurmaAluno(turma)
     setProgressoAluno(progresso)
     navegarCom('splashLogin')
     setTimeout(() => navegarCom('pet'), 2000)
+  }
+
+  async function pularEntradaNaTurma() {
+    setTurmaAluno(null)
+    const progresso = aluno?.id ? await consultarProgressoGeral(aluno.id) : null
+    setProgressoAluno(progresso)
+    navegarCom('pet')
+  }
+
+  async function sair() {
+    try {
+      await limparSessaoApp()
+    } catch (error) {
+      console.error('Não foi possível limpar a sessão salva:', error)
+    }
+    setProfessor(null)
+    setAluno(null)
+    setTurmaAluno(null)
+    setProgressoAluno(null)
+    navegarCom(professor ? 'loginProfessor' : 'login')
   }
 
   if (!fontsLoaded || tela === 'splash' || tela === 'splashLogin') {
@@ -165,7 +256,7 @@ export default function App() {
           <EntrarTurma
             aluno={aluno}
             onEntrou={handleEntrarTurma}
-            onPular={() => navegarCom('login')}
+            onPular={pularEntradaNaTurma}
           />
         )}
 
@@ -179,14 +270,14 @@ export default function App() {
 
         {tela === 'dashboardAdmin' && (
           professor?.tipo === 'admin'
-            ? <AdminDashboardScreen usuario={professor} onLogout={() => navegarCom('loginProfessor')} />
+            ? <AdminDashboardScreen usuario={professor} onLogout={sair} />
             : <LoginProfessor onLogin={entrarAreaProfessor} onAdminLogin={entrarAreaProfessor} onSouAluno={() => navegarCom('login')} />
         )}
 
         {tela === 'dashboardProfessor' && (
           professor?.tipo !== 'admin'
-            ? <DashboardScreen professor={professor} onLogout={() => navegarCom('loginProfessor')} />
-            : <AdminDashboardScreen usuario={professor} onLogout={() => navegarCom('loginProfessor')} />
+            ? <DashboardScreen professor={professor} onLogout={sair} />
+            : <AdminDashboardScreen usuario={professor} onLogout={sair} />
         )}
 
         {tela === 'pet' && (
@@ -194,7 +285,7 @@ export default function App() {
             aluno={aluno}
             turma={turmaAluno}
             progresso={progressoAluno}
-            onLogout={() => navegarCom('login')}
+            onLogout={sair}
             onLoja={() => navegarCom('loja')}
           />
         )}
@@ -203,7 +294,7 @@ export default function App() {
           <LojaScreen
             aluno={aluno}
             turma={turmaAluno}
-            onLogout={() => navegarCom('pet')}
+            onLogout={() => aluno?.email === 'loja@gmail.com' ? sair() : navegarCom('pet')}
           />
         )}
 
