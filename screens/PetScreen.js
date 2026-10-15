@@ -8,7 +8,7 @@ import {
   Text, ActivityIndicator, Surface, ProgressBar, Chip,
 } from 'react-native-paper'
 import { colors, fonts } from '../theme'
-import { listarItensComprados, listarAcessoriosLoja } from '../services/storage'
+import { listarItensComprados, listarAcessoriosLoja, listarEquipados, atualizarEquipado } from '../services/storage'
 
 const WIN      = Dimensions.get('window')
 const W        = Math.min(WIN.width, 480)
@@ -17,15 +17,33 @@ const PET_SIZE = W * 0.72
 
 // Fundo padrão local — floresta amazônica
 const FUNDO_PADRAO = require('../assets/fundo-floresta.png')
-
-// Pet vem sempre do Supabase Storage via turma.pet (URL pública)
+// Pet vem do Supabase Storage via turma.pet (URL pública).
+// As coordenadas dos acessórios serão ajustadas separadamente por pet.
 const PET_CFG = {
-  default: { cor: colors.green,  bgCeu: '#061208', bgMeio: '#0d2410', bgChao: '#1a4020',
-             chapeu: { top: -0.13, left: 0.18, w: 0.62 }, colar: { top: 0.23, left: 0.28, w: 0.45 } },
-  arara:   { cor: '#42A5F5',     bgCeu: '#020810', bgMeio: '#061525', bgChao: '#0d2a50',
-             chapeu: { top: -0.10, left: 0.20, w: 0.60 }, colar: { top: 0.25, left: 0.28, w: 0.44 } },
-  onca:    { cor: colors.yellow, bgCeu: '#120800', bgMeio: '#241200', bgChao: '#3d2000',
-             chapeu: { top: -0.12, left: 0.18, w: 0.62 }, colar: { top: 0.24, left: 0.26, w: 0.48 } },
+  default: {
+    cor: colors.green,
+    bgCeu: '#061208',
+    bgMeio: '#0d2410',
+    bgChao: '#1a4020',
+    chapeu: { top: -0.13, left: 0.18, w: 0.62 },
+    colar: { top: 0.23, left: 0.28, w: 0.45 },
+  },
+  arara: {
+    cor: '#42A5F5',
+    bgCeu: '#020810',
+    bgMeio: '#061525',
+    bgChao: '#0d2a50',
+    chapeu: { top: -0.10, left: 0.20, w: 0.60 },
+    colar: { top: 0.25, left: 0.28, w: 0.44 },
+  },
+  onca: {
+    cor: colors.yellow,
+    bgCeu: '#120800',
+    bgMeio: '#241200',
+    bgChao: '#3d2000',
+    chapeu: { top: -0.12, left: 0.18, w: 0.62 },
+    colar: { top: 0.24, left: 0.26, w: 0.48 },
+  },
 }
 
 function detectarCfg(iconeUrl) {
@@ -206,13 +224,44 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
   const [comprados,  setComprados]  = useState([])
   const [carregando, setCarregando] = useState(true)
 
-  useEffect(() => { listarItensComprados().then(setComprados) }, [])
+  const alunoId = aluno?.id
+  const petId   = turma?.petId
+
+  useEffect(() => {
+    if (!alunoId) { setComprados([]); return }
+    listarItensComprados(alunoId).then(setComprados)
+  }, [alunoId])
+
   useEffect(() => {
     listarAcessoriosLoja()
       .then(itens => setTodosItens(itens || []))
       .catch(console.error)
       .finally(() => setCarregando(false))
   }, [])
+
+  // Restaura o que o aluno tinha equipado nesse pet (persistido por
+  // aluno+pet — ver services/storage.js). Só dá pra montar os objetos
+  // completos (com imagem etc) depois que o catálogo (todosItens) chega,
+  // por isso depende dele. Roda de novo se o aluno trocar de pet/turma.
+  useEffect(() => {
+    if (!alunoId || todosItens.length === 0) return
+    listarEquipados(alunoId, petId).then(({ chapeu: chapeuId, colar: colarId }) => {
+      setChapeu(chapeuId ? todosItens.find(i => i.id === chapeuId) || null : null)
+      setColar(colarId ? todosItens.find(i => i.id === colarId) || null : null)
+    })
+  }, [alunoId, petId, todosItens])
+
+  // Equipar/trocar/desequipar (item null = desequipar) — atualiza a tela
+  // na hora E persiste, pra sobreviver a fechar/reabrir a tela do pet ou
+  // o app. Sem aluno/pet real ainda, só fica equipado nesta sessão.
+  function selecionarChapeu(item) {
+    setChapeu(item)
+    if (alunoId) atualizarEquipado(alunoId, petId, 'chapeu', item?.id ?? null)
+  }
+  function selecionarColar(item) {
+    setColar(item)
+    if (alunoId) atualizarEquipado(alunoId, petId, 'colar', item?.id ?? null)
+  }
 
   const chapeusDispo = todosItens.filter(i => i.slot === 'chapeu' && comprados.includes(i.id))
   const colaresDispo = todosItens.filter(i => i.slot === 'colar'  && comprados.includes(i.id))
@@ -389,12 +438,12 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
       <ModalItens
         visible={modal==='chapeus'} titulo="Chapéus"
         itens={chapeusDispo} selecionado={chapeu} cor={colors.green}
-        carregando={carregando} onSel={setChapeu} onFechar={() => setModal(null)}
+        carregando={carregando} onSel={selecionarChapeu} onFechar={() => setModal(null)}
       />
       <ModalItens
         visible={modal==='colares'} titulo="Colares e Medalhas"
         itens={colaresDispo} selecionado={colar} cor={colors.purple}
-        carregando={carregando} onSel={setColar} onFechar={() => setModal(null)}
+        carregando={carregando} onSel={selecionarColar} onFechar={() => setModal(null)}
       />
       <ModalItens
         visible={modal==='cenarios'} titulo="Cenários"
