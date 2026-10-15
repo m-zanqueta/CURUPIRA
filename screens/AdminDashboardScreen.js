@@ -102,7 +102,7 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
       if (!dados.imagem) novosErros.imagem = `Selecione a imagem do ${tipoImagem} para enviar ao Supabase Storage.`
     }
     if (formulario === 'acessorio') {
-      if (!['chapeu', 'colar'].includes(dados.slot)) novosErros.slot = 'Escolha o tipo do acessório.'
+      if (!['chapeu', 'colar', 'fundo'].includes(dados.slot)) novosErros.slot = 'Escolha Chapéu, Colar ou Cenário.'
       const preco = Number(dados.preco)
       if (!Number.isInteger(preco) || preco < 0) novosErros.preco = 'Informe um preço inteiro igual ou maior que zero.'
     }
@@ -162,11 +162,11 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
               <Text style={styles.modalTitle}>{config?.titulo}</Text>
               {formulario === 'pet' && <Text style={styles.hint}>A imagem será enviada ao Supabase. O PET começa no estágio infantil, com 0 XP, emoção vazia e sem turma vinculada.</Text>}
               {formulario === 'icone' && <Text style={styles.hint}>Escolha a imagem do ícone. Ela será enviada ao Supabase Storage.</Text>}
-              {formulario === 'acessorio' && <Text style={styles.hint}>Envie uma imagem PNG transparente para sobrepor ao PET animado.</Text>}
+              {formulario === 'acessorio' && <Text style={styles.hint}>{dados.slot === 'fundo' ? 'Envie uma imagem de cenário para usar como fundo do PET.' : 'Envie uma imagem PNG transparente para sobrepor ao PET animado.'}</Text>}
               {['pet', 'icone', 'acessorio'].includes(formulario) && (
                 <>
                   <View style={styles.field}>
-                    <Text style={styles.label}>{formulario === 'pet' ? 'Imagem do PET' : formulario === 'icone' ? 'Imagem do ícone' : 'Imagem do acessório'} *</Text>
+                    <Text style={styles.label}>{formulario === 'pet' ? 'Imagem do PET' : formulario === 'icone' ? 'Imagem do ícone' : dados.slot === 'fundo' ? 'Imagem do cenário' : 'Imagem do acessório'} *</Text>
                     <TouchableOpacity style={styles.imagePicker} onPress={escolherImagem}>
                       {dados.imagem?.uri
                         ? <Image source={{ uri: dados.imagem.uri }} style={styles.imagePreview} resizeMode="contain" />
@@ -183,6 +183,7 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
                     {[
                       { id: 'chapeu', nome: 'Chapéu' },
                       { id: 'colar', nome: 'Colar' },
+                      { id: 'fundo', nome: 'Cenário' },
                     ].map(slot => (
                       <TouchableOpacity key={slot.id} style={[styles.stageOption, dados.slot === slot.id && styles.stageOptionActive]} onPress={() => atualizarCampo('slot', slot.id)}>
                         <Text style={[styles.stageText, dados.slot === slot.id && styles.stageTextActive]}>{slot.nome}</Text>
