@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme';
-import { listarAlunos, atualizarAluno, listarTurmas, listarPetsParaTurma, salvarTurma, removerTurmaStorage, listarMissoes, listarIconesMissoes, listarStatusMissoes, salvarMissao, atualizarMissao, definirTurmasMissao, definirAtivaMissaoTurma, removerMissaoDaTurma as removerMissaoDaTurmaStorage, atualizarStatusAlunoMissao, removerMissaoStorage } from '../services/storage';
+import { listarAlunos, atualizarAluno, listarTurmas, listarProfessoresParaTurma, listarPetsParaTurma, salvarTurma, removerTurmaStorage, listarMissoes, listarIconesMissoes, listarStatusMissoes, salvarMissao, atualizarMissao, definirTurmasMissao, definirAtivaMissaoTurma, removerMissaoDaTurma as removerMissaoDaTurmaStorage, atualizarStatusAlunoMissao, removerMissaoStorage } from '../services/storage';
 import { CORES, MEDALS, RARIDADE_CONFIG, CRITERIOS } from './dashboardConfig';
 import DashboardSidebar from './DashboardSidebar';
 
@@ -18,6 +18,7 @@ export default function DashboardScreen({ professor, onLogout }) {
   const [menuOpen, setMenuOpen]       = useState(false)
   const [turmas, setTurmas]           = useState([])
   const [petsParaTurma, setPetsParaTurma] = useState([])
+  const [professoresParaTurma, setProfessoresParaTurma] = useState([])
   const [carregandoPets, setCarregandoPets] = useState(false)
   const [missions, setMissions]       = useState([])
   const [alunos, setAlunos]           = useState([])
@@ -268,16 +269,19 @@ export default function DashboardScreen({ professor, onLogout }) {
 
   async function adicionarTurma() {
     const petSelecionado = petsParaTurma.find(pet => String(pet.id) === String(novaTurma.petId) && pet.disponivel);
+    const professorResponsavel = professoresParaTurma.find(item => String(item.id) === String(novaTurma.professorId));
     const novosErros = {
       nome: novaTurma.nome.trim() ? '' : 'Preencha o nome da turma.',
+      professor: isCoordenador ? (professorResponsavel ? '' : 'Escolha o professor responsável pela turma.') : '',
       pet: petSelecionado ? '' : petsParaTurma.some(pet => pet.disponivel)
         ? 'Escolha um PET disponível para vincular à turma.'
         : 'Não há PET disponível. Cadastre ou libere um PET antes de criar a turma.',
     };
     setErrosTurma(novosErros);
     if (Object.values(novosErros).some(Boolean)) return;
-    if (!professor?.id) {
-      Alert.alert('Erro', 'Não foi possível identificar o professor conectado. Entre novamente e tente criar a turma.');
+    const professorIdResponsavel = isCoordenador ? professorResponsavel?.id : professor?.id;
+    if (!professorIdResponsavel) {
+      Alert.alert('Erro', 'Não foi possível identificar o professor responsável. Escolha um professor e tente novamente.');
       return;
     }
 
@@ -288,7 +292,7 @@ export default function DashboardScreen({ professor, onLogout }) {
     const dadosNovaTurma = {
       nome: novaTurma.nome.trim(),
       codigo,
-      professorId: professor.id,
+      professorId: professorIdResponsavel,
       petId: petSelecionado.id,
       cor: novaTurma.cor,
     };
@@ -334,6 +338,7 @@ export default function DashboardScreen({ professor, onLogout }) {
   }
 
   async function abrirModalTurma() {
+    if (!isCoordenador) return;
     setModalTurma(true);
     setCarregandoPets(true);
     setErrosTurma({});
@@ -341,10 +346,14 @@ export default function DashboardScreen({ professor, onLogout }) {
     setNovaTurma(prev => ({ ...prev, petId: null }));
 
     try {
-      const pets = await listarPetsParaTurma();
+      const [pets, professores] = await Promise.all([
+        listarPetsParaTurma(),
+        listarProfessoresParaTurma(),
+      ]);
       setPetsParaTurma(pets);
+      setProfessoresParaTurma(professores);
       const primeiroDisponivel = pets.find(pet => pet.disponivel);
-      setNovaTurma(prev => ({ ...prev, petId: primeiroDisponivel?.id || null }));
+      setNovaTurma(prev => ({ ...prev, petId: primeiroDisponivel?.id || null, professorId: '' }));
     } catch (error) {
       console.error('Erro ao carregar PETs disponíveis:', error);
       Alert.alert('Erro', `Não foi possível carregar os PETs: ${formatarErroSupabase(error)}`);
@@ -722,7 +731,7 @@ export default function DashboardScreen({ professor, onLogout }) {
       <View style={{ gap: 14 }}>
         <View style={s.screenHeader}>
           <Text style={s.screenTitle}>👥 Turmas</Text>
-          {!isCoordenador && <TouchableOpacity style={s.btnNew} onPress={abrirModalTurma}>
+          {isCoordenador && <TouchableOpacity style={s.btnNew} onPress={abrirModalTurma}>
             <Text style={s.btnNewText}>+ Nova Turma</Text>
           </TouchableOpacity>}
         </View>
@@ -788,7 +797,7 @@ export default function DashboardScreen({ professor, onLogout }) {
           <View style={s.emptyState}>
             <Text style={s.emptyIcon}>👥</Text>
             <Text style={s.emptyText}>Nenhuma turma cadastrada.</Text>
-            <Text style={s.emptySubtext}>{isCoordenador ? 'As turmas aparecerão aqui para acompanhamento.' : 'Clique em "+ Nova Turma" para começar.'}</Text>
+            <Text style={s.emptySubtext}>{isCoordenador ? 'Clique em "+ Nova Turma" para cadastrar uma turma e vincular um PET.' : 'As turmas aparecerão aqui para acompanhamento.'}</Text>
           </View>
         )}
       </View>
@@ -1034,6 +1043,25 @@ export default function DashboardScreen({ professor, onLogout }) {
               <TextInput style={s.formInput} placeholder="Ex: 3º A, Turma B..." placeholderTextColor="#aaa"
                 value={novaTurma.nome} onChangeText={t => { setNovaTurma(prev => ({ ...prev, nome: t })); setErrosTurma(prev => ({ ...prev, nome: '' })) }} />
               {!!errosTurma.nome && <Text style={s.validationError}>{errosTurma.nome}</Text>}
+
+              <Text style={s.formLabel}>Professor responsável</Text>
+              {professoresParaTurma.length ? (
+                <View style={s.petPicker}>
+                  {professoresParaTurma.map(item => (
+                    <TouchableOpacity key={item.id}
+                      style={[s.turmaPill, String(novaTurma.professorId) === String(item.id) && s.turmaPillActive]}
+                      onPress={() => {
+                        setNovaTurma(prev => ({ ...prev, professorId: item.id }));
+                        setErrosTurma(prev => ({ ...prev, professor: '' }));
+                      }}>
+                      <Text style={[s.turmaPillText, String(novaTurma.professorId) === String(item.id) && s.turmaPillTextActive]}>{item.nome}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <Text style={s.emptySubtext}>Nenhum professor cadastrado para receber a turma.</Text>
+              )}
+              {!!errosTurma.professor && <Text style={s.validationError}>{errosTurma.professor}</Text>}
 
               <Text style={s.formLabel}>Escolha o pet</Text>
               {carregandoPets ? (

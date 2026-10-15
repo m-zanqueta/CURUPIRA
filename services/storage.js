@@ -261,6 +261,16 @@ export async function listarTurmas(professorId, incluirTodas = false) {
   }
 }
 
+export async function listarProfessoresParaTurma() {
+  const { data, error } = await supabase
+    .from('professores')
+    .select('id, nome, email')
+    .order('nome', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
 export async function listarPetsParaTurma() {
   const [petsResult, turmasResult] = await Promise.all([
     supabase
