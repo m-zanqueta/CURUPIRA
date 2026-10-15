@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   View, StyleSheet, ScrollView, TouchableOpacity,
-  Dimensions, Alert, StatusBar, Platform, Image,
+  Dimensions, Modal, StatusBar, Platform, Image,
 } from 'react-native'
 import {
   Appbar, Chip, Text, ActivityIndicator,
@@ -29,14 +29,98 @@ const RAR_CFG = {
   lendario: { cor: colors.yellow,  bg: colors.yellowLight+'33',  label: 'LENDÁRIO' },
 }
 
-export default function LojaScreen({ onLogout, aluno, turma }) {
-  const [cat,       setCat]       = useState('todos')
-  const [moedas,    setMoedas]    = useState(aluno?.xp || 1000)
-  const [comprados, setComprados] = useState([])
-  const [produtos,  setProdutos]  = useState([])
-  const [loading,   setLoading]   = useState(true)
+// Modal de confirmação de compra — substitui window.confirm/Alert.alert
+// (que na web, depois que o navegador "lembra" a escolha de não mostrar
+// mais diálogos, simplesmente para de abrir — travando a compra). Usa
+// react-native Modal, que já funciona tanto na web quanto no nativo (é o
+// mesmo componente usado em ModalItens na tela do pet).
+function ModalConfirmarCompra({ item, saldo, processando, erro, onCancelar, onConfirmar }) {
+  const visible = !!item
+  const saldoApos = item ? saldo - item.preco : saldo
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancelar}>
+      <View style={s.confirmBg}>
+        <Surface style={s.confirmSheet} elevation={5}>
+          {item && (
+            <>
+              <Text variant="titleMedium" style={s.confirmTitulo}>Confirmar compra</Text>
 
-  useEffect(() => { listarItensComprados().then(setComprados) }, [])
+              <View style={s.confirmItemRow}>
+                {item.imagem
+                  ? <Image source={{ uri: item.imagem }} style={s.confirmItemImg} resizeMode="contain" />
+                  : <View style={s.confirmItemImgPlaceholder} />
+                }
+                <View style={{ flex: 1 }}>
+                  <Text variant="titleSmall" style={s.confirmItemNome} numberOfLines={2}>{item.nome}</Text>
+                  <Text variant="bodyMedium" style={s.confirmPreco}>{item.preco} moedas</Text>
+                </View>
+              </View>
+
+              <View style={s.confirmSaldoBox}>
+                <View style={s.confirmSaldoRow}>
+                  <Text variant="bodySmall" style={s.confirmSaldoLabel}>Saldo atual</Text>
+                  <Text variant="bodySmall" style={s.confirmSaldoValor}>{saldo.toLocaleString('pt-BR')} moedas</Text>
+                </View>
+                <View style={s.confirmSaldoRow}>
+                  <Text variant="bodySmall" style={s.confirmSaldoLabel}>Saldo após a compra</Text>
+                  <Text variant="bodySmall" style={[s.confirmSaldoValor, { color: saldoApos < 0 ? '#ff6b6b' : colors.green }]}>
+                    {saldoApos.toLocaleString('pt-BR')} moedas
+                  </Text>
+                </View>
+              </View>
+
+              {!!erro && (
+                <View style={s.confirmErroBox}>
+                  <Text variant="bodySmall" style={s.confirmErroTxt}>{erro}</Text>
+                </View>
+              )}
+
+              <View style={s.confirmBotoesRow}>
+                <Button
+                  mode="outlined"
+                  onPress={onCancelar}
+                  disabled={processando}
+                  style={[s.confirmBtn, { borderColor: 'rgba(245,244,217,0.3)' }]}
+                  textColor="rgba(245,244,217,0.8)"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  mode="contained"
+                  onPress={onConfirmar}
+                  disabled={processando}
+                  loading={processando}
+                  buttonColor={colors.green}
+                  textColor="#fff"
+                  style={s.confirmBtn}
+                >
+                  {processando ? 'Processando...' : 'Confirmar compra'}
+                </Button>
+              </View>
+            </>
+          )}
+        </Surface>
+      </View>
+    </Modal>
+  )
+}
+
+export default function LojaScreen({ onLogout, aluno, turma }) {
+  const [cat,          setCat]          = useState('todos')
+  const [comprados,    setComprados]    = useState([])
+  const [produtos,     setProdutos]     = useState([])
+  const [loading,      setLoading]      = useState(true)
+  const [pendente,     setPendente]     = useState(null)  // item aguardando confirmação no modal
+  const [processando,  setProcessando]  = useState(false) // true durante a chamada de comprarItem (evita cliques repetidos)
+  const [erroCompra,   setErroCompra]   = useState(null)
+  // Trava síncrona: o state `processando` só atualiza no próximo render, então
+  // dois cliques no mesmo tick passariam pelo `if (processando)`. O ref fecha essa janela.
+  const travaCompra = useRef(false)
+
+  useEffect(() => {
+    if (!aluno?.id) { setComprados([]); return }
+    listarItensComprados(aluno.id).then(setComprados)
+  }, [aluno?.id])
 
   useEffect(() => {
     listarAcessoriosLoja()
@@ -49,25 +133,72 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
     ? produtos
     : produtos.filter(p => p.slot === cat)
 
-  async function handleComprar(p) {
+  // O saldo NÃO é um valor próprio persistido — é derivado do XP do aluno
+  // (vindo do Supabase) menos o custo dos itens que ele já comprou (lista
+  // persistida em AsyncStorage, ver services/storage.js). Isso garante que
+  // o saldo exibido sempre bate com o inventário real depois de um
+  // recarregamento (F5/Ctrl+R): como "comprados" é recarregado do
+  // AsyncStorage no mount, o saldo recalculado aqui já sai correto, sem
+  // precisar guardar "moedas restantes" em nenhum lugar separado.
+  const saldoBase = aluno?.xp ?? 1000
+  const totalGasto = useMemo(
+    () => produtos
+      .filter(p => comprados.includes(p.id))
+      .reduce((soma, p) => soma + (Number(p.preco) || 0), 0),
+    [produtos, comprados]
+  )
+  const saldo = saldoBase - totalGasto
+
+  function handleComprar(p) {
     if (comprados.includes(p.id)) return
-    if (moedas < p.preco) {
-      Alert.alert('Moedas insuficientes', `Você precisa de ${p.preco} moedas.\nSaldo: ${moedas} moedas.`)
+    if (saldo < p.preco) return // botão já fica desabilitado nesse caso; guarda extra
+    setErroCompra(null)
+    setPendente(p)
+  }
+
+  function cancelarCompra() {
+    if (processando) return // não fecha no meio de uma operação em andamento
+    setPendente(null)
+    setErroCompra(null)
+  }
+
+  async function confirmarCompra() {
+    if (!pendente || processando || travaCompra.current) return // trava cliques repetidos no "Confirmar compra"
+    const item = pendente
+
+    // Revalida no momento da confirmação — comprados/saldo podem ter
+    // mudado desde que o modal abriu (ex: outra aba, outra compra).
+    if (comprados.includes(item.id)) {
+      setErroCompra('Você já possui este item.')
       return
     }
-    Alert.alert(
-      `Comprar ${p.nome}?`,
-      `Custo: ${p.preco} moedas\nSaldo após: ${moedas - p.preco} moedas`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Comprar', onPress: async () => {
-          setMoedas(m => m - p.preco)
-          setComprados(prev => [...prev, p.id])
-          await comprarItem(p.id)
-          Alert.alert('Comprado!', `${p.nome} foi adicionado ao inventário do seu pet!`)
-        }},
-      ]
-    )
+    if (saldo < item.preco) {
+      setErroCompra('Saldo insuficiente para concluir esta compra.')
+      return
+    }
+    if (!aluno?.id) {
+      setErroCompra('Não foi possível identificar o aluno.')
+      return
+    }
+
+    travaCompra.current = true
+    setProcessando(true)
+    setErroCompra(null)
+    try {
+      await comprarItem(aluno.id, item.id)
+      // Só atualiza inventário (e, por consequência, o saldo derivado)
+      // depois que a gravação foi confirmada — recarrega do AsyncStorage
+      // em vez de apenas inserir localmente, pra refletir o estado real salvo.
+      const atualizados = await listarItensComprados(aluno.id)
+      setComprados(atualizados)
+      setPendente(null)
+    } catch (erro) {
+      console.error('Erro ao comprar item:', erro)
+      setErroCompra('Não foi possível concluir a compra. Tente novamente.')
+    } finally {
+      travaCompra.current = false
+      setProcessando(false)
+    }
   }
 
   return (
@@ -87,7 +218,7 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
           icon={() => <Text style={{ fontSize: 14 }}>⭐</Text>}
           compact
         >
-          {moedas.toLocaleString('pt-BR')}
+          {saldo.toLocaleString('pt-BR')}
         </Chip>
       </Appbar.Header>
 
@@ -142,7 +273,7 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
         <ScrollView contentContainerStyle={s.grade} showsVerticalScrollIndicator={false}>
           {lista.map(p => {
             const comprado  = comprados.includes(p.id)
-            const semMoedas = !comprado && moedas < p.preco
+            const semMoedas = !comprado && saldo < p.preco
             const rar       = RAR_CFG[p.raridade?.toLowerCase()] || RAR_CFG.comum
             return (
               /* Card — react-native-paper Surface */
@@ -170,7 +301,7 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
                 <Button
                   mode={comprado ? 'outlined' : semMoedas ? 'outlined' : 'contained'}
                   onPress={() => handleComprar(p)}
-                  disabled={comprado}
+                  disabled={comprado || semMoedas}
                   buttonColor={!comprado && !semMoedas ? rar.cor : undefined}
                   textColor={comprado ? '#00C853' : semMoedas ? '#ff6b6b' : '#fff'}
                   style={s.prodBtn}
@@ -185,6 +316,15 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
           <View style={{ height: 24 }} />
         </ScrollView>
       )}
+
+      <ModalConfirmarCompra
+        item={pendente}
+        saldo={saldo}
+        processando={processando}
+        erro={erroCompra}
+        onCancelar={cancelarCompra}
+        onConfirmar={confirmarCompra}
+      />
     </View>
   )
 }
@@ -219,4 +359,22 @@ const s = StyleSheet.create({
   centralWrap:        { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   centralTitulo:      { fontFamily: fonts.bold, color: colors.cream },
   centralTxt:         { fontFamily: fonts.regular, color: 'rgba(245,244,217,0.4)' },
+
+  confirmBg:              { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  confirmSheet:           { width: '100%', maxWidth: 380, backgroundColor: '#111a11', borderRadius: 24, padding: 20, gap: 16 },
+  confirmTitulo:          { color: colors.cream, fontFamily: fonts.extrabold, textAlign: 'center' },
+  confirmItemRow:         { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  confirmItemImg:         { width: 56, height: 56 },
+  confirmItemImgPlaceholder: { width: 56, height: 56, backgroundColor: 'rgba(245,244,217,0.08)', borderRadius: 10 },
+  confirmItemNome:        { color: colors.cream, fontFamily: fonts.bold },
+  confirmPreco:           { color: colors.yellow, fontFamily: fonts.semibold, marginTop: 2 },
+  confirmSaldoBox:        { backgroundColor: 'rgba(245,244,217,0.05)', borderRadius: 14, padding: 12, gap: 6 },
+  confirmSaldoRow:        { flexDirection: 'row', justifyContent: 'space-between' },
+  confirmSaldoLabel:      { color: 'rgba(245,244,217,0.55)', fontFamily: fonts.regular },
+  confirmSaldoValor:      { color: colors.cream, fontFamily: fonts.bold },
+  confirmErroBox:         { backgroundColor: 'rgba(255,107,107,0.12)', borderRadius: 12, padding: 10, borderWidth: 1, borderColor: 'rgba(255,107,107,0.3)' },
+  confirmErroTxt:         { color: '#ff6b6b', fontFamily: fonts.semibold, textAlign: 'center' },
+  // Botões empilhados (Confirmar em cima): lado a lado o rótulo "Confirmar compra" era cortado em telas estreitas.
+  confirmBotoesRow:       { flexDirection: 'column-reverse', gap: 10 },
+  confirmBtn:             { width: '100%', borderRadius: 16 },
 })

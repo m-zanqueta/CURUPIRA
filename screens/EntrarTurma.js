@@ -15,7 +15,7 @@ export default function EntrarTurma({ aluno, onEntrou, onPular }) {
   const [erro,    setErro]    = useState('')
   const [loading, setLoading] = useState(false)
 
-  async function handleEntrar() {
+   async function handleEntrar() {
     if (!codigo.trim()) { setErro('Digite o código da turma.'); return }
     setErro('')
     setLoading(true)
@@ -28,6 +28,20 @@ export default function EntrarTurma({ aluno, onEntrou, onPular }) {
 
       if (error) throw error
       if (!turma) { setErro('Código inválido. Verifique com seu professor.'); return }
+
+      // Verifica se a turma tem pet configurado — sem pet, o PetScreen
+      // mostraria "Pet não encontrado" e o aluno voltaria pra cá (loop).
+      const { data: pet, error: petError } = await supabase
+        .from('pets')
+        .select('id')
+        .eq('turma_id', turma.id)
+        .maybeSingle()
+
+      if (petError) throw petError
+      if (!pet) {
+        setErro('Essa turma ainda não tem pet configurado. Fale com seu professor.')
+        return
+      }
 
       await atualizarAluno(aluno.id, { turmaId: turma.id })
       onEntrou({ ...aluno, turmaId: turma.id }, turma)

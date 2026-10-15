@@ -579,20 +579,82 @@ export async function deletarAluno(id) {
 }
 
 // ── Loja ─────────────────────────────────────────────────
-// A loja continua utilizando o AsyncStorage pois os itens comprados 
-// estão sendo salvos apenas no dispositivo físico (cache local).
+// A loja continua utilizando o AsyncStorage pois os itens comprados
+// estão sendo salvos apenas no dispositivo físico (cache local) — não
+// existe tabela de inventário no Supabase pra isso ainda.
+//
+// ⚠️ CORRIGIDO (Semana 42): a chave antiga 'itens_comprados' era GLOBAL
+// no dispositivo — qualquer aluno que usasse o mesmo celular/navegador via
+// o inventário de qualquer outro. Agora a chave é por aluno
+// ('itens_comprados_<alunoId>'), exigindo alunoId. Isso é pré-requisito
+// pra equipar com segurança (Tarefa 2 da Semana 42): sem isso, um aluno
+// podia equipar item que outro aluno comprou.
+function chaveComprados(alunoId) {
+  if (!alunoId) throw new Error('listarItensComprados/comprarItem precisam de um alunoId.')
+  return `itens_comprados_${alunoId}`
+}
 
-export async function listarItensComprados() {
-  const dados = await AsyncStorage.getItem('itens_comprados')
+export async function listarItensComprados(alunoId) {
+  const dados = await AsyncStorage.getItem(chaveComprados(alunoId))
   return dados ? JSON.parse(dados) : []
 }
 
-export async function comprarItem(itemId) {
-  const itens = await listarItensComprados()
+export async function comprarItem(alunoId, itemId) {
+  const itens = await listarItensComprados(alunoId)
   if (!itens.includes(itemId)) {
     itens.push(itemId)
-    await AsyncStorage.setItem('itens_comprados', JSON.stringify(itens))
+    await AsyncStorage.setItem(chaveComprados(alunoId), JSON.stringify(itens))
   }
+}
+
+// ── Acessórios equipados no PET (Semana 42 — Tarefas 2 e 3) ─────────────
+//
+// Não existe coluna/tabela no Supabase real pra "o que está equipado
+// agora" (só existem turmas.cor, pets.icone/estagio/xp e a tabela
+// acessorios do catálogo da loja — ver migrations). Criar uma tabela nova
+// só pra isso seria mudança de schema sem necessidade pra um protótipo, e
+// a regra da tarefa é clara: se não existir persistência no banco pra
+// isso, usar uma local compatível com o protótipo atual. Por isso isso
+// aqui é AsyncStorage, igual aos itens comprados — e, IMPORTANTE: isso
+// NÃO é sincronizado com o Supabase, só fica salvo neste dispositivo.
+//
+// A chave combina alunoId + petId (não só alunoId) porque o pet "atual"
+// do aluno é o da turma dele — se ele trocar de turma (outro código),
+// passa a ter outro pet, e o que estava equipado no pet antigo não deve
+// vazar pro pet novo.
+//
+// Aluno SEM turma/pet carregado (turma null — ex: turma apagada ou falha ao
+// buscá-la; a tela do pet mostra "Meu Pet"): antes isso retornava null e o
+// que ele equipava sumia ao sair e voltar da loja. Agora usa a chave
+// 'semturma' pra ele continuar persistindo (só neste dispositivo). Se o aluno
+// entrar numa turma depois, passa a valer a chave daquele pet.
+function chaveEquipados(alunoId, petId) {
+  if (!alunoId) return null // sem aluno real (ex: atalho da loja) — nada pra persistir
+  return `equipados_${alunoId}_${petId ?? 'semturma'}`
+}
+
+const EQUIPADOS_PADRAO = { chapeu: null, colar: null }
+
+export async function listarEquipados(alunoId, petId) {
+  const chave = chaveEquipados(alunoId, petId)
+  if (!chave) return { ...EQUIPADOS_PADRAO }
+  try {
+    const dados = await AsyncStorage.getItem(chave)
+    return dados ? { ...EQUIPADOS_PADRAO, ...JSON.parse(dados) } : { ...EQUIPADOS_PADRAO }
+  } catch (error) {
+    console.error('Erro ao ler acessórios equipados:', error.message)
+    return { ...EQUIPADOS_PADRAO }
+  }
+}
+
+// slot: 'chapeu' | 'colar'. itemId: id do acessório, ou null pra desequipar.
+export async function atualizarEquipado(alunoId, petId, slot, itemId) {
+  const chave = chaveEquipados(alunoId, petId)
+  if (!chave) return // sem aluno identificado — equipar fica só na sessão, não persiste
+  const atuais = await listarEquipados(alunoId, petId)
+  const novos = { ...atuais, [slot]: itemId }
+  await AsyncStorage.setItem(chave, JSON.stringify(novos))
+  return novos
 }
 
 // Procura todas as missões no banco de dados
@@ -671,7 +733,7 @@ export async function buscarTurmaDoAluno(turmaId) {
   try {
     const [{ data: turma, error: turmaError }, { data: pet, error: petError }] = await Promise.all([
       supabase.from('turmas').select('id, nome, codigo, professor_id').eq('id', turmaId).maybeSingle(),
-      supabase.from('pets').select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico').eq('turma_id', turmaId).maybeSingle(),
+      supabase.from('pets').select('id, icone, estagio, xp, emocao, cosmetico').eq('turma_id', turmaId).maybeSingle(),
     ])
     if (turmaError) throw turmaError
     if (petError) throw petError
@@ -686,10 +748,9 @@ export async function buscarTurmaDoAluno(turmaId) {
       pet: pet?.icone || null,
       estagio: pet?.estagio || 'Filhote',
       xp: Number(pet?.xp) || 0,
-      progresso: Number(pet?.progresso) || 0,
+      progresso: 0,
       emocao: pet?.emocao || '😐',
-      cor: pet?.cor || '#888888',
-      cosmetico: pet?.cosmetico || false,
+      cosmetico: pet?.cosmetico || null,
     }
   } catch (error) {
     console.error('Erro ao buscar turma do aluno:', error.message)
