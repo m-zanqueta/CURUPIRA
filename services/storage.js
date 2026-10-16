@@ -560,8 +560,10 @@ export async function atualizarAluno(id, novos) {
       .eq('id', id)
 
     if (error) throw error
+    return true
   } catch (error) {
     console.error('Erro ao atualizar aluno:', error.message)
+    return false // quem precisa saber se gravou (ex: EntrarTurma) confere; os demais ignoram
   }
 }
 
@@ -633,7 +635,8 @@ function chaveEquipados(alunoId, petId) {
   return `equipados_${alunoId}_${petId ?? 'semturma'}`
 }
 
-const EQUIPADOS_PADRAO = { chapeu: null, colar: null }
+// fundo = cenário (slot 'fundo' do catálogo de acessórios).
+const EQUIPADOS_PADRAO = { chapeu: null, colar: null, fundo: null }
 
 export async function listarEquipados(alunoId, petId) {
   const chave = chaveEquipados(alunoId, petId)
@@ -647,14 +650,29 @@ export async function listarEquipados(alunoId, petId) {
   }
 }
 
-// slot: 'chapeu' | 'colar'. itemId: id do acessório, ou null pra desequipar.
-export async function atualizarEquipado(alunoId, petId, slot, itemId) {
+// slot: 'chapeu' | 'colar' | 'fundo'. itemId: id do acessório, ou null pra desequipar.
+//
+// As escritas de uma mesma chave são ENFILEIRADAS: o ciclo ler → mesclar →
+// gravar não é atômico, então duas chamadas seguidas (ex: trocar chapéu e
+// cenário rápido) liam o mesmo estado antigo e uma sobrescrevia a outra.
+// Se a LEITURA falhar, não grava nada (antes gravaria só o slot novo sobre
+// os valores padrão, apagando os outros slots salvos).
+const filaEquipados = new Map()
+
+export function atualizarEquipado(alunoId, petId, slot, itemId) {
   const chave = chaveEquipados(alunoId, petId)
-  if (!chave) return // sem aluno identificado — equipar fica só na sessão, não persiste
-  const atuais = await listarEquipados(alunoId, petId)
-  const novos = { ...atuais, [slot]: itemId }
-  await AsyncStorage.setItem(chave, JSON.stringify(novos))
-  return novos
+  if (!chave) return Promise.resolve() // sem aluno identificado — equipar fica só na sessão, não persiste
+  const anterior = filaEquipados.get(chave) || Promise.resolve()
+  const proxima = anterior.catch(() => {}).then(async () => {
+    const dados = await AsyncStorage.getItem(chave) // se falhar, rejeita e não grava
+    let atuais = { ...EQUIPADOS_PADRAO }
+    try { if (dados) atuais = { ...EQUIPADOS_PADRAO, ...JSON.parse(dados) } } catch { /* JSON corrompido: recomeça do padrão */ }
+    const novos = { ...atuais, [slot]: itemId }
+    await AsyncStorage.setItem(chave, JSON.stringify(novos))
+    return novos
+  })
+  filaEquipados.set(chave, proxima)
+  return proxima
 }
 
 // Procura todas as missões no banco de dados
@@ -733,7 +751,7 @@ export async function buscarTurmaDoAluno(turmaId) {
   try {
     const [{ data: turma, error: turmaError }, { data: pet, error: petError }] = await Promise.all([
       supabase.from('turmas').select('id, nome, codigo, professor_id').eq('id', turmaId).maybeSingle(),
-      supabase.from('pets').select('id, icone, estagio, xp, emocao, cosmetico').eq('turma_id', turmaId).maybeSingle(),
+      supabase.from('pets').select('id, nome, icone, estagio, xp, emocao, cosmetico').eq('turma_id', turmaId).maybeSingle(),
     ])
     if (turmaError) throw turmaError
     if (petError) throw petError
@@ -746,6 +764,7 @@ export async function buscarTurmaDoAluno(turmaId) {
       professorId: turma.professor_id,
       petId: pet?.id || null,
       pet: pet?.icone || null,
+      petNome: pet?.nome || null, // espécie do pet (ver detectarCfg em PetScreen.js)
       estagio: pet?.estagio || 'Filhote',
       xp: Number(pet?.xp) || 0,
       progresso: 0,
