@@ -184,11 +184,23 @@ function AppInterno() {
   // Aluno sem pet (turma sem pet configurado, ou turma inexistente)
   // não fica preso na tela "Pet não encontrado" — cai direto na tela
   // do código da turma, pra poder entrar em outra turma.
+  // Só redireciona se HÁ aluno logado: no logout o estado é limpo (aluno e
+  // turma nulos) enquanto a tela 'pet' ainda está visível durante o fade, e
+  // esse redirecionamento disputava com o destino 'login' — quem chegava por
+  // último vencia e o usuário ficava em "Entre na sua turma" sem aluno.
   useEffect(() => {
     if (tela !== 'pet') return
+    if (!aluno?.id) return
     if (turmaAluno?.pet) return
     navegarCom('entrarTurma')
-  }, [tela, turmaAluno])
+  }, [tela, turmaAluno, aluno])
+
+  // EntrarTurma só faz sentido com aluno autenticado. Sessão ausente ou
+  // inválida volta ao login correto (nunca cria aluno fictício).
+  useEffect(() => {
+    if (tela !== 'entrarTurma' || aluno?.id) return
+    navegarCom(professor ? 'loginProfessor' : 'login')
+  }, [tela, aluno])
 
   async function entrarAreaProfessor(usuario) {
     const tipo = ['admin', 'coordenador'].includes(usuario?.tipo) ? usuario.tipo : 'professor'
@@ -262,13 +274,6 @@ function AppInterno() {
     setTimeout(() => navegarCom('pet'), 2000)
   }
 
-  async function pularEntradaNaTurma() {
-    setTurmaAluno(null)
-    const progresso = aluno?.id ? await consultarProgressoGeral(aluno.id) : null
-    setProgressoAluno(progresso)
-    navegarCom('pet')
-  }
-
   async function sair() {
     try {
       await limparSessaoApp()
@@ -315,7 +320,7 @@ function AppInterno() {
           <EntrarTurma
             aluno={aluno}
             onEntrou={handleEntrarTurma}
-            onPular={pularEntradaNaTurma}
+            onSemSessao={() => navegarCom('login')}
           />
         )}
 
