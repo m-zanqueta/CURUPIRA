@@ -79,7 +79,7 @@ function TelaSemPet({ onLogout }) {
 
       <View style={se.card}>
         <View style={se.iconeWrap}>
-          <IconeUI nome="pet" size={72} />
+          <Text style={se.icone}>🙋</Text>
         </View>
         <Text style={se.titulo}>Pet não encontrado</Text>
         <Text style={se.sub}>
