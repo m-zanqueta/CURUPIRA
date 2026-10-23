@@ -1,0 +1,2 @@
+[functions.migrar-login]
+verify_jwt = false
