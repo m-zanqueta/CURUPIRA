@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Component } from 'react'
 import { View, ActivityIndicator, Image, Text, StyleSheet, Animated } from 'react-native'
 import {
   useFonts,
@@ -45,7 +45,7 @@ const tema = {
   },
 }
 import { colors } from './theme'
-import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral } from './services/storage'
+import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp } from './services/storage'
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
@@ -54,8 +54,47 @@ import DashboardScreen from './screens/DashboardScreen'
 import AdminDashboardScreen from './screens/AdminDashboardScreen'
 import PetScreen from './screens/PetScreen'
 import LojaScreen from './screens/LojaScreen'
+import ErroScreen from './screens/ErroScreen'
 
-export default function App() {
+// Todo destino que o app sabe navegar. navegarCom() usa isso pra decidir
+// se o destino pedido é válido ou se deve cair na tela de erro (404).
+const TELAS_VALIDAS = new Set([
+  'splash', 'splashLogin', 'login', 'criarPerfil', 'entrarTurma',
+  'loginProfessor', 'dashboardAdmin', 'dashboardProfessor', 'pet', 'loja', 'erro404',
+])
+
+// Captura qualquer erro de render não tratado em qualquer tela do Curupira
+// e mostra a mesma tela de erro genérica (ErroScreen), em vez de deixar a
+// tela em branco/travada. "Tentar novamente" só reseta o boundary — se o
+// erro era de um estado específico (ex: tela do pet depois de um clique
+// ruim), o app volta a renderizar normalmente a partir daqui.
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { comErro: false }
+  }
+  static getDerivedStateFromError() {
+    return { comErro: true }
+  }
+  componentDidCatch(erro, info) {
+    console.error('Erro não tratado no Curupira:', erro, info?.componentStack)
+  }
+  render() {
+    if (this.state.comErro) {
+      return (
+        <ErroScreen
+          titulo="Algo deu errado"
+          mensagem="O Curupira encontrou um erro inesperado nessa tela. Você pode tentar novamente."
+          textoBotao="Tentar novamente"
+          onVoltar={() => this.setState({ comErro: false })}
+        />
+      )
+    }
+    return this.props.children
+  }
+}
+
+function AppInterno() {
   const [tela,          setTela]          = useState('splash')
   const [professor,     setProfessor]     = useState(null)
   const [aluno,         setAluno]         = useState(null)
@@ -72,26 +111,102 @@ export default function App() {
   })
 
   useEffect(() => {
+    let ativo = true
     async function init() {
-      await inicializarProfessores()
-      setTimeout(() => navegarCom('login'), 2500)
+      try {
+        await inicializarProfessores()
+        const sessao = await obterSessaoApp()
+        if (!ativo) return
+
+        if (sessao?.tipo === 'admin' && sessao.usuario) {
+          setProfessor({ ...sessao.usuario, tipo: 'admin' })
+          setTela('dashboardAdmin')
+          return
+        }
+        if (['professor', 'coordenador'].includes(sessao?.tipo) && sessao.usuario?.id) {
+          setProfessor(sessao.usuario)
+          setTela('dashboardProfessor')
+          return
+        }
+        if (sessao?.tipo === 'aluno' && sessao.usuario?.id) {
+          const alunoSalvo = sessao.usuario
+          setAluno(alunoSalvo)
+          if (!alunoSalvo.turmaId) {
+            setTela('entrarTurma')
+            return
+          }
+          const [turma, progresso] = await Promise.all([
+            buscarTurmaDoAluno(alunoSalvo.turmaId),
+            consultarProgressoGeral(alunoSalvo.id),
+          ])
+          if (!ativo) return
+          setAluno(alunoSalvo)
+          setTurmaAluno(turma)
+          setProgressoAluno(progresso)
+          setTela('pet')
+          return
+        }
+        if (sessao?.tipo === 'loja') {
+          setAluno(sessao.usuario || null)
+          setTela('loja')
+          return
+        }
+
+        setTela('login')
+      } catch (error) {
+        console.error('Não foi possível restaurar a sessão salva:', error)
+        if (ativo) setTela('login')
+      }
     }
     if (fontsLoaded) init()
+    return () => { ativo = false }
   }, [fontsLoaded])
 
+  // Destino desconhecido (nome digitado errado, tela removida, estado
+  // inconsistente) nunca deixa `tela` num valor que nenhum bloco abaixo
+  // trata — em vez de ficar com a tela em branco, cai na 404.
   function navegarCom(destino) {
+    const alvo = TELAS_VALIDAS.has(destino) ? destino : 'erro404'
+    if (alvo === 'erro404' && destino !== 'erro404') {
+      console.warn(`Destino de navegação inválido: "${destino}". Mostrando tela de erro (404).`)
+    }
     Animated.timing(fadeAnim, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => {
-      setTela(destino)
+      setTela(alvo)
       Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start()
     })
   }
 
-  function entrarAreaProfessor(usuario) {
+  function usuarioSemSenha(usuario) {
+    if (!usuario) return null
+    const { senha, ...dados } = usuario
+    return dados
+  }  
+  // Aluno sem pet (turma sem pet configurado, ou turma inexistente)
+  // não fica preso na tela "Pet não encontrado" — cai direto na tela
+  // do código da turma, pra poder entrar em outra turma.
+  useEffect(() => {
+    if (tela !== 'pet') return
+    if (turmaAluno?.pet) return
+    navegarCom('entrarTurma')
+  }, [tela, turmaAluno])
+
+  async function entrarAreaProfessor(usuario) {
+    const tipo = ['admin', 'coordenador'].includes(usuario?.tipo) ? usuario.tipo : 'professor'
+    try {
+      await salvarSessaoApp({ tipo, usuario: usuarioSemSenha(usuario) })
+    } catch (error) {
+      console.error('Não foi possível salvar a sessão do professor:', error)
+    }
     setProfessor(usuario)
     navegarCom(usuario?.tipo === 'admin' ? 'dashboardAdmin' : 'dashboardProfessor')
   }
 
   async function handleLoginAluno(alunoLogado) {
+    try {
+      await salvarSessaoApp({ tipo: 'aluno', usuario: usuarioSemSenha(alunoLogado) })
+    } catch (error) {
+      console.error('Não foi possível salvar a sessão do aluno:', error)
+    }
     const [turma, progresso] = await Promise.all([
       buscarTurmaDoAluno(alunoLogado.turmaId),
       consultarProgressoGeral(alunoLogado.id),
@@ -104,32 +219,67 @@ export default function App() {
   }
 
   async function handleLoginGeral(alunoLogado) {
-    // Email especial da loja
     if (alunoLogado.email === 'loja@gmail.com') {
+      try {
+        await salvarSessaoApp({ tipo: 'loja', usuario: usuarioSemSenha(alunoLogado) })
+      } catch (error) {
+        console.error('Não foi possível salvar a sessão da loja:', error)
+      }
+      setAluno(alunoLogado)
       navegarCom('loja')
       return
     }
 
     setAluno(alunoLogado)
-
-    // ── NOVO: aluno sem turma → tela de código ──
     if (!alunoLogado.turmaId) {
+      try {
+        await salvarSessaoApp({ tipo: 'aluno', usuario: usuarioSemSenha(alunoLogado) })
+      } catch (error) {
+        console.error('Não foi possível salvar a sessão do aluno:', error)
+      }
       navegarCom('entrarTurma')
       return
     }
-
-    // Aluno com turma → fluxo normal
-    handleLoginAluno(alunoLogado)
+    await handleLoginAluno(alunoLogado)
   }
 
-  // Aluno entrou via código da turma
-  async function handleEntrarTurma(alunoAtualizado, turma) {
-    const progresso = await consultarProgressoGeral(alunoAtualizado.id)
+    async function handleEntrarTurma(alunoAtualizado, turma) {
+    try {
+      await salvarSessaoApp({ tipo: 'aluno', usuario: usuarioSemSenha(alunoAtualizado) })
+    } catch (error) {
+      console.error('Não foi possível atualizar a sessão do aluno:', error)
+    }
+    // Refaz a busca pra trazer o objeto turma COMPLETO (com pet aninhado) —
+    // o `turma` que o EntrarTurma devolve só tem id/nome/codigo/professor_id.
+    const [turmaCompleta, progresso] = await Promise.all([
+      buscarTurmaDoAluno(alunoAtualizado.turmaId),
+      consultarProgressoGeral(alunoAtualizado.id),
+    ])
     setAluno(alunoAtualizado)
-    setTurmaAluno(turma)
+    setTurmaAluno(turmaCompleta)
     setProgressoAluno(progresso)
     navegarCom('splashLogin')
     setTimeout(() => navegarCom('pet'), 2000)
+  }
+
+  async function pularEntradaNaTurma() {
+    setTurmaAluno(null)
+    const progresso = aluno?.id ? await consultarProgressoGeral(aluno.id) : null
+    setProgressoAluno(progresso)
+    navegarCom('pet')
+  }
+
+  async function sair() {
+    try {
+      await limparSessaoApp()
+    } catch (error) {
+      console.error('Não foi possível limpar a sessão salva:', error)
+    }
+    setProfessor(null)
+    setAluno(null)
+    setTurmaAluno(null)
+    setProgressoAluno(null)
+    navegarCom(professor ? 'loginProfessor' : 'login')
   }
 
   if (!fontsLoaded || tela === 'splash' || tela === 'splashLogin') {
@@ -165,7 +315,7 @@ export default function App() {
           <EntrarTurma
             aluno={aluno}
             onEntrou={handleEntrarTurma}
-            onPular={() => navegarCom('login')}
+            onPular={pularEntradaNaTurma}
           />
         )}
 
@@ -179,14 +329,14 @@ export default function App() {
 
         {tela === 'dashboardAdmin' && (
           professor?.tipo === 'admin'
-            ? <AdminDashboardScreen usuario={professor} onLogout={() => navegarCom('loginProfessor')} />
+            ? <AdminDashboardScreen usuario={professor} onLogout={sair} />
             : <LoginProfessor onLogin={entrarAreaProfessor} onAdminLogin={entrarAreaProfessor} onSouAluno={() => navegarCom('login')} />
         )}
 
         {tela === 'dashboardProfessor' && (
           professor?.tipo !== 'admin'
-            ? <DashboardScreen professor={professor} onLogout={() => navegarCom('loginProfessor')} />
-            : <AdminDashboardScreen usuario={professor} onLogout={() => navegarCom('loginProfessor')} />
+            ? <DashboardScreen professor={professor} onLogout={sair} />
+            : <AdminDashboardScreen usuario={professor} onLogout={sair} />
         )}
 
         {tela === 'pet' && (
@@ -194,7 +344,7 @@ export default function App() {
             aluno={aluno}
             turma={turmaAluno}
             progresso={progressoAluno}
-            onLogout={() => navegarCom('login')}
+            onLogout={sair}
             onLoja={() => navegarCom('loja')}
           />
         )}
@@ -203,13 +353,27 @@ export default function App() {
           <LojaScreen
             aluno={aluno}
             turma={turmaAluno}
-            onLogout={() => navegarCom('pet')}
+            onLogout={() => aluno?.email === 'loja@gmail.com' ? sair() : navegarCom('pet')}
+          />
+        )}
+
+        {tela === 'erro404' && (
+          <ErroScreen
+            onVoltar={() => navegarCom(professor ? 'loginProfessor' : 'login')}
           />
         )}
 
       </SafeAreaProvider>
       </PaperProvider>
     </Animated.View>
+  )
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppInterno />
+    </ErrorBoundary>
   )
 }
 

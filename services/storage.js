@@ -2,6 +2,26 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from './supabase'
 
 const TABELAS_ADMIN = new Set(['professores', 'alunos', 'pets', 'icones_missoes', 'acessorios'])
+const CHAVE_SESSAO_APP = 'curupira_sessao_app'
+
+export async function salvarSessaoApp(sessao) {
+  await AsyncStorage.setItem(CHAVE_SESSAO_APP, JSON.stringify(sessao))
+}
+
+export async function obterSessaoApp() {
+  const valor = await AsyncStorage.getItem(CHAVE_SESSAO_APP)
+  if (!valor) return null
+  try {
+    return JSON.parse(valor)
+  } catch {
+    await AsyncStorage.removeItem(CHAVE_SESSAO_APP)
+    return null
+  }
+}
+
+export async function limparSessaoApp() {
+  await AsyncStorage.removeItem(CHAVE_SESSAO_APP)
+}
 
 export async function listarDadosAdmin(tabela) {
   if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
@@ -70,6 +90,16 @@ export async function buscarProfessor(emailDigitado, senhaDigitada) {
     console.error('Erro ao buscar professor:', error.message)
     return null
   }
+}
+
+export async function buscarCoordenador(emailDigitado, senhaDigitada) {
+  const { data, error } = await supabase.rpc('login_coordenador', {
+    p_email: emailDigitado.trim().toLowerCase(),
+    p_senha: senhaDigitada,
+  })
+
+  if (error) throw error
+  return Array.isArray(data) ? data[0] || null : data || null
 }
 
 export async function salvarProfessor(dados) {
@@ -188,14 +218,15 @@ export async function listarAcessoriosLoja() {
 
 // ── Turmas e Pets (ATUALIZADO) ─────────────────────────────────────────
 
-export async function listarTurmas(professorId) {
+export async function listarTurmas(professorId, incluirTodas = false) {
   if (!professorId) return [];
 
   try {
-    const { data: turmas, error: turmasError } = await supabase
+    let consultaTurmas = supabase
       .from('turmas')
-      .select('id, nome, codigo, professor_id, cor')
-      .eq('professor_id', professorId);
+      .select('id, nome, codigo, professor_id, cor');
+    if (!incluirTodas) consultaTurmas = consultaTurmas.eq('professor_id', professorId);
+    const { data: turmas, error: turmasError } = await consultaTurmas;
     if (turmasError) throw turmasError;
     if (!turmas?.length) return [];
 
@@ -230,19 +261,40 @@ export async function listarTurmas(professorId) {
   }
 }
 
-export async function listarPetsDisponiveis() {
+export async function listarProfessoresParaTurma() {
   const { data, error } = await supabase
-    .from('pets')
-    .select('id, nome, icone, estagio, xp, emocao, cosmetico, turma_id')
-    .is('turma_id', null)
-    .order('id', { ascending: true });
+    .from('professores')
+    .select('id, nome, email')
+    .order('nome', { ascending: true });
 
   if (error) throw error;
+  return data || [];
+}
+
+export async function listarPetsParaTurma() {
+  const [petsResult, turmasResult] = await Promise.all([
+    supabase
+      .from('pets')
+      .select('id, nome, icone, estagio, xp, emocao, cosmetico, turma_id')
+      .order('id', { ascending: true }),
+    supabase
+      .from('turmas')
+      .select('id, nome'),
+  ]);
+
+  if (petsResult.error) throw petsResult.error;
+  if (turmasResult.error) throw turmasResult.error;
+
+  const turmaPorId = new Map((turmasResult.data || []).map(turma => [String(turma.id), turma.nome]));
 
   // A coluna icone deve conter a URL pública da imagem no Supabase Storage.
-  return (data || []).filter(pet =>
-    typeof pet.icone === 'string' && /^https?:\/\//i.test(pet.icone.trim())
-  );
+  return (petsResult.data || [])
+    .filter(pet => typeof pet.icone === 'string' && /^https?:\/\//i.test(pet.icone.trim()))
+    .map(pet => ({
+      ...pet,
+      turmaNome: pet.turma_id == null ? null : turmaPorId.get(String(pet.turma_id)) || `Turma ${pet.turma_id}`,
+      disponivel: pet.turma_id == null,
+    }));
 }
 
 export async function salvarTurma(novaTurma) {
@@ -253,17 +305,25 @@ export async function salvarTurma(novaTurma) {
     throw new Error('Selecione um PET disponível para criar a turma.');
   }
 
-  const { data: turmaData, error: turmaError } = await supabase
-    .from('turmas')
-    .insert([{
-      nome: novaTurma.nome,
-      codigo: novaTurma.codigo,
-      professor_id: novaTurma.professorId,
-      cor: novaTurma.cor,
-    }])
-    .select()
-    .single();
+  const dadosTurma = {
+    nome: novaTurma.nome,
+    codigo: novaTurma.codigo,
+    professor_id: novaTurma.professorId,
+    cor: novaTurma.cor,
+  };
+  let { data: turmaData, error: turmaError } = await supabase
+    .from('turmas').insert([dadosTurma]).select().single();
 
+  // Compatibilidade com bancos onde a migration da cor da turma ainda não foi aplicada.
+  const colunaCorAusente = turmaError && (
+    turmaError.code === '42703' || turmaError.code === 'PGRST204'
+  ) && /cor/i.test(turmaError.message || '');
+  if (colunaCorAusente) {
+    const dadosSemCor = { ...dadosTurma };
+    delete dadosSemCor.cor;
+    ({ data: turmaData, error: turmaError } = await supabase
+      .from('turmas').insert([dadosSemCor]).select().single());
+  }
   if (turmaError) throw turmaError;
 
   const { data: petVinculado, error: petError } = await supabase
@@ -324,17 +384,24 @@ export async function removerTurmaStorage(id, professorId) {
 
 // ── Missões e Conquistas (NOVOS) ─────────────────────────────────────────
 
-export async function listarMissoes(professorId) {
-  const { data, error } = await supabase.from('missoes').select('*').eq('professorId', professorId).order('id', { ascending: false });
+export async function listarMissoes(professorId, incluirTodas = false) {
+  if (!professorId) return [];
+  let consultaMissoes = supabase.from('missoes').select('*');
+  if (!incluirTodas) consultaMissoes = consultaMissoes.eq('professorId', professorId);
+  const { data, error } = await consultaMissoes.order('id', { ascending: false });
   if (error) throw error;
   const ids = (data || []).map(m => m.id);
   const { data: vinculos, error: vinculosError } = ids.length
-    ? await supabase.from('missoes_turmas').select('missao_id, turma_id').in('missao_id', ids)
+    ? await supabase.from('missoes_turmas').select('missao_id, turma_id, ativa').in('missao_id', ids)
     : { data: [], error: null };
   if (vinculosError) throw vinculosError;
   const porMissao = new Map();
-  (vinculos || []).forEach(v => porMissao.set(String(v.missao_id), [...(porMissao.get(String(v.missao_id)) || []), v.turma_id]));
-  return (data || []).map(m => ({ ...m, name: m.nome, icon: m.icone, active: m.ativa, turmaIds: porMissao.get(String(m.id)) || [] }));
+  const statusPorMissao = new Map();
+  (vinculos || []).forEach(v => {
+    porMissao.set(String(v.missao_id), [...(porMissao.get(String(v.missao_id)) || []), v.turma_id]);
+    statusPorMissao.set(String(v.missao_id), { ...(statusPorMissao.get(String(v.missao_id)) || {}), [String(v.turma_id)]: v.ativa ?? true });
+  });
+  return (data || []).map(m => ({ ...m, professorId: m.professorId, name: m.nome, icon: m.icone, active: m.ativa, turmaIds: porMissao.get(String(m.id)) || [], turmaAtivas: statusPorMissao.get(String(m.id)) || {} }));
 }
 
 export async function listarIconesMissoes() {
@@ -356,9 +423,10 @@ export async function salvarMissao(missao) {
     p_turmas_ids: missao.turmasIds,
   });
   if (error) throw error;
-  const { data, error: fetchError } = await supabase.from('missoes').select('*').eq('id', id).single();
-  if (fetchError) throw fetchError;
-  return { ...data, name: data.nome, icon: data.icone, active: data.ativa, turmaIds: missao.turmasIds };
+  const atualizadas = await listarMissoes(missao.professorId);
+  const salva = atualizadas.find(item => String(item.id) === String(id));
+  if (!salva) throw new Error('A missão foi salva, mas não foi possível recarregar seus vínculos com as turmas.');
+  return salva;
 }
 
 export async function atualizarMissao(id, dados) {
@@ -370,6 +438,25 @@ export async function atualizarMissao(id, dados) {
 
 export async function definirTurmasMissao(id, professorId, turmasIds) {
   const { error } = await supabase.rpc('definir_turmas_missao', { p_missao_id: id, p_professor_id: professorId, p_turmas_ids: turmasIds });
+  if (error) throw error;
+}
+
+export async function definirAtivaMissaoTurma(missaoId, professorId, turmaId, ativa) {
+  const { error } = await supabase.rpc('definir_ativa_missao_turma', {
+    p_missao_id: missaoId,
+    p_professor_id: professorId,
+    p_turma_id: turmaId,
+    p_ativa: ativa,
+  });
+  if (error) throw error;
+}
+
+export async function removerMissaoDaTurma(missaoId, professorId, turmaId) {
+  const { error } = await supabase.rpc('remover_missao_da_turma', {
+    p_missao_id: missaoId,
+    p_professor_id: professorId,
+    p_turma_id: turmaId,
+  });
   if (error) throw error;
 }
 
@@ -492,20 +579,82 @@ export async function deletarAluno(id) {
 }
 
 // ── Loja ─────────────────────────────────────────────────
-// A loja continua utilizando o AsyncStorage pois os itens comprados 
-// estão sendo salvos apenas no dispositivo físico (cache local).
+// A loja continua utilizando o AsyncStorage pois os itens comprados
+// estão sendo salvos apenas no dispositivo físico (cache local) — não
+// existe tabela de inventário no Supabase pra isso ainda.
+//
+// ⚠️ CORRIGIDO (Semana 42): a chave antiga 'itens_comprados' era GLOBAL
+// no dispositivo — qualquer aluno que usasse o mesmo celular/navegador via
+// o inventário de qualquer outro. Agora a chave é por aluno
+// ('itens_comprados_<alunoId>'), exigindo alunoId. Isso é pré-requisito
+// pra equipar com segurança (Tarefa 2 da Semana 42): sem isso, um aluno
+// podia equipar item que outro aluno comprou.
+function chaveComprados(alunoId) {
+  if (!alunoId) throw new Error('listarItensComprados/comprarItem precisam de um alunoId.')
+  return `itens_comprados_${alunoId}`
+}
 
-export async function listarItensComprados() {
-  const dados = await AsyncStorage.getItem('itens_comprados')
+export async function listarItensComprados(alunoId) {
+  const dados = await AsyncStorage.getItem(chaveComprados(alunoId))
   return dados ? JSON.parse(dados) : []
 }
 
-export async function comprarItem(itemId) {
-  const itens = await listarItensComprados()
+export async function comprarItem(alunoId, itemId) {
+  const itens = await listarItensComprados(alunoId)
   if (!itens.includes(itemId)) {
     itens.push(itemId)
-    await AsyncStorage.setItem('itens_comprados', JSON.stringify(itens))
+    await AsyncStorage.setItem(chaveComprados(alunoId), JSON.stringify(itens))
   }
+}
+
+// ── Acessórios equipados no PET (Semana 42 — Tarefas 2 e 3) ─────────────
+//
+// Não existe coluna/tabela no Supabase real pra "o que está equipado
+// agora" (só existem turmas.cor, pets.icone/estagio/xp e a tabela
+// acessorios do catálogo da loja — ver migrations). Criar uma tabela nova
+// só pra isso seria mudança de schema sem necessidade pra um protótipo, e
+// a regra da tarefa é clara: se não existir persistência no banco pra
+// isso, usar uma local compatível com o protótipo atual. Por isso isso
+// aqui é AsyncStorage, igual aos itens comprados — e, IMPORTANTE: isso
+// NÃO é sincronizado com o Supabase, só fica salvo neste dispositivo.
+//
+// A chave combina alunoId + petId (não só alunoId) porque o pet "atual"
+// do aluno é o da turma dele — se ele trocar de turma (outro código),
+// passa a ter outro pet, e o que estava equipado no pet antigo não deve
+// vazar pro pet novo.
+//
+// Aluno SEM turma/pet carregado (turma null — ex: turma apagada ou falha ao
+// buscá-la; a tela do pet mostra "Meu Pet"): antes isso retornava null e o
+// que ele equipava sumia ao sair e voltar da loja. Agora usa a chave
+// 'semturma' pra ele continuar persistindo (só neste dispositivo). Se o aluno
+// entrar numa turma depois, passa a valer a chave daquele pet.
+function chaveEquipados(alunoId, petId) {
+  if (!alunoId) return null // sem aluno real (ex: atalho da loja) — nada pra persistir
+  return `equipados_${alunoId}_${petId ?? 'semturma'}`
+}
+
+const EQUIPADOS_PADRAO = { chapeu: null, colar: null }
+
+export async function listarEquipados(alunoId, petId) {
+  const chave = chaveEquipados(alunoId, petId)
+  if (!chave) return { ...EQUIPADOS_PADRAO }
+  try {
+    const dados = await AsyncStorage.getItem(chave)
+    return dados ? { ...EQUIPADOS_PADRAO, ...JSON.parse(dados) } : { ...EQUIPADOS_PADRAO }
+  } catch (error) {
+    console.error('Erro ao ler acessórios equipados:', error.message)
+    return { ...EQUIPADOS_PADRAO }
+  }
+}
+
+// slot: 'chapeu' | 'colar'. itemId: id do acessório, ou null pra desequipar.
+export async function atualizarEquipado(alunoId, petId, slot, itemId) {
+  const chave = chaveEquipados(alunoId, petId)
+  if (!chave) return // sem aluno identificado — equipar fica só na sessão, não persiste
+  const atuais = await listarEquipados(alunoId, petId)
+  const novos = { ...atuais, [slot]: itemId }
+  await AsyncStorage.setItem(chave, JSON.stringify(novos))
+  return novos
 }
 
 // Procura todas as missões no banco de dados
@@ -584,7 +733,7 @@ export async function buscarTurmaDoAluno(turmaId) {
   try {
     const [{ data: turma, error: turmaError }, { data: pet, error: petError }] = await Promise.all([
       supabase.from('turmas').select('id, nome, codigo, professor_id').eq('id', turmaId).maybeSingle(),
-      supabase.from('pets').select('id, icone, estagio, xp, progresso, emocao, cor, cosmetico').eq('turma_id', turmaId).maybeSingle(),
+      supabase.from('pets').select('id, icone, estagio, xp, emocao, cosmetico').eq('turma_id', turmaId).maybeSingle(),
     ])
     if (turmaError) throw turmaError
     if (petError) throw petError
@@ -599,10 +748,9 @@ export async function buscarTurmaDoAluno(turmaId) {
       pet: pet?.icone || null,
       estagio: pet?.estagio || 'Filhote',
       xp: Number(pet?.xp) || 0,
-      progresso: Number(pet?.progresso) || 0,
+      progresso: 0,
       emocao: pet?.emocao || '😐',
-      cor: pet?.cor || '#888888',
-      cosmetico: pet?.cosmetico || false,
+      cosmetico: pet?.cosmetico || null,
     }
   } catch (error) {
     console.error('Erro ao buscar turma do aluno:', error.message)
@@ -630,7 +778,7 @@ export async function listarMissoesDoAluno(alunoId) {
     if (!aluno?.turmaId) return [] // sem turma, sem missão pra mostrar
 
     const { data: vinculos, error: vinculosError } = await supabase
-      .from('missoes_turmas').select('missao_id').eq('turma_id', aluno.turmaId)
+      .from('missoes_turmas').select('missao_id').eq('turma_id', aluno.turmaId).eq('ativa', true)
     if (vinculosError) throw vinculosError
     const missaoIds = (vinculos || []).map(v => v.missao_id)
     if (!missaoIds.length) return []

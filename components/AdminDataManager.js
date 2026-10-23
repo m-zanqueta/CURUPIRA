@@ -14,6 +14,14 @@ const ABAS = [
   { id: 'acessorios', titulo: 'Itens da loja' },
 ]
 
+const CAMPOS_OBRIGATORIOS = {
+  professores: ['nome', 'email', 'senha'],
+  alunos: ['nome', 'email', 'senha'],
+  pets: ['nome', 'icone', 'estagio', 'xp'],
+  icones_missoes: ['nome', 'icone'],
+  acessorios: ['nome', 'slot', 'imagem_path', 'preco'],
+}
+
 const ROTULOS = {
   id: 'ID', nome: 'Nome', email: 'E-mail', senha: 'Senha', xp: 'XP',
   icone: 'Imagem / ícone', estagio: 'Estágio', emocao: 'Emoção',
@@ -92,6 +100,7 @@ export default function AdminDataManager({ visible, onClose }) {
   const [carregando, setCarregando] = useState(false)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
+  const [errosCampos, setErrosCampos] = useState({})
   const [busca, setBusca] = useState('')
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false)
 
@@ -115,6 +124,7 @@ export default function AdminDataManager({ visible, onClose }) {
       setBusca('')
       setSelecionado(null)
       setConfirmandoExclusao(false)
+      setErrosCampos({})
       carregar('professores')
     }
   }, [visible])
@@ -125,6 +135,7 @@ export default function AdminDataManager({ visible, onClose }) {
     setSelecionado(null)
     setRascunho({})
     setConfirmandoExclusao(false)
+    setErrosCampos({})
     carregar(novaAba)
   }
 
@@ -139,12 +150,19 @@ export default function AdminDataManager({ visible, onClose }) {
     setRascunho(Object.fromEntries(Object.entries(registro).map(([chave, valor]) => [chave, textoValor(valor)])))
     setConfirmandoExclusao(false)
     setErro('')
+    setErrosCampos({})
   }
 
   async function salvarEdicao() {
     if (!selecionado) return
-    if (aba === 'acessorios' && !['chapeu', 'colar'].includes(rascunho.slot)) {
-      setErro('Escolha Chapéu ou Colar para o tipo do acessório.')
+    const obrigatorios = CAMPOS_OBRIGATORIOS[aba] || []
+    const faltantes = Object.fromEntries(obrigatorios
+      .filter(chave => Object.prototype.hasOwnProperty.call(selecionado, chave) && !String(rascunho[chave] ?? '').trim())
+      .map(chave => [chave, `Preencha ${rotuloCampo(chave).toLowerCase()}.`]))
+    setErrosCampos(faltantes)
+    if (Object.keys(faltantes).length) return
+    if (aba === 'acessorios' && !['chapeu', 'colar', 'fundo'].includes(rascunho.slot)) {
+      setErro('Escolha Chapéu, Colar ou Cenário para o tipo do item.')
       return
     }
     if (aba === 'professores') {
@@ -212,6 +230,7 @@ export default function AdminDataManager({ visible, onClose }) {
     if (salvando) return
     setSelecionado(null)
     setErro('')
+    setErrosCampos({})
     onClose()
   }
 
@@ -249,9 +268,10 @@ export default function AdminDataManager({ visible, onClose }) {
                 {Object.keys(selecionado).map(chave => {
                   const original = selecionado[chave]
                   const booleano = ehBooleano(chave, original)
+                  const obrigatorio = (CAMPOS_OBRIGATORIOS[aba] || []).includes(chave)
                   return (
                     <View key={chave} style={styles.field}>
-                      <Text style={styles.label}>{rotuloCampo(chave)}{chave === 'id' ? ' · não editável' : ''}</Text>
+                      <Text style={styles.label}>{rotuloCampo(chave)}{obrigatorio ? ' *' : ''}{chave === 'id' ? ' · não editável' : ''}</Text>
                       {booleano ? (
                         <View style={styles.booleanOptions}>
                           {[['true', 'Sim'], ['false', 'Não']].map(([valor, texto]) => (
@@ -265,8 +285,12 @@ export default function AdminDataManager({ visible, onClose }) {
                           {[
                             ['chapeu', 'Chapéu'],
                             ['colar', 'Colar'],
+                            ['fundo', 'Cenário'],
                           ].map(([valor, texto]) => (
-                            <TouchableOpacity key={valor} disabled={salvando} onPress={() => setRascunho(prev => ({ ...prev, [chave]: valor }))} style={[styles.booleanOption, rascunho[chave] === valor && styles.booleanOptionActive]}>
+                            <TouchableOpacity key={valor} disabled={salvando} onPress={() => {
+                              setRascunho(prev => ({ ...prev, [chave]: valor }))
+                              setErrosCampos(prev => ({ ...prev, [chave]: '' }))
+                            }} style={[styles.booleanOption, rascunho[chave] === valor && styles.booleanOptionActive]}>
                               <Text style={[styles.booleanText, rascunho[chave] === valor && styles.booleanTextActive]}>{texto}</Text>
                             </TouchableOpacity>
                           ))}
@@ -275,7 +299,10 @@ export default function AdminDataManager({ visible, onClose }) {
                         <TextInput
                           style={[styles.input, (chave === 'id' || salvando) && styles.inputDisabled, (chave === 'descricao' || chave === 'icone') && styles.multilineInput]}
                           value={rascunho[chave] ?? ''}
-                          onChangeText={valor => setRascunho(prev => ({ ...prev, [chave]: valor }))}
+                          onChangeText={valor => {
+                            setRascunho(prev => ({ ...prev, [chave]: valor }))
+                            setErrosCampos(prev => ({ ...prev, [chave]: '' }))
+                          }}
                           editable={chave !== 'id' && !salvando}
                           selectTextOnFocus={chave !== 'id'}
                           multiline={chave === 'descricao' || chave === 'icone' || (original !== null && typeof original === 'object')}
@@ -284,6 +311,7 @@ export default function AdminDataManager({ visible, onClose }) {
                           secureTextEntry={chave === 'senha'}
                         />
                       )}
+                      {!!errosCampos[chave] && <Text style={styles.error}>{errosCampos[chave]}</Text>}
                     </View>
                   )
                 })}

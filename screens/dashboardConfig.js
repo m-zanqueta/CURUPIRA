@@ -4,9 +4,8 @@ import { colors } from '../theme';
 export const NAV = [
   { id: 'overview', label: 'Visão Geral', icon: '📊' },
   { id: 'turmas', label: 'Turmas', icon: '👥' },
-  { id: 'missoes', label: 'Missões', icon: '🏆' },
+  { id: 'missoes', label: 'Tarefas', icon: '🏆' },
   { id: 'relatorio', label: 'Relatórios', icon: '📈' },
-  { id: 'conquistas', label: 'Conquistas', icon: '🎖️' },
 ];
 
 export const CORES = [colors.green, colors.purple, colors.yellow, '#e74c3c', '#3498db', '#e67e22'];
