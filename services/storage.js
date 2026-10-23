@@ -84,6 +84,40 @@ export async function excluirDadoAdmin(tabela, id) {
   if (!data) throw new Error('Nenhum registro foi excluído. Confira se ele ainda existe e se as políticas RLS permitem a exclusão.')
 }
 
+export async function listarTarefasAdmin() {
+  const { data, error } = await supabase.from('missoes').select('*').order('id', { ascending: false })
+  if (error) throw error
+  return data || []
+}
+
+export async function salvarTarefaAdmin(tarefa) {
+  const etapas = (tarefa.etapas || []).map((etapa, index) => ({
+    titulo: String(etapa.titulo || '').trim(),
+    xp: Number(etapa.xp),
+    ordem: index + 1,
+  }))
+  const registro = {
+    nome: String(tarefa.nome || '').trim(),
+    descricao: String(tarefa.descricao || '').trim(),
+    etapas,
+    moedas: Number(tarefa.moedas) || 0,
+    // As recompensas são lançadas etapa por etapa pelo banco; a aprovação final
+    // da tarefa não deve creditar o total novamente.
+    xp: 0,
+    dificuldade: 'media',
+    icone: tarefa.icone,
+    ativa: tarefa.ativa ?? true,
+    'professorId': null,
+    'turmaId': null,
+  }
+  const query = tarefa.id
+    ? supabase.from('missoes').update(registro).eq('id', tarefa.id)
+    : supabase.from('missoes').insert([registro])
+  const { data, error } = await query.select().single()
+  if (error) throw error
+  return data
+}
+
 // ── Init ─────────────────────────────────────────────────
 
 // Como os dados agora são reais e estão na nuvem, não precisamos mais 
@@ -96,13 +130,10 @@ export async function inicializarProfessores() {
 
 export async function buscarProfessor(emailDigitado, senhaDigitada) {
   try {
-    const { data, error } = await supabase
-      .from('professores')
-      .select('*')
-      .eq('email', emailDigitado.trim().toLowerCase())
-      .eq('senha', senhaDigitada)
-      .maybeSingle()
-
+    const { data, error } = await supabase.rpc('login_professor', {
+      p_email: emailDigitado.trim().toLowerCase(),
+      p_senha: senhaDigitada,
+    })
     if (error) throw error
     return data
   } catch (error) {
@@ -405,10 +436,34 @@ export async function removerTurmaStorage(id, professorId) {
 
 export async function listarMissoes(professorId, incluirTodas = false) {
   if (!professorId) return [];
-  let consultaMissoes = supabase.from('missoes').select('*');
-  if (!incluirTodas) consultaMissoes = consultaMissoes.eq('professorId', professorId);
-  const { data, error } = await consultaMissoes.order('id', { ascending: false });
-  if (error) throw error;
+  let idsTarefasVisiveis = null
+  if (!incluirTodas) {
+    const { data: minhasTurmas, error: turmasError } = await supabase.from('turmas').select('id').eq('professor_id', professorId)
+    if (turmasError) throw turmasError
+    const idsTurmas = (minhasTurmas || []).map(t => t.id)
+    const { data: vinculosProfessor, error: vinculosProfessorError } = idsTurmas.length
+      ? await supabase.from('missoes_turmas').select('missao_id').in('turma_id', idsTurmas)
+      : { data: [], error: null }
+    if (vinculosProfessorError) throw vinculosProfessorError
+    idsTarefasVisiveis = [...new Set((vinculosProfessor || []).map(v => String(v.missao_id)))]
+  }
+  let consultaMissoes = supabase.from('missoes').select('*')
+  let data
+  if (!incluirTodas) {
+    const { data: minhasTarefas, error: minhasTarefasError } = await consultaMissoes.eq('professorId', professorId).order('id', { ascending: false })
+    if (minhasTarefasError) throw minhasTarefasError
+    const idsExistentes = new Set((minhasTarefas || []).map(m => String(m.id)))
+    const idsExtras = (idsTarefasVisiveis || []).filter(id => !idsExistentes.has(id))
+    const { data: tarefasGlobais, error: tarefasError } = idsExtras.length
+      ? await supabase.from('missoes').select('*').in('id', idsExtras)
+      : { data: [], error: null }
+    if (tarefasError) throw tarefasError
+    data = [...(minhasTarefas || []), ...(tarefasGlobais || [])].sort((a, b) => Number(b.id) - Number(a.id))
+  } else {
+    const { data: todas, error } = await consultaMissoes.order('id', { ascending: false })
+    if (error) throw error
+    data = todas
+  }
   const ids = (data || []).map(m => m.id);
   const { data: vinculos, error: vinculosError } = ids.length
     ? await supabase.from('missoes_turmas').select('missao_id, turma_id, ativa').in('missao_id', ids)
@@ -460,27 +515,25 @@ export async function definirTurmasMissao(id, professorId, turmasIds) {
   if (error) throw error;
 }
 
+export async function atribuirTarefaGlobal(missaoId, turmaId) {
+  const { error } = await supabase.from('missoes_turmas').insert([{ missao_id: missaoId, turma_id: turmaId, ativa: true }])
+  if (error && error.code !== '23505') throw error
+}
+
 export async function definirAtivaMissaoTurma(missaoId, professorId, turmaId, ativa) {
-  const { error } = await supabase.rpc('definir_ativa_missao_turma', {
-    p_missao_id: missaoId,
-    p_professor_id: professorId,
-    p_turma_id: turmaId,
-    p_ativa: ativa,
-  });
+  const { error } = await supabase.from('missoes_turmas').update({ ativa }).eq('missao_id', missaoId).eq('turma_id', turmaId)
   if (error) throw error;
 }
 
 export async function removerMissaoDaTurma(missaoId, professorId, turmaId) {
-  const { error } = await supabase.rpc('remover_missao_da_turma', {
-    p_missao_id: missaoId,
-    p_professor_id: professorId,
-    p_turma_id: turmaId,
-  });
-  if (error) throw error;
+  const { error: progressoError } = await supabase.from('alunos_missoes').delete().eq('missao_id', missaoId).eq('turma_id', turmaId)
+  if (progressoError) throw progressoError
+  const { error } = await supabase.from('missoes_turmas').delete().eq('missao_id', missaoId).eq('turma_id', turmaId)
+  if (error) throw error
 }
 
 export async function listarStatusMissoes() {
-  const { data, error } = await supabase.from('alunos_missoes').select('aluno_id, missao_id, status');
+  const { data, error } = await supabase.from('alunos_missoes').select('aluno_id, missao_id, status, etapa_atual');
   if (error) throw error;
   return data || [];
 }
@@ -573,18 +626,17 @@ export async function salvarUsuario(dados) {
         email: dados.email.toLowerCase().trim(),
         senha: dados.senha,
         turmaId: null, // Alunos novos começam sem turma
-        xp: 0
         // 'initials' removido daqui
       }])
       .select()
-      .single();
+      .single()
 
     if (error) {
       console.error('Erro no Supabase ao criar perfil:', error.message);
       return null;
     }
     
-    return data;
+    return data || { email: dados.email.trim().toLowerCase() };
   } catch (error) {
     console.error('Erro inesperado ao criar perfil:', error);
     return null;

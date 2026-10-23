@@ -5,6 +5,7 @@ import {
 } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import AdminDataManager from '../components/AdminDataManager'
+import AdminTarefasManager from '../components/AdminTarefasManager'
 import { colors, fonts } from '../theme'
 import { salvarAcessorioAdmin, salvarIconeMissao, salvarPetAdmin, salvarProfessor } from '../services/storage'
 
@@ -52,6 +53,7 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
   const [salvando, setSalvando] = useState(false)
   const [mensagem, setMensagem] = useState('')
   const [alterarDadosVisivel, setAlterarDadosVisivel] = useState(false)
+  const [tarefasVisivel, setTarefasVisivel] = useState(false)
 
   function abrirFormulario(tipo) {
     setDados({ ...DADOS_INICIAIS[tipo] })
@@ -146,6 +148,7 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
           <AdminAction icon="🐾" title="Adicionar PET" description="Cadastre uma imagem PET disponível para uma turma." onPress={() => abrirFormulario('pet')} />
           <AdminAction icon="👩‍🏫" title="Adicionar professor" description="Crie um novo acesso para a área do professor." onPress={() => abrirFormulario('professor')} />
           <AdminAction icon="🖼️" title="Adicionar ícone missão" description="Inclua uma imagem no catálogo de ícones das missões." onPress={() => abrirFormulario('icone')} />
+          <AdminAction icon="🧭" title="Gerenciar tarefas" description="Crie e edite tarefas, etapas e XP de cada etapa." onPress={() => setTarefasVisivel(true)} />
           <AdminAction icon="🛍️" title="Adicionar item à loja" description="Cadastre acessórios com imagem e preço em moedas." onPress={() => abrirFormulario('acessorio')} />
           <AdminAction icon="📝" title="Alterar dados" description="Consulte, edite e exclua professores, alunos, PETs, ícones e itens da loja." onPress={() => setAlterarDadosVisivel(true)} />
         </View>
@@ -226,6 +229,7 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
       </Modal>
 
       <AdminDataManager visible={alterarDadosVisivel} onClose={() => setAlterarDadosVisivel(false)} />
+      <AdminTarefasManager visible={tarefasVisivel} onClose={() => setTarefasVisivel(false)} />
     </SafeAreaView>
   )
 }

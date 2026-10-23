@@ -8,7 +8,9 @@ import {
   Text, ActivityIndicator, Surface, ProgressBar, Chip,
 } from 'react-native-paper'
 import { colors, fonts } from '../theme'
-import { listarItensComprados, listarAcessoriosLoja, listarEquipados, atualizarEquipado } from '../services/storage'
+import { listarItensComprados, listarAcessoriosLoja } from '../services/storage'
+import IconeUI, { IconeAcessorio } from '../components/IconeUI'
+import TextoContorno from '../components/TextoContorno'
 
 const WIN      = Dimensions.get('window')
 const W        = Math.min(WIN.width, 480)
@@ -124,6 +126,13 @@ const EMOCOES = {
   triste:   { label: 'Triste',    vel: 2500, amp: 2,  escala: 1.01 },
 }
 
+const EMOJI_PARA_EMOCAO = { '🤩':'euforico', '😄':'feliz', '😐':'normal', '😴':'dormindo', '😢':'triste' }
+function resolverEmocao(v) {
+  const chave = EMOJI_PARA_EMOCAO[v] || v
+  return EMOCOES[chave] ? chave : 'normal'
+}
+
+
 function getEstagio(xp) {
   let idx = 0
   ESTAGIOS.forEach((e, i) => { if (xp >= e.xpMin) idx = i })
@@ -134,16 +143,23 @@ function getEstagio(xp) {
 function TelaSemPet({ onLogout }) {
   return (
     <View style={se.root}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="light-content" backgroundColor={colors.green} />
+
+      <View style={se.topo}>
+        <Image source={require('../assets/logo.png')} style={se.logo} resizeMode="contain" />
+        <Text style={se.appNome}>CURUPIRA</Text>
+        <Text style={se.tagline}>Atividades extracurriculares gamificadas</Text>
+      </View>
+
       <View style={se.card}>
-        <Text style={se.titulo}>Pet não encontrado</Text>
-        <Text style={se.msg}>
-          Seu pet ainda não foi configurado.{'\n\n'}
-          Fale com seu professor para que ele atribua sua turma e libere seu pet!
-        </Text>
-        <View style={se.dica}>
-          <Text style={se.dicaTxt}>🙋 Fale com seu professor</Text>
+        <View style={se.iconeWrap}>
+          <Text style={se.icone}>🙋</Text>
         </View>
+        <Text style={se.titulo}>Pet não encontrado</Text>
+        <Text style={se.sub}>
+          Seu pet ainda não foi configurado.{'\n'}
+          Fale com seu professor para liberar o seu pet!
+        </Text>
         <TouchableOpacity style={se.btn} onPress={onLogout} activeOpacity={0.85}>
           <Text style={se.btnTxt}>Voltar ao Login</Text>
         </TouchableOpacity>
@@ -153,14 +169,18 @@ function TelaSemPet({ onLogout }) {
 }
 
 const se = StyleSheet.create({
-  root:    { flex:1, backgroundColor: colors.dark, alignItems:'center', justifyContent:'center', padding:28 },
-  card:    { width:'100%', backgroundColor:'#111', borderRadius:24, padding:28, alignItems:'center', gap:16, borderWidth:1, borderColor:'rgba(255,255,255,0.08)' },
-  titulo:  { fontSize:22, fontFamily:fonts.extrabold, color:colors.cream, textAlign:'center' },
-  msg:     { fontSize:14, fontFamily:fonts.regular, color:'rgba(245,244,217,0.6)', textAlign:'center', lineHeight:22 },
-  dica:    { backgroundColor:colors.green+'22', borderRadius:12, padding:14, borderWidth:1, borderColor:colors.green+'44', width:'100%', alignItems:'center' },
-  dicaTxt: { fontSize:14, fontFamily:fonts.bold, color:colors.green },
-  btn:     { backgroundColor:colors.green, borderRadius:14, paddingVertical:16, paddingHorizontal:40, marginTop:8 },
-  btnTxt:  { fontSize:15, fontFamily:fonts.bold, color:'#fff' },
+  root:      { flex:1, width:'100%', backgroundColor: colors.green, overflow:'hidden' },
+  topo:      { alignItems:'center', paddingTop:60, paddingBottom:28, gap:8 },
+  logo:      { width:80, height:80, borderRadius:40 },
+  appNome:   { fontSize:24, fontFamily:fonts.extrabold, color:'#fff', letterSpacing:3 },
+  tagline:   { fontSize:12, fontFamily:fonts.regular, color:'rgba(255,255,255,0.7)', textAlign:'center' },
+  card:      { flex:1, backgroundColor:'#fff', borderTopLeftRadius:32, borderTopRightRadius:32, paddingHorizontal:24, paddingTop:32, paddingBottom:48, alignItems:'center' },
+  iconeWrap: { width:72, height:72, borderRadius:36, backgroundColor:'#f0fff4', borderWidth:2, borderColor:colors.green+'40', alignItems:'center', justifyContent:'center', marginBottom:16 },
+  icone:     { fontSize:34 },
+  titulo:    { fontSize:22, fontFamily:fonts.extrabold, color:'#111', textAlign:'center', marginBottom:8 },
+  sub:       { fontSize:14, fontFamily:fonts.regular, color:'#666', textAlign:'center', lineHeight:22, marginBottom:28 },
+  btn:       { width:'100%', maxWidth:400, backgroundColor:colors.green, borderRadius:14, paddingVertical:18, alignItems:'center', elevation:4, shadowColor:colors.green, shadowOffset:{width:0,height:4}, shadowOpacity:0.3, shadowRadius:8 },
+  btnTxt:    { fontSize:16, fontFamily:fonts.bold, color:'#fff' },
 })
 
 // Partícula
@@ -182,28 +202,30 @@ function Particula({ x, y, cor, onDone }) {
   )
 }
 
-// Botão de cosmético — circular, mostra imagem quando equipado
-function BotaoCosmético({ label, cor, iconeVazio, itemEquipado, onPress }) {
-  const pulsar = useRef(new Animated.Value(1)).current
-  useEffect(() => {
-    if (!itemEquipado) return
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(pulsar, { toValue:1.1, duration:600, useNativeDriver:true }),
-      Animated.timing(pulsar, { toValue:1,   duration:600, useNativeDriver:true }),
-    ]))
-    loop.start()
-    return () => loop.stop()
-  }, [itemEquipado])
+// Botão "gordinho" 3D: face colorida, brilho em cima e base mais escura que afunda ao tocar
+function BotaoJogo({ label, slotIcone, cor, escura, itemEquipado, onPress }) {
+  const [apertado, setApertado] = useState(false)
+  const equipado = !!itemEquipado
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={s.btnCosmWrap}>
-      <Animated.View style={[s.btnCosm, { borderColor: cor, backgroundColor: cor+'20' }, { transform:[{scale:pulsar}] }]}>
-        {itemEquipado?.imagem
-          ? <Image source={{ uri: itemEquipado.imagem }} style={s.btnCosmImg} resizeMode="contain" />
-          : <Text style={s.btnCosmIcone}>{iconeVazio}</Text>
-        }
-        {itemEquipado && <View style={[s.btnCosmDot, { backgroundColor: cor }]} />}
-      </Animated.View>
-      <Text style={[s.btnCosmLabel, { color: cor }]}>{label}</Text>
+    <TouchableOpacity
+      activeOpacity={1}
+      onPress={onPress}
+      onPressIn={() => setApertado(true)}
+      onPressOut={() => setApertado(false)}
+      style={s.gBtnWrap}
+    >
+      <View style={[s.gBtnLip, { backgroundColor:escura, paddingBottom: apertado ? 2 : 7, marginTop: apertado ? 5 : 0 }]}>
+        <View style={[s.gBtnFace, { backgroundColor:cor }]}>
+          <View style={s.gBtnShine} />
+          {itemEquipado?.imagem
+            ? <Image source={{ uri:itemEquipado.imagem }} style={s.gBtnImg} resizeMode="contain" />
+            : <IconeAcessorio slot={slotIcone} size={48} />}
+        </View>
+        {equipado && (
+          <View style={s.gBtnBadge}><Text style={s.gBtnBadgeTxt}>✓</Text></View>
+        )}
+      </View>
+      <TextoContorno size={13}>{label}</TextoContorno>
     </TouchableOpacity>
   )
 }
@@ -269,8 +291,6 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
   const estagio   = ESTAGIOS[estagioI]
   const proxEst   = ESTAGIOS[estagioI + 1]
   const xpPct     = proxEst ? Math.min(1, (xp - estagio.xpMin) / (proxEst.xpMin - estagio.xpMin)) : 1
-
-  if (!cfg || !turma?.pet) return <TelaSemPet onLogout={onLogout} />
 
   const [chapeu,     setChapeu]     = useState(null)
   const [colar,      setColar]      = useState(null)
@@ -401,6 +421,7 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
   const colarStyle  = { position:'absolute', width:PET_SIZE*cfg.colar.w,  height:PET_SIZE*cfg.colar.w*0.7,  top:PET_SIZE*cfg.colar.top,  left:PET_SIZE*cfg.colar.left,  zIndex:10 }
 
   return (
+    <View style={s.telaExterna}>
     <View style={s.root}>
       <StatusBar barStyle="light-content" />
 
@@ -421,22 +442,20 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
             <Text style={s.btnVoltarTxt}>←</Text>
           </TouchableOpacity>
           <View style={s.headerCenter}>
-            <Text style={s.headerNome}>{turma?.nome || 'Meu Pet'}</Text>
-            <Chip
-              compact
-              style={[s.estagioChip, { borderColor:cfg.cor+'50', backgroundColor:cfg.cor+'18' }]}
-              textStyle={[s.estagioTxt, { color:cfg.cor }]}
-            >
-              {estagio.label}
-            </Chip>
+            <View style={s.placaNome}>
+              <Text style={s.placaTurma} numberOfLines={1} adjustsFontSizeToFit>{turma?.nome || 'Meu Pet'}</Text>
+              {turma?.petNome ? <Text style={s.placaPet} numberOfLines={1} adjustsFontSizeToFit>{turma.petNome}</Text> : null}
+            </View>
+            <View style={s.chipsRow}>
+              <View style={[s.pill, { backgroundColor:'#FFC107' }]}>
+                <Text style={s.pillTxt}>{estagio.label}</Text>
+              </View>
+              <View style={[s.pill, { backgroundColor:'#FFFFFF' }]}>
+                <Text style={s.pillTxt}>{emocao.label}</Text>
+              </View>
+            </View>
           </View>
-          <Chip
-            compact
-            style={[s.emocaoChip, { backgroundColor:'rgba(0,0,0,0.45)' }]}
-            textStyle={[s.emocaoTxt, { color:cfg.cor }]}
-          >
-            {emocao.label}
-          </Chip>
+          <View style={{ width:48 }} />
         </View>
 
         {/* Arena */}
@@ -482,32 +501,37 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
           }]} />
         </View>
 
-        {/* XP */}
-        <Surface style={s.xpCard} elevation={3}>
-          <View style={s.xpRow}>
-            <Text style={s.xpLabel}>{xp.toLocaleString('pt-BR')} XP</Text>
-            {proxEst
-              ? <Text style={s.xpFaltam}>faltam {(proxEst.xpMin - xp).toLocaleString()} para {proxEst.label}</Text>
-              : <Text style={[s.xpFaltam, { color:cfg.cor }]}>Nível máximo!</Text>
-            }
+        {/* XP — barra estilo jogo */}
+        <View style={s.xpWrap}>
+          <View style={s.xpTrack}>
+            {xpPct > 0 && (
+              <View style={[s.xpFill, { width:`${Math.max(xpPct*100, 8)}%` }]}>
+                <View style={s.xpGloss} />
+              </View>
+            )}
+            <View style={s.xpTextoWrap} pointerEvents="none">
+              <TextoContorno size={14}>
+                {proxEst ? `${xp.toLocaleString('pt-BR')} / ${proxEst.xpMin.toLocaleString('pt-BR')} XP` : 'NÍVEL MÁXIMO!'}
+              </TextoContorno>
+            </View>
           </View>
-          <ProgressBar progress={xpPct} color={cfg.cor} style={s.progressBar} />
-        </Surface>
+          <View style={s.xpBadge}><IconeUI nome="xp" size={26} /></View>
+          {proxEst && (
+            <View style={s.xpProx}>
+              <TextoContorno size={12}>{`Faltam ${(proxEst.xpMin - xp).toLocaleString('pt-BR')} para ${proxEst.label}`}</TextoContorno>
+            </View>
+          )}
+        </View>
 
         {/* Barra de ações */}
-        <Surface style={s.acoes} elevation={4}>
-          <BotaoCosmético label="Chapéu"  cor={colors.green}  iconeVazio="🪖" itemEquipado={chapeu} onPress={() => setModal('chapeus')} />
-          <BotaoCosmético label="Cenário" cor={colors.yellow} iconeVazio="🌳" itemEquipado={cenario} onPress={() => setModal('cenarios')} />
-          <BotaoCosmético label="Colar"   cor={colors.purple} iconeVazio="📿" itemEquipado={colar}  onPress={() => setModal('colares')} />
+        <View style={s.acoes}>
+          <BotaoJogo label="Chapéu"  slotIcone="chapeu" cor="#4CD137" escura="#2E8B1E" itemEquipado={chapeu}  onPress={() => setModal('chapeus')} />
+          <BotaoJogo label="Cenário" slotIcone="fundo" cor="#29B6F6" escura="#0B6FA8" itemEquipado={cenario} onPress={() => setModal('cenarios')} />
+          <BotaoJogo label="Colar"   slotIcone="colar" cor="#B15CFF" escura="#6A1FB5" itemEquipado={colar}   onPress={() => setModal('colares')} />
           {onLoja && (
-            <TouchableOpacity onPress={onLoja} activeOpacity={0.8} style={s.btnCosmWrap}>
-              <View style={[s.btnCosm, { borderColor:colors.yellow, backgroundColor:colors.yellow+'20' }]}>
-                <Text style={s.btnCosmIcone}>🛒</Text>
-              </View>
-              <Text style={[s.btnCosmLabel, { color:colors.yellow }]}>Loja</Text>
-            </TouchableOpacity>
+            <BotaoJogo label="Loja" cor="#FFC928" escura="#C47F00" onPress={onLoja} />
           )}
-        </Surface>
+        </View>
 
       </SafeAreaView>
 
@@ -527,12 +551,19 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
         itens={cenariosDispo} selecionado={cenario} cor={colors.yellow}
         carregando={carregando} onSel={selecionarCenario} onFechar={() => setModal(null)}
       />
+      <ModalItens
+        visible={modal==='cenarios'} titulo="Cenários"
+        itens={cenariosDispo} selecionado={cenario} cor={colors.yellow}
+        carregando={carregando} onSel={setCenario} onFechar={() => setModal(null)}
+      />
+    </View>
     </View>
   )
 }
 
 const s = StyleSheet.create({
-  root:             { flex:1 },
+  telaExterna:      { flex:1, alignItems:'center', backgroundColor:'#000' },
+  root:             { flex:1, width:'100%', maxWidth:480, overflow:'hidden' },
   safe:             { flex:1 },
 
   // Fundo
@@ -540,10 +571,17 @@ const s = StyleSheet.create({
 
   // Header
   header:           { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:14, paddingTop:Platform.OS==='android'?12:4, paddingBottom:8 },
-  btnVoltar:        { width:40, height:40, borderRadius:20, backgroundColor:'rgba(0,0,0,0.5)', borderWidth:1, borderColor:'rgba(255,255,255,0.12)', alignItems:'center', justifyContent:'center' },
-  btnVoltarTxt:     { fontSize:20, color:'#fff' },
-  headerCenter:     { alignItems:'center', gap:4 },
+  btnVoltar:        { width:48, height:48, borderRadius:24, backgroundColor:'#FFFFFF', borderWidth:3, borderColor:'#2E7D32', alignItems:'center', justifyContent:'center', elevation:4 },
+  btnVoltarTxt:     { fontSize:26, fontFamily:fonts.extrabold, color:'#1B5E20', marginTop:-2 },
+  headerCenter:     { flex:1, alignItems:'center', gap:8, paddingHorizontal:8 },
+  placaNome:        { alignItems:'center', maxWidth:'100%', backgroundColor:'#FFF8E1', borderWidth:3, borderColor:'#2E7D32', borderRadius:20, paddingHorizontal:20, paddingVertical:8, elevation:4 },
+  placaTurma:       { fontSize:15, fontFamily:fonts.bold, color:'#5D4037', letterSpacing:1 },
+  placaPet:         { fontSize:30, fontFamily:fonts.extrabold, color:'#1B5E20' },
+  chipsRow:         { flexDirection:'row', flexWrap:'wrap', justifyContent:'center', gap:6 },
+  pill:             { paddingHorizontal:12, paddingVertical:6, borderRadius:20, borderWidth:2, borderColor:'#3E2723', elevation:3 },
+  pillTxt:          { fontSize:14, fontFamily:fonts.bold, color:'#3E2723' },
   headerNome:       { fontSize:16, fontFamily:fonts.extrabold, color:colors.cream, textShadowColor:'rgba(0,0,0,0.8)', textShadowOffset:{width:0,height:2}, textShadowRadius:6 },
+  petNomeHeader:    { fontSize:13, fontFamily:fonts.semibold, color:'rgba(245,244,217,0.75)', textShadowColor:'rgba(0,0,0,0.8)', textShadowOffset:{width:0,height:1}, textShadowRadius:4 },
   estagioChip:      { borderWidth:1.5 },
   estagioTxt:       { fontSize:11, fontFamily:fonts.bold },
   emocaoChip:       { borderRadius:14 },
@@ -563,13 +601,32 @@ const s = StyleSheet.create({
   progressBar:      { height:10, borderRadius:5, backgroundColor:'rgba(255,255,255,0.08)' },
 
   // Barra de ações
-  acoes:            { flexDirection:'row', justifyContent:'space-around', alignItems:'center', paddingHorizontal:8, paddingVertical:10, backgroundColor:'rgba(5,10,5,0.9)', borderTopWidth:1, borderTopColor:'rgba(255,255,255,0.05)' },
+  acoes:            { flexDirection:'row', justifyContent:'space-around', alignItems:'flex-start', paddingHorizontal:8, paddingTop:14, paddingBottom:12, backgroundColor:'#2A1A4A', borderTopWidth:5, borderTopColor:'#FFC928' },
+  gBtnWrap:         { alignItems:'center', gap:6 },
+  gBtnLip:          { borderRadius:20, borderWidth:3.5, borderColor:'#1B1030', paddingBottom:7, position:'relative' },
+  gBtnFace:         { width:72, height:68, borderRadius:15, alignItems:'center', justifyContent:'center', overflow:'hidden' },
+  gBtnShine:        { position:'absolute', top:0, left:0, right:0, height:'45%', backgroundColor:'rgba(255,255,255,0.32)' },
+  gBtnIcone:        { fontSize:36 },
+  gBtnImg:          { width:52, height:52 },
+  gBtnBadge:        { position:'absolute', top:-10, right:-10, width:26, height:26, borderRadius:13, backgroundColor:'#FF3B5C', borderWidth:3, borderColor:'#1B1030', alignItems:'center', justifyContent:'center' },
+  gBtnBadgeTxt:     { fontSize:13, color:'#fff', fontFamily:fonts.extrabold },
+  xpWrap:           { marginHorizontal:22, marginTop:6, marginBottom:12 },
+  xpTrack:          { height:30, borderRadius:15, backgroundColor:'#1B1030', borderWidth:3.5, borderColor:'#1B1030', overflow:'hidden', justifyContent:'center', marginLeft:14 },
+  xpFill:           { position:'absolute', left:0, top:0, bottom:0, borderRadius:12, backgroundColor:'#7CE82B', borderBottomWidth:4, borderBottomColor:'#3C9A00', overflow:'hidden' },
+  xpGloss:          { position:'absolute', top:0, left:0, right:0, height:'45%', backgroundColor:'rgba(255,255,255,0.4)' },
+  xpTextoWrap:      { ...StyleSheet.absoluteFillObject, alignItems:'center', justifyContent:'center' },
+  xpBadge:          { position:'absolute', left:-6, top:-7, width:42, height:42, borderRadius:21, backgroundColor:'#8E5CF0', borderWidth:3.5, borderColor:'#1B1030', alignItems:'center', justifyContent:'center' },
+  xpBadgeTxt:       { fontSize:20 },
+  xpProx:           { alignItems:'center', marginTop:8 },
   btnCosmWrap:      { alignItems:'center', gap:5 },
-  btnCosm:          { width:60, height:60, borderRadius:30, borderWidth:2.5, alignItems:'center', justifyContent:'center', position:'relative' },
-  btnCosmImg:       { width:38, height:38 },
-  btnCosmIcone:     { fontSize:28 },
-  btnCosmDot:       { position:'absolute', top:2, right:2, width:14, height:14, borderRadius:7, borderWidth:2, borderColor:'rgba(5,10,5,0.9)' },
-  btnCosmLabel:     { fontSize:10, fontFamily:fonts.bold, letterSpacing:0.3 },
+  btnCosmSombra:    { borderRadius:14, shadowColor:'#000', shadowOffset:{width:0,height:4}, shadowOpacity:0.6, shadowRadius:6, elevation:8 },
+  btnCosmBorda:     { width:68, height:72, borderRadius:14, borderWidth:3, alignItems:'center', justifyContent:'center', position:'relative', overflow:'hidden' },
+  btnCosmShine:     { position:'absolute', top:0, left:0, right:0, height:'45%', backgroundColor:'rgba(255,255,255,0.12)' },
+  btnCosmInner:     { alignItems:'center', justifyContent:'center', width:'100%', height:'100%' },
+  btnCosmImg:       { width:44, height:44 },
+  btnCosmBadge:     { position:'absolute', top:2, right:2, width:18, height:18, borderRadius:9, alignItems:'center', justifyContent:'center', borderWidth:2, borderColor:'rgba(0,0,0,0.5)' },
+  btnCosmBadgeTxt:  { fontSize:9, color:'#fff', fontFamily:fonts.bold },
+  btnCosmLabel:     { fontSize:11, fontFamily:fonts.bold, letterSpacing:0.3 },
 
   // Modal
   modalBg:          { flex:1, backgroundColor:'rgba(0,0,0,0.88)', justifyContent:'flex-end', alignItems:'center' },
