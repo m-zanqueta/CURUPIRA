@@ -27,18 +27,13 @@ export default function LoginProfessor({ onLogin, onAdminLogin, onSouAluno }) {
       return
     }
     let coordenador = null
-    try {
-      coordenador = await buscarCoordenador(emailNormalizado, senha)
-    } catch (error) {
-      // Se a migração ainda não foi aplicada, mantém o login atual dos professores.
-      console.warn('Não foi possível consultar a tabela de coordenadores:', error.message)
-    }
+    try { coordenador = await buscarCoordenador(emailNormalizado, senha) }
+    catch (error) { console.warn('Não foi possível consultar a tabela de coordenadores:', error.message) }
     if (coordenador) {
       setErro('')
       onLogin(coordenador)
       return
     }
-
     const encontrado = await buscarProfessor(emailNormalizado, senha)
     if (!encontrado) {
       setErro('Usuário ou senha incorretos.')

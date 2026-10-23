@@ -29,6 +29,7 @@ const ROTULOS = {
   professor_id: 'ID do professor', professorId: 'ID do professor',
   cor: 'Cor', progresso: 'Progresso', ativo: 'Ativo', ativa: 'Ativa',
   slot: 'Tipo de acessório', imagem_path: 'Caminho da imagem', camada: 'Camada', preco: 'Preço em moedas',
+  moedas: 'Moedas',
 }
 
 function rotuloCampo(chave) {

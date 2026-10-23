@@ -18,22 +18,22 @@ export default function Login({ onLogin, onCriarPerfil, onSouProfessor }) {
   }
 
   async function handleLogin() {
-  if (!email || !senha) {
-    setErro('Preencha e-mail e senha para continuar.')
-    return
+    if (!email || !senha) {
+      setErro('Preencha e-mail e senha para continuar.')
+      return
+    }
+    if (!validarEmail(email)) {
+      setErro('Informe um e-mail válido.')
+      return
+    }
+    const encontrado = await buscarAluno(email.trim().toLowerCase(), senha)
+    if (!encontrado) {
+      setErro('E-mail ou senha incorretos.')
+      return
+    }
+    setErro('')
+    onLogin(encontrado)
   }
-  if (!validarEmail(email)) {
-    setErro('Informe um e-mail válido.')
-    return
-  }
-  const encontrado = await buscarAluno(email.trim().toLowerCase(), senha)
-  if (!encontrado) {
-    setErro('E-mail ou senha incorretos.')
-    return
-  }
-  setErro('')
-  onLogin(encontrado)
-}
 
   return (
     <KeyboardAvoidingView
