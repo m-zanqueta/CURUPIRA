@@ -3,6 +3,9 @@ import { supabase } from './supabase'
 
 const TABELAS_ADMIN = new Set(['professores', 'alunos', 'pets', 'icones_missoes', 'acessorios'])
 const CHAVE_SESSAO_APP = 'curupira_sessao_app'
+// Token de sessão do aluno (emitido por login_aluno no Supabase). Fica separado
+// do objeto de sessão para nunca ser copiado junto com os dados do aluno.
+const CHAVE_TOKEN_ALUNO = 'curupira_token_aluno'
 
 export async function salvarSessaoApp(sessao) {
   await AsyncStorage.setItem(CHAVE_SESSAO_APP, JSON.stringify(sessao))
@@ -20,6 +23,17 @@ export async function obterSessaoApp() {
 }
 
 export async function limparSessaoApp() {
+  // Revoga o token no servidor (best-effort, no máximo 3 s: logout offline não
+  // pode travar). Sem rede o token continua válido até expirar (30 dias) — risco
+  // residual documentado. O token NUNCA é logado.
+  const token = await obterTokenAluno()
+  if (token) {
+    await Promise.race([
+      supabase.rpc('logout_aluno', { p_token: token }).then(() => {}, () => {}),
+      new Promise(resolve => setTimeout(resolve, 3000)),
+    ])
+  }
+  await AsyncStorage.removeItem(CHAVE_TOKEN_ALUNO)
   await AsyncStorage.removeItem(CHAVE_SESSAO_APP)
 }
 
@@ -61,7 +75,12 @@ export async function excluirDadoAdmin(tabela, id) {
     .select('id')
     .maybeSingle()
 
-  if (error) throw error
+  if (error) {
+    if (error.code === '23503' && tabela === 'acessorios') {
+      throw new Error('Este item já foi comprado por alunos e não pode ser excluído (o histórico é preservado). Desative-o (ativo = false) para tirá-lo da loja.')
+    }
+    throw error
+  }
   if (!data) throw new Error('Nenhum registro foi excluído. Confira se ele ainda existe e se as políticas RLS permitem a exclusão.')
 }
 
@@ -493,14 +512,33 @@ export async function buscarAluno(email, senha) {
     return { id: 'loja', nome: 'Loja', email: 'loja@gmail.com', senha: 'loja123', turmaId: null, xp: 0, initials: 'LJ', cor: '#009D25' }
   }
 
-  // A partir daqui é busca real, direto na tabela "alunos" do Supabase.
+  // Login seguro: a senha é verificada no servidor (RPC login_aluno), que devolve
+  // um token de sessão. Se a migration ainda não foi aplicada no banco, o RPC não
+  // existe e caímos no login antigo (modo legado, inventário só local).
+  try {
+    const { data, error } = await supabase.rpc('login_aluno', { p_email: email.trim().toLowerCase(), p_senha: senha })
+    if (!error) {
+      if (!data) return null // e-mail ou senha incorretos
+      await salvarTokenAluno(data.token)
+      return data.aluno
+    }
+    // Só "função inexistente" (migration não aplicada) autoriza o modo legado. Qualquer outro erro
+    // (rede, 429, permissão/schema) é reportado — nada de cair para o login antigo às cegas.
+    if (!funcaoAusente(error)) throw erroNuvem(error)
+  } catch (error) {
+    if (error?.codigo) throw error
+    throw Object.assign(new Error('rede'), { codigo: 'rede' })
+  }
+
+  // ── Modo legado (RPCs ainda não aplicadas) ──
+  await AsyncStorage.removeItem(CHAVE_TOKEN_ALUNO)
   try {
     const { data, error } = await supabase
       .from('alunos')
       .select('*')
       .eq('email', email.trim().toLowerCase())
       .eq('senha', senha)
-      .maybeSingle() // 🟢 Troque .single() por .maybeSingle() aqui
+      .maybeSingle()
 
     if (error) throw error
     return data
@@ -510,16 +548,17 @@ export async function buscarAluno(email, senha) {
   }
 }
 
+// Só verifica se o e-mail já existe (CriarPerfil). Não traz a linha inteira: ela inclui a senha.
 export async function buscarUsuario(email) {
   try {
     const { data, error } = await supabase
       .from('alunos')
-      .select('*')
+      .select('id, email')
       .eq('email', email.trim().toLowerCase())
-      .single()
+      .limit(1)
 
     if (error) throw error
-    return data
+    return data?.[0] || null
   } catch (error) {
     return null
   }
@@ -596,13 +635,13 @@ function chaveComprados(alunoId) {
   return `itens_comprados_${alunoId}`
 }
 
-export async function listarItensComprados(alunoId) {
+async function listarItensCompradosLocal(alunoId) {
   const dados = await AsyncStorage.getItem(chaveComprados(alunoId))
   return dados ? JSON.parse(dados) : []
 }
 
-export async function comprarItem(alunoId, itemId) {
-  const itens = await listarItensComprados(alunoId)
+async function comprarItemLocal(alunoId, itemId) {
+  const itens = await listarItensCompradosLocal(alunoId)
   if (!itens.includes(itemId)) {
     itens.push(itemId)
     await AsyncStorage.setItem(chaveComprados(alunoId), JSON.stringify(itens))
@@ -638,7 +677,7 @@ function chaveEquipados(alunoId, petId) {
 // fundo = cenário (slot 'fundo' do catálogo de acessórios).
 const EQUIPADOS_PADRAO = { chapeu: null, colar: null, fundo: null }
 
-export async function listarEquipados(alunoId, petId) {
+async function listarEquipadosLocal(alunoId, petId) {
   const chave = chaveEquipados(alunoId, petId)
   if (!chave) return { ...EQUIPADOS_PADRAO }
   try {
@@ -659,7 +698,7 @@ export async function listarEquipados(alunoId, petId) {
 // os valores padrão, apagando os outros slots salvos).
 const filaEquipados = new Map()
 
-export function atualizarEquipado(alunoId, petId, slot, itemId) {
+function atualizarEquipadoLocal(alunoId, petId, slot, itemId) {
   const chave = chaveEquipados(alunoId, petId)
   if (!chave) return Promise.resolve() // sem aluno identificado — equipar fica só na sessão, não persiste
   const anterior = filaEquipados.get(chave) || Promise.resolve()
@@ -672,6 +711,290 @@ export function atualizarEquipado(alunoId, petId, slot, itemId) {
     return novos
   })
   filaEquipados.set(chave, proxima)
+  return proxima
+}
+
+// ── Persistência em nuvem: inventário, saldo e equipados por aluno ─────────
+//
+// Fonte da verdade = Supabase (tabelas alunos_itens / alunos_equipados, só
+// acessíveis por RPC — ver supabase/migrations/20261016_*.sql). A identidade vem
+// do TOKEN de sessão emitido por login_aluno; o app nunca envia "aluno_id".
+// Sem token (aluno do atalho 'loja', ou banco ainda sem a migration = modo
+// legado) tudo continua funcionando só com o armazenamento local de antes.
+//
+// Em modo nuvem NÃO há fallback silencioso para o local: falha de rede vira
+// erro (com .codigo = 'rede') para a tela tratar, senão os dispositivos
+// divergiriam sem ninguém perceber.
+
+async function obterTokenAluno() {
+  try { return await AsyncStorage.getItem(CHAVE_TOKEN_ALUNO) } catch { return null }
+}
+async function salvarTokenAluno(token) {
+  await AsyncStorage.setItem(CHAVE_TOKEN_ALUNO, token)
+}
+export async function temTokenAluno() {
+  return !!(await obterTokenAluno())
+}
+
+// Códigos de erro (e.codigo) que o app distingue:
+//   erros de regra do servidor (CODIGOS_NUVEM), 'sessao_invalida' (token ausente/expirado/revogado),
+//   'muitas_tentativas' (HTTP 429), 'rede' (sem resposta / erro transitório do gateway),
+//   'configuracao' (o servidor respondeu com erro de schema/permissão: migration incompleta, GRANT, RLS...),
+//   'migration_ausente' (as funções da migration não existem no banco).
+const CODIGOS_NUVEM = new Set([
+  'saldo_insuficiente', 'item_indisponivel', 'item_nao_comprado', 'sessao_invalida',
+  'muitas_tentativas', 'slot_invalido', 'slot_incompativel', 'pet_fora_da_turma_do_aluno',
+  'lista_grande_demais',
+])
+function erroNuvem(error) {
+  const msg = error?.message || ''
+  let codigo
+  if (CODIGOS_NUVEM.has(msg)) codigo = msg
+  else if (error?.code === 'PT401') codigo = 'sessao_invalida'
+  else if (error?.code === 'PT429') codigo = 'muitas_tentativas'
+  else if (funcaoAusente(error)) codigo = 'migration_ausente'
+  // O PostgREST devolveu um código SQL/PGRST (ex.: 42501 permissão, 42703 coluna, PGRST1xx/3xx):
+  // é configuração/segurança, não "internet fora" — não deve ser tratado como falha transitória.
+  else if (error?.code && !/^(08|57|53|PGRST00[0-3])/.test(String(error.code))) codigo = 'configuracao'
+  else codigo = 'rede'
+  const e = new Error(codigo)
+  e.codigo = codigo
+  e.detalhe = error?.code || null // só o código, nunca mensagem/credenciais
+  return e
+}
+// PostgREST responde PGRST202 (HTTP 404) quando a função RPC não existe no banco.
+function funcaoAusente(error) {
+  return error?.code === 'PGRST202' || error?.code === '42883' ||
+    /could not find the function/i.test(error?.message || '')
+}
+
+// Sessão inválida/expirada/revogada no servidor: o App registra aqui o que fazer
+// (limpar estado e voltar ao login).
+let ouvinteSessaoInvalida = null
+export function aoSessaoInvalida(fn) {
+  ouvinteSessaoInvalida = fn
+  return () => { if (ouvinteSessaoInvalida === fn) ouvinteSessaoInvalida = null }
+}
+
+async function rpcAluno(nome, args = {}) {
+  const token = await obterTokenAluno()
+  if (!token) throw Object.assign(new Error('sessao_invalida'), { codigo: 'sessao_invalida' })
+  const { data, error } = await supabase.rpc(nome, { p_token: token, ...args })
+  if (error) {
+    const e = erroNuvem(error)
+    // migration_ausente com token: a migration foi desfeita no banco; o token não vale mais.
+    if (e.codigo === 'sessao_invalida' || e.codigo === 'migration_ausente') {
+      await AsyncStorage.removeItem(CHAVE_TOKEN_ALUNO).catch(() => {})
+      ouvinteSessaoInvalida?.()
+    }
+    throw e
+  }
+  return data
+}
+
+async function usaNuvem(alunoId) {
+  return alunoId != null && alunoId !== 'loja' && await temTokenAluno()
+}
+
+// O banco já tem a migration? Sonda com um token falso:
+//   'disponivel'  = a função existe (respondeu PT401);
+//   'ausente'     = PGRST202/42883 (migration não aplicada => modo legado);
+//   'configuracao'= o servidor respondeu com erro de schema/permissão (NÃO cair em modo legado às cegas);
+//   'rede'        = sem resposta / erro transitório (não sei; tenta de novo na próxima vez).
+// Só 'disponivel' e 'ausente' ficam em cache.
+let sondaNuvem = null
+export function estadoNuvemServidor() {
+  if (!sondaNuvem) {
+    sondaNuvem = supabase.rpc('obter_estado_loja', { p_token: '0'.repeat(40) })
+      .then(({ error }) => {
+        if (!error) return 'disponivel'
+        const e = erroNuvem(error)
+        if (e.codigo === 'sessao_invalida') return 'disponivel'
+        if (e.codigo === 'migration_ausente') return 'ausente'
+        sondaNuvem = null
+        return e.codigo === 'configuracao' ? 'configuracao' : 'rede'
+      }, () => { sondaNuvem = null; return 'rede' })
+  }
+  return sondaNuvem
+}
+export async function nuvemDisponivel() {
+  return (await estadoNuvemServidor()) === 'disponivel'
+}
+
+// ── Migração do que já existe no dispositivo (localStorage/AsyncStorage) ──
+// Importa para a nuvem (importar_estado_local é idempotente e limitada pelo
+// saldo), RECONCILIA (cada item local precisa estar no inventário da nuvem ou
+// ter sido rejeitado com motivo) e só então move as chaves locais para
+// "backup_<chave>" (nunca apaga o backup) e grava a marca migrado_nuvem_<id>.
+// Qualquer falha antes disso deixa o local intacto e tenta de novo depois.
+const SLOTS_EQUIPAVEIS = ['chapeu', 'colar', 'fundo']
+function idsLocais(bruto) {
+  try {
+    const lista = JSON.parse(bruto || '[]')
+    if (!Array.isArray(lista)) return []
+    return [...new Set(lista.map(Number).filter(n => Number.isInteger(n) && n > 0))]
+  } catch { return [] }
+}
+
+async function migrarLocalParaNuvem(alunoId) {
+  const chaveMarca = `migrado_nuvem_${alunoId}`
+  if (await AsyncStorage.getItem(chaveMarca)) return
+
+  const brutoItens = await AsyncStorage.getItem(chaveComprados(alunoId))
+  const itens = idsLocais(brutoItens)
+  const prefixo = `equipados_${alunoId}_`
+  const chavesEq = (await AsyncStorage.getAllKeys()).filter(k => k.startsWith(prefixo))
+  const equipados = []
+  const chavesMigraveis = [] // só as de PET real; 'semturma' não tem pet na nuvem e fica como está
+  for (const chave of chavesEq) {
+    const petId = Number(chave.slice(prefixo.length)) // 'semturma' => NaN => ignorado
+    if (!Number.isInteger(petId)) continue
+    chavesMigraveis.push(chave)
+    let dados = {}
+    try { dados = JSON.parse(await AsyncStorage.getItem(chave) || '{}') } catch { /* ignora */ }
+    for (const slot of SLOTS_EQUIPAVEIS) {
+      const id = Number(dados?.[slot])
+      if (dados?.[slot] != null && Number.isInteger(id) && id > 0) equipados.push({ pet_id: petId, slot, acessorio_id: id })
+    }
+  }
+
+  const agora = new Date().toISOString()
+  if (!itens.length && !equipados.length && brutoItens == null && chavesMigraveis.length === 0) {
+    await AsyncStorage.setItem(chaveMarca, JSON.stringify({ em: agora, vazio: true }))
+    return
+  }
+
+  const resultado = await rpcAluno('importar_estado_local', { p_itens: itens, p_equipados: equipados })
+  const estado = await rpcAluno('obter_estado_loja')
+
+  const naNuvem = new Set((estado.comprados || []).map(Number))
+  const rejeitados = new Map((resultado.rejeitados || []).map(r => [Number(r.id), r.motivo]))
+  const naoConciliados = itens.filter(id => !naNuvem.has(id) && !rejeitados.has(id))
+  if (naoConciliados.length) {
+    throw Object.assign(new Error('Importação não conciliada'), { codigo: 'reconciliacao' })
+  }
+  const equipadosNuvem = new Set((estado.equipados || []).map(e => `${e.pet_id}:${e.slot}`))
+  const equipadosNaoMigrados = equipados.filter(e => !equipadosNuvem.has(`${e.pet_id}:${e.slot}`)).length
+
+  // Só aqui o local é substituído — e sempre com backup.
+  for (const chave of [chaveComprados(alunoId), ...chavesMigraveis]) {
+    const valor = await AsyncStorage.getItem(chave)
+    if (valor == null) continue
+    await AsyncStorage.setItem(`backup_${chave}`, valor)
+    await AsyncStorage.removeItem(chave)
+  }
+  await AsyncStorage.setItem(chaveMarca, JSON.stringify({
+    em: agora,
+    importados: resultado.importados || [],
+    rejeitados: resultado.rejeitados || [],
+    equipados_importados: resultado.equipados_importados || 0,
+    equipados_nao_migrados: equipadosNaoMigrados,
+  }))
+}
+
+const migracoes = new Map()
+const falhasMigracao = new Map() // alunoId -> { estado, codigo }
+// Nunca rejeita: se falhar, registra o MOTIVO (obterEstadoMigracao) e libera nova tentativa na próxima chamada.
+// Os dados locais só são movidos para backup depois da conciliação (ver migrarLocalParaNuvem).
+export function garantirMigracaoLocal(alunoId) {
+  const k = String(alunoId)
+  if (!migracoes.has(k)) {
+    migracoes.set(k, migrarLocalParaNuvem(alunoId).then(() => { falhasMigracao.delete(k) }).catch(e => {
+      migracoes.delete(k)
+      const codigo = e?.codigo || 'desconhecido'
+      const estado = codigo === 'rede' ? 'pendente_rede'
+        : codigo === 'sessao_invalida' ? 'pendente_sessao'
+        : (codigo === 'configuracao' || codigo === 'migration_ausente') ? 'pendente_configuracao'
+        : codigo === 'reconciliacao' ? 'pendente_reconciliacao'
+        : 'pendente'
+      falhasMigracao.set(k, { estado, codigo })
+      console.error('Migração do inventário local pendente:', estado, codigo)
+    }))
+  }
+  return migracoes.get(k)
+}
+
+// Resultado da migração deste dispositivo (itens rejeitados por saldo etc.), p/ aviso na UI.
+export async function obterResultadoMigracao(alunoId) {
+  try {
+    const bruto = await AsyncStorage.getItem(`migrado_nuvem_${alunoId}`)
+    return bruto ? JSON.parse(bruto) : null
+  } catch { return null }
+}
+
+// Estado explícito da migração local→nuvem deste aluno neste dispositivo:
+//   'concluida'                 importada e conciliada; nada pendente
+//   'concluida_com_pendencias'  conciliada, mas houve itens/equipados NÃO migrados (saldo, item desativado,
+//                               conflito com a nuvem): continuam em backup_<chave> neste dispositivo
+//   'pendente_rede' | 'pendente_sessao' | 'pendente_configuracao' | 'pendente_reconciliacao' | 'pendente'
+//                               a importação não foi confirmada; o local está INTACTO e será tentado de novo
+//   'nao_iniciada'              ainda não houve tentativa nesta execução
+export async function obterEstadoMigracao(alunoId) {
+  const marca = await obterResultadoMigracao(alunoId)
+  if (marca) {
+    const pend = (marca.rejeitados?.length || 0) + (marca.equipados_nao_migrados || 0)
+    return { estado: pend ? 'concluida_com_pendencias' : 'concluida', pendencias: pend, detalhe: marca }
+  }
+  const f = falhasMigracao.get(String(alunoId))
+  return f ? { estado: f.estado, codigo: f.codigo, pendencias: 0 } : { estado: 'nao_iniciada', pendencias: 0 }
+}
+
+async function estadoNuvem(alunoId) {
+  await garantirMigracaoLocal(alunoId)
+  return rpcAluno('obter_estado_loja')
+}
+
+// { nuvem, comprados:[ids], saldo } — saldo vem do servidor (null no modo local).
+export async function carregarEstadoLoja(alunoId) {
+  if (!(await usaNuvem(alunoId))) {
+    // 'servidor' diz à tela se este modo local é o legado esperado ('ausente') ou um estado a avisar
+    // (sessão sem token com a nuvem disponível/instável): nesse caso as compras NÃO estão sincronizadas.
+    const servidor = alunoId == null || alunoId === 'loja' ? 'ausente' : await estadoNuvemServidor()
+    return { nuvem: false, comprados: await listarItensCompradosLocal(alunoId), saldo: null, servidor }
+  }
+  const e = await estadoNuvem(alunoId)
+  return { nuvem: true, comprados: (e.comprados || []).map(Number), saldo: Number(e.saldo), migracao: await obterEstadoMigracao(alunoId) }
+}
+
+export async function listarItensComprados(alunoId) {
+  return (await carregarEstadoLoja(alunoId)).comprados
+}
+
+// Compra atômica no servidor. Recompra é idempotente (jaPossuia:true, sem cobrar).
+// Erros: .codigo = 'saldo_insuficiente' | 'item_indisponivel' | 'sessao_invalida' | 'rede'.
+export async function comprarItem(alunoId, itemId) {
+  if (!(await usaNuvem(alunoId))) {
+    await comprarItemLocal(alunoId, itemId)
+    return { saldo: null, jaPossuia: false }
+  }
+  await garantirMigracaoLocal(alunoId)
+  const r = await rpcAluno('comprar_acessorio', { p_acessorio_id: itemId })
+  return { saldo: Number(r.saldo), jaPossuia: !!r.ja_possuia }
+}
+
+export async function listarEquipados(alunoId, petId) {
+  if (petId == null || !(await usaNuvem(alunoId))) return listarEquipadosLocal(alunoId, petId)
+  const e = await estadoNuvem(alunoId)
+  const res = { ...EQUIPADOS_PADRAO }
+  for (const x of e.equipados || []) {
+    if (String(x.pet_id) === String(petId) && x.slot in res) res[x.slot] = Number(x.acessorio_id)
+  }
+  return res
+}
+
+// Escritas do mesmo aluno+pet entram numa fila: a troca rápida de acessórios
+// chega ao servidor na mesma ordem em que o usuário clicou.
+const filaNuvem = new Map()
+export function atualizarEquipado(alunoId, petId, slot, itemId) {
+  if (!alunoId) return Promise.resolve() // sem aluno identificado — só na sessão
+  const chave = `${alunoId}_${petId}`
+  const anterior = filaNuvem.get(chave) || Promise.resolve()
+  const proxima = anterior.catch(() => {}).then(async () => {
+    if (petId == null || !(await usaNuvem(alunoId))) return atualizarEquipadoLocal(alunoId, petId, slot, itemId)
+    await garantirMigracaoLocal(alunoId)
+    await rpcAluno('equipar_acessorio', { p_pet_id: petId, p_slot: slot, p_acessorio_id: itemId })
+  })
+  filaNuvem.set(chave, proxima)
   return proxima
 }
 

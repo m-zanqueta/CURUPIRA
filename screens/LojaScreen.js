@@ -8,7 +8,30 @@ import {
   Surface, Button,
 } from 'react-native-paper'
 import { colors, fonts } from '../theme'
-import { listarItensComprados, comprarItem, listarAcessoriosLoja } from '../services/storage'
+import { carregarEstadoLoja, comprarItem, listarAcessoriosLoja, obterResultadoMigracao } from '../services/storage'
+
+// Texto do aviso de sincronização conforme o estado explícito devolvido por carregarEstadoLoja.
+function avisoDeSincronizacao(e) {
+  if (!e.nuvem) {
+    return e.servidor && e.servidor !== 'ausente'
+      ? 'Modo local: suas compras ainda não estão sincronizadas com a nuvem. Saia e entre novamente, com internet, para sincronizar.'
+      : null
+  }
+  const m = e.migracao
+  if (!m) return null
+  switch (m.estado) {
+    case 'pendente_rede': return 'Seu inventário antigo ainda não foi sincronizado (sem conexão). Ele continua salvo neste aparelho e será enviado automaticamente.'
+    case 'pendente_configuracao': return 'Não foi possível sincronizar seu inventário antigo (erro de configuração do servidor). Seus dados locais estão preservados; avise seu professor.'
+    case 'pendente_sessao': return null // a sessão inválida volta ao login (tratado em App.js)
+    case 'pendente_reconciliacao':
+    case 'pendente': return 'A sincronização do inventário antigo não foi confirmada. Seus dados locais estão preservados e uma nova tentativa será feita.'
+    case 'concluida_com_pendencias': {
+      const n = m.pendencias
+      return `${n} ${n === 1 ? 'item/equipamento do seu inventário antigo não foi migrado' : 'itens/equipamentos do seu inventário antigo não foram migrados'} (saldo insuficiente, item desativado ou conflito com a nuvem). Uma cópia continua salva neste aparelho.`
+    }
+    default: return null
+  }
+}
 
 const WIN  = Dimensions.get('window')
 const W    = Math.min(WIN.width, 480)
@@ -113,13 +136,32 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
   const [pendente,     setPendente]     = useState(null)  // item aguardando confirmação no modal
   const [processando,  setProcessando]  = useState(false) // true durante a chamada de comprarItem (evita cliques repetidos)
   const [erroCompra,   setErroCompra]   = useState(null)
+  // Saldo vindo do servidor (null = modo local/legado, saldo derivado do XP do login).
+  const [saldoServidor, setSaldoServidor] = useState(null)
+  const [aviso,        setAviso]        = useState(null)  // falha ao carregar / itens não migrados
   // Trava síncrona: o state `processando` só atualiza no próximo render, então
   // dois cliques no mesmo tick passariam pelo `if (processando)`. O ref fecha essa janela.
   const travaCompra = useRef(false)
 
   useEffect(() => {
     if (!aluno?.id) { setComprados([]); return }
-    listarItensComprados(aluno.id).then(setComprados)
+    let ativo = true
+    carregarEstadoLoja(aluno.id)
+      .then(e => {
+        if (!ativo) return
+        setComprados(e.comprados)
+        setSaldoServidor(e.saldo)
+        setAviso(avisoDeSincronizacao(e))
+      })
+      .catch(erro => {
+        console.error('Erro ao carregar inventário:', erro?.codigo || erro?.message)
+        // sessao_invalida é tratada globalmente (volta ao login); aqui só avisa falha de rede.
+        if (!ativo || erro?.codigo === 'sessao_invalida') return
+        setAviso(erro?.codigo === 'configuracao' || erro?.codigo === 'migration_ausente'
+          ? 'Erro de configuração do servidor ao carregar seu inventário. Avise seu professor.'
+          : 'Não foi possível carregar seu inventário agora. Verifique a conexão e tente novamente.')
+      })
+    return () => { ativo = false }
   }, [aluno?.id])
 
   useEffect(() => {
@@ -147,7 +189,9 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
       .reduce((soma, p) => soma + (Number(p.preco) || 0), 0),
     [produtos, comprados]
   )
-  const saldo = saldoBase - totalGasto
+  // Com nuvem, o saldo é o do servidor; sem nuvem, o derivado de antes. Em ambos, nunca negativo na tela.
+  // Saldo real negativo (XP caiu depois de compras) é permitido no servidor; a tela sempre mostra 0 e bloqueia novas compras.
+  const saldo = Math.max(0, saldoServidor != null ? saldoServidor : saldoBase - totalGasto)
 
   function handleComprar(p) {
     if (comprados.includes(p.id)) return
@@ -185,16 +229,28 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
     setProcessando(true)
     setErroCompra(null)
     try {
-      await comprarItem(aluno.id, item.id)
-      // Só atualiza inventário (e, por consequência, o saldo derivado)
-      // depois que a gravação foi confirmada — recarrega do AsyncStorage
-      // em vez de apenas inserir localmente, pra refletir o estado real salvo.
-      const atualizados = await listarItensComprados(aluno.id)
-      setComprados(atualizados)
+      const r = await comprarItem(aluno.id, item.id)
+      // Daqui em diante o servidor JÁ confirmou a compra: nada abaixo pode mostrar "falha na compra".
+      if (r?.saldo != null) {
+        setSaldoServidor(r.saldo)
+        setComprados(prev => (prev.some(id => String(id) === String(item.id)) ? prev : [...prev, item.id]))
+      }
       setPendente(null)
+      // Recarrega o estado real (servidor ou local no modo legado); se só essa releitura falhar, a tela
+      // mantém o que o servidor acabou de confirmar.
+      try {
+        const atualizado = await carregarEstadoLoja(aluno.id)
+        setComprados(atualizado.comprados)
+        setSaldoServidor(atualizado.saldo)
+      } catch (e) { console.error('Compra confirmada; falha ao reler o estado:', e?.codigo || e?.message) }
     } catch (erro) {
-      console.error('Erro ao comprar item:', erro)
-      setErroCompra('Não foi possível concluir a compra. Tente novamente.')
+      console.error('Erro ao comprar item:', erro?.codigo || erro?.message)
+      setErroCompra(
+        erro?.codigo === 'saldo_insuficiente' ? 'Saldo insuficiente para concluir esta compra.'
+        : erro?.codigo === 'item_indisponivel' ? 'Este item não está mais disponível.'
+        : erro?.codigo === 'rede' ? 'Sem conexão com o servidor. Nada foi cobrado; tente novamente.'
+        : erro?.codigo === 'configuracao' || erro?.codigo === 'migration_ausente' ? 'Erro de configuração do servidor. Nada foi cobrado; avise seu professor.'
+        : 'Não foi possível concluir a compra. Tente novamente.')
     } finally {
       travaCompra.current = false
       setProcessando(false)
@@ -221,6 +277,10 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
           {saldo.toLocaleString('pt-BR')}
         </Chip>
       </Appbar.Header>
+
+      {aviso ? (
+        <Text variant="labelSmall" style={{ color: '#ffb74d', textAlign: 'center', paddingHorizontal: 16, paddingBottom: 6 }}>{aviso}</Text>
+      ) : null}
 
       {/* Hero Card — react-native-paper Surface */}
       <Surface style={s.heroCard} elevation={2}>

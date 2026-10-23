@@ -286,7 +286,11 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
 
   useEffect(() => {
     if (!alunoId) { setComprados([]); return }
-    listarItensComprados(alunoId).then(setComprados)
+    let ativo = true // troca rápida de tela/aluno: resposta atrasada não pode sobrescrever o estado atual
+    listarItensComprados(alunoId)
+      .then(ids => { if (ativo) setComprados(ids) })
+      .catch(e => console.error('Erro ao carregar inventário:', e?.codigo || e?.message))
+    return () => { ativo = false }
   }, [alunoId])
 
   useEffect(() => {
@@ -315,21 +319,26 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
       if (!tocados.current.chapeu) setChapeu(achar(chapeuId))
       if (!tocados.current.colar)  setColar(achar(colarId))
       if (!tocados.current.fundo)  setCenario(achar(fundoId))
-    })
+    }).catch(e => console.error('Erro ao carregar acessórios equipados:', e?.codigo || e?.message)) // falha de rede: mantém o que está na tela
     return () => { ativo = false }
   }, [alunoId, petId, todosItens])
 
   // Equipar/trocar/desequipar (item null = desequipar) — atualiza a tela
   // na hora E persiste, pra sobreviver a fechar/reabrir a tela do pet ou
   // o app. Sem aluno identificado, só fica equipado nesta sessão.
-  function equipar(slot, setar, item) {
+  function equipar(slot, setar, item, anterior) {
     tocados.current[slot] = true
     setar(item)
-    if (alunoId) atualizarEquipado(alunoId, petId, slot, item?.id ?? null).catch(console.error)
+    // Se o servidor recusar/falhar, volta ao item anterior: a tela nunca mostra
+    // algo equipado que não foi salvo.
+    if (alunoId) atualizarEquipado(alunoId, petId, slot, item?.id ?? null).catch(e => {
+      console.error('Erro ao salvar acessório equipado:', e?.codigo || e?.message)
+      setar(anterior)
+    })
   }
-  const selecionarChapeu  = item => equipar('chapeu', setChapeu, item)
-  const selecionarColar   = item => equipar('colar',  setColar,  item)
-  const selecionarCenario = item => equipar('fundo',  setCenario, item)
+  const selecionarChapeu  = item => equipar('chapeu', setChapeu,  item, chapeu)
+  const selecionarColar   = item => equipar('colar',  setColar,   item, colar)
+  const selecionarCenario = item => equipar('fundo',  setCenario, item, cenario)
 
   const chapeusDispo = todosItens.filter(i => i.slot === 'chapeu' && comprados.includes(i.id))
   const colaresDispo = todosItens.filter(i => i.slot === 'colar'  && comprados.includes(i.id))

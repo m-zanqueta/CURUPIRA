@@ -45,7 +45,7 @@ const tema = {
   },
 }
 import { colors } from './theme'
-import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp } from './services/storage'
+import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp, aoSessaoInvalida, temTokenAluno, estadoNuvemServidor } from './services/storage'
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
@@ -129,6 +129,16 @@ function AppInterno() {
           return
         }
         if (sessao?.tipo === 'aluno' && sessao.usuario?.id) {
+          // Sessão salva por uma versão anterior (sem token) e o banco já tem a persistência em nuvem
+          // (ou respondeu com erro de configuração): NÃO vale como sessão autenticada; exige novo login.
+          // Sem resposta (rede) ou sem a migration (modo legado) a sessão local segue como antes.
+          // O atalho local 'loja' nunca tem token e fica de fora.
+          if (sessao.usuario.id !== 'loja' && !(await temTokenAluno())
+              && ['disponivel', 'configuracao'].includes(await estadoNuvemServidor())) {
+            await limparSessaoApp()
+            if (ativo) setTela('login')
+            return
+          }
           const alunoSalvo = sessao.usuario
           setAluno(alunoSalvo)
           if (!alunoSalvo.turmaId) {
@@ -161,6 +171,11 @@ function AppInterno() {
     if (fontsLoaded) init()
     return () => { ativo = false }
   }, [fontsLoaded])
+
+  // Token de aluno recusado pelo servidor (expirado/revogado): volta ao login.
+  // O ref evita closure velha de `sair`/`professor`.
+  const sairRef = useRef(null)
+  useEffect(() => aoSessaoInvalida(() => sairRef.current?.()), [])
 
   // Destino desconhecido (nome digitado errado, tela removida, estado
   // inconsistente) nunca deixa `tela` num valor que nenhum bloco abaixo
@@ -286,6 +301,8 @@ function AppInterno() {
     setProgressoAluno(null)
     navegarCom(professor ? 'loginProfessor' : 'login')
   }
+
+  sairRef.current = sair
 
   if (!fontsLoaded || tela === 'splash' || tela === 'splashLogin') {
     return (
