@@ -38,21 +38,78 @@ function posChapeu({ x, y, largura }) {
     top:  LETTERBOX + y / IMG_W - HAT_ART.base * h,
   }
 }
+// Configuração visual por espécie. A espécie vem de pets.nome (via
+// turma.petNome) — NÃO do nome do arquivo da imagem: os uploads do admin
+// geram nomes aleatórios (<timestamp>-<random>.png), então a URL não diz nada.
+//
+// `calibrado` indica se as coordenadas do chapéu/colar foram medidas na
+// imagem real daquela espécie. Hoje só o jacaré foi (medido no Paint, imagem
+// 1024x1024 do Supabase). Arara e onça AINDA usam os valores que já estavam
+// no código (iguais aos do jacaré) e precisam ser medidos nas imagens reais —
+// até lá o chapéu pode ficar torto nelas. Não "chutar" coordenadas aqui.
 const PET_CFG = {
-  default: { cor: colors.green,  bgCeu: '#061208', bgMeio: '#0d2410', bgChao: '#1a4020',
-             chapeu: { top: -0.02, left: 0.18, w: 0.62 }, colar: { top: 0.42, left: 0.28, w: 0.45 } },
-  arara:   { cor: '#42A5F5',     bgCeu: '#020810', bgMeio: '#061525', bgChao: '#0d2a50',
-             chapeu: { top: -0.10, left: 0.20, w: 0.60 }, colar: { top: 0.25, left: 0.28, w: 0.44 } },
-  onca:    { cor: colors.yellow, bgCeu: '#120800', bgMeio: '#241200', bgChao: '#3d2000',
-             chapeu: { top: -0.12, left: 0.18, w: 0.62 }, colar: { top: 0.24, left: 0.26, w: 0.48 } },
+  jacare: {
+    especie: 'jacare', calibrado: true,
+    cor: colors.green,
+    bgCeu: '#061208',
+    bgMeio: '#0d2410',
+    bgChao: '#1a4020',
+    chapeu: posChapeu({ x: 516, y: 220, largura: 250 }),
+    colar: { top: 0.50, left: 0.28, w: 0.45 },
+  },
+  arara: {
+    especie: 'arara', calibrado: false, // TODO: medir cabeça/pescoço na imagem real da arara
+    cor: '#42A5F5',
+    bgCeu: '#020810',
+    bgMeio: '#061525',
+    bgChao: '#0d2a50',
+    chapeu: posChapeu({ x: 516, y: 220, largura: 280 }),
+    colar: { top: 0.55, left: 0.28, w: 0.44 },
+  },
+  onca: {
+    especie: 'onca', calibrado: false, // TODO: medir cabeça/pescoço na imagem real da onça/tigre
+    cor: colors.yellow,
+    bgCeu: '#120800',
+    bgMeio: '#241200',
+    bgChao: '#3d2000',
+    chapeu: posChapeu({ x: 516, y: 220, largura: 280 }),
+    colar: { top: 0.55, left: 0.26, w: 0.48 },
+  },
+  // Espécie desconhecida / nome ausente: tela nunca quebra. Usa a geometria do
+  // jacaré só como valor seguro — não é calibração dessa espécie.
+  default: {
+    especie: 'default', calibrado: false,
+    cor: colors.green,
+    bgCeu: '#061208',
+    bgMeio: '#0d2410',
+    bgChao: '#1a4020',
+    chapeu: posChapeu({ x: 516, y: 220, largura: 250 }),
+    colar: { top: 0.50, left: 0.28, w: 0.45 },
+  },
 }
 
-function detectarCfg(iconeUrl) {
-  if (!iconeUrl) return null
-  const u = iconeUrl.toLowerCase()
-  if (u.includes('arara'))                       return PET_CFG.arara
-  if (u.includes('onca') || u.includes('tigre')) return PET_CFG.onca
-  return PET_CFG.default
+// Termos (sem acento, minúsculos) que identificam cada espécie no pets.nome.
+const ESPECIES = [
+  { chave: 'jacare', termos: ['jacare'] },
+  { chave: 'arara',  termos: ['arara'] },
+  { chave: 'onca',   termos: ['onca', 'tigre', 'jaguar'] },
+]
+
+function normalizarNome(nome) {
+  return String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+function detectarCfg(petNome) {
+  const n = normalizarNome(petNome)
+  const achada = n && ESPECIES.find(e => e.termos.some(t => n.includes(t)))
+  return PET_CFG[achada ? achada.chave : 'default']
+}
+
+const _avisados = new Set()
+function avisarSemCalibracao(cfg) {
+  if (typeof __DEV__ === 'undefined' || !__DEV__ || cfg.calibrado || _avisados.has(cfg.especie)) return
+  _avisados.add(cfg.especie)
+  console.warn(`[PetScreen] Coordenadas de chapéu/colar da espécie "${cfg.especie}" ainda não foram calibradas na imagem real.`)
 }
 
 const ESTAGIOS = [
@@ -224,15 +281,11 @@ function ModalItens({ visible, titulo, itens, selecionado, cor, carregando, onSe
   )
 }
 
-export default function PetScreen(props) {
-  if (!detectarCfg(props.turma?.pet)) return <TelaSemPet onLogout={props.onLogout} />
-  return <PetScreenConteudo {...props} />
-}
-
-function PetScreenConteudo({ aluno, turma, onLogout, onLoja }) {
-  const cfg       = detectarCfg(turma?.pet)
-  const emocaoKey = resolverEmocao(turma?.emocao)
-  const emocao    = EMOCOES[emocaoKey]
+export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
+  const cfg       = detectarCfg(turma?.petNome)
+  avisarSemCalibracao(cfg)
+  const emocaoKey = turma?.emocao || 'feliz'
+  const emocao    = EMOCOES[emocaoKey] || EMOCOES.feliz
   const xp        = turma?.xp || 0
   const estagioI  = getEstagio(xp)
   const estagio   = ESTAGIOS[estagioI]
@@ -253,7 +306,11 @@ function PetScreenConteudo({ aluno, turma, onLogout, onLoja }) {
 
   useEffect(() => {
     if (!alunoId) { setComprados([]); return }
-    listarItensComprados(alunoId).then(setComprados)
+    let ativo = true // troca rápida de tela/aluno: resposta atrasada não pode sobrescrever o estado atual
+    listarItensComprados(alunoId)
+      .then(ids => { if (ativo) setComprados(ids) })
+      .catch(e => console.error('Erro ao carregar inventário:', e?.codigo || e?.message))
+    return () => { ativo = false }
   }, [alunoId])
 
   useEffect(() => {
@@ -263,29 +320,45 @@ function PetScreenConteudo({ aluno, turma, onLogout, onLoja }) {
       .finally(() => setCarregando(false))
   }, [])
 
+  // Slots que o usuário já mexeu nesta sessão: a restauração assíncrona do
+  // storage não pode sobrescrever uma escolha feita enquanto ela carregava.
+  const tocados = useRef({})
+
   // Restaura o que o aluno tinha equipado nesse pet (persistido por
-  // aluno+pet — ver services/storage.js). Só dá pra montar os objetos
-  // completos (com imagem etc) depois que o catálogo (todosItens) chega,
-  // por isso depende dele. Roda de novo se o aluno trocar de pet/turma.
+  // aluno+pet — ver services/storage.js): chapéu, colar e cenário ('fundo').
+  // Só dá pra montar os objetos completos (com imagem etc) depois que o
+  // catálogo (todosItens) chega, por isso depende dele. Só LÊ o storage e
+  // atualiza o estado — nunca escreve (null aqui não apaga nada salvo).
+  // Roda de novo se o aluno trocar de pet/turma.
   useEffect(() => {
     if (!alunoId || todosItens.length === 0) return
-    listarEquipados(alunoId, petId).then(({ chapeu: chapeuId, colar: colarId }) => {
-      setChapeu(chapeuId ? todosItens.find(i => i.id === chapeuId) || null : null)
-      setColar(colarId ? todosItens.find(i => i.id === colarId) || null : null)
-    })
+    let ativo = true
+    const achar = id => (id == null ? null : todosItens.find(i => String(i.id) === String(id)) || null)
+    listarEquipados(alunoId, petId).then(({ chapeu: chapeuId, colar: colarId, fundo: fundoId }) => {
+      if (!ativo) return
+      if (!tocados.current.chapeu) setChapeu(achar(chapeuId))
+      if (!tocados.current.colar)  setColar(achar(colarId))
+      if (!tocados.current.fundo)  setCenario(achar(fundoId))
+    }).catch(e => console.error('Erro ao carregar acessórios equipados:', e?.codigo || e?.message)) // falha de rede: mantém o que está na tela
+    return () => { ativo = false }
   }, [alunoId, petId, todosItens])
 
   // Equipar/trocar/desequipar (item null = desequipar) — atualiza a tela
   // na hora E persiste, pra sobreviver a fechar/reabrir a tela do pet ou
-  // o app. Sem aluno/pet real ainda, só fica equipado nesta sessão.
-  function selecionarChapeu(item) {
-    setChapeu(item)
-    if (alunoId) atualizarEquipado(alunoId, petId, 'chapeu', item?.id ?? null)
+  // o app. Sem aluno identificado, só fica equipado nesta sessão.
+  function equipar(slot, setar, item, anterior) {
+    tocados.current[slot] = true
+    setar(item)
+    // Se o servidor recusar/falhar, volta ao item anterior: a tela nunca mostra
+    // algo equipado que não foi salvo.
+    if (alunoId) atualizarEquipado(alunoId, petId, slot, item?.id ?? null).catch(e => {
+      console.error('Erro ao salvar acessório equipado:', e?.codigo || e?.message)
+      setar(anterior)
+    })
   }
-  function selecionarColar(item) {
-    setColar(item)
-    if (alunoId) atualizarEquipado(alunoId, petId, 'colar', item?.id ?? null)
-  }
+  const selecionarChapeu  = item => equipar('chapeu', setChapeu,  item, chapeu)
+  const selecionarColar   = item => equipar('colar',  setColar,   item, colar)
+  const selecionarCenario = item => equipar('fundo',  setCenario, item, cenario)
 
   const chapeusDispo = todosItens.filter(i => i.slot === 'chapeu' && comprados.includes(i.id))
   const colaresDispo = todosItens.filter(i => i.slot === 'colar'  && comprados.includes(i.id))
@@ -476,7 +549,7 @@ function PetScreenConteudo({ aluno, turma, onLogout, onLoja }) {
       <ModalItens
         visible={modal==='cenarios'} titulo="Cenários"
         itens={cenariosDispo} selecionado={cenario} cor={colors.yellow}
-        carregando={carregando} onSel={setCenario} onFechar={() => setModal(null)}
+        carregando={carregando} onSel={selecionarCenario} onFechar={() => setModal(null)}
       />
       <ModalItens
         visible={modal==='cenarios'} titulo="Cenários"

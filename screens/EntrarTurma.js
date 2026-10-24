@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, Image, ActivityIndicator,
@@ -10,13 +10,25 @@ import { cores } from '../constants/cores'
 
 const VERDE = cores.verdePrimario || '#009D25'
 
-export default function EntrarTurma({ aluno, onEntrou, onPular }) {
+export default function EntrarTurma({ aluno, onEntrou, onSemSessao }) {
   const [codigo,  setCodigo]  = useState('')
   const [erro,    setErro]    = useState('')
   const [loading, setLoading] = useState(false)
+  // Trava síncrona: o estado `loading` só vale no próximo render, então dois
+  // cliques/toques no mesmo instante ainda passariam. A ref bloqueia na hora.
+  const enviando = useRef(false)
 
-   async function handleEntrar() {
+  async function handleEntrar() {
+    if (enviando.current) return
+    // Sem aluno identificado (sessão ausente/expirada) não há registro pra
+    // atualizar: avisa e manda pro login, sem inventar aluno nem tocar no banco.
+    if (!aluno?.id) {
+      setErro('Sua sessão expirou. Faça login novamente.')
+      onSemSessao?.()
+      return
+    }
     if (!codigo.trim()) { setErro('Digite o código da turma.'); return }
+    enviando.current = true
     setErro('')
     setLoading(true)
     try {
@@ -43,12 +55,16 @@ export default function EntrarTurma({ aluno, onEntrou, onPular }) {
         return
       }
 
-      await atualizarAluno(aluno.id, { turmaId: turma.id })
-      onEntrou({ ...aluno, turmaId: turma.id }, turma)
+      // atualizarAluno devolve false quando o UPDATE falha (ele não lança):
+      // sem isso o app seguiria como se tivesse entrado na turma sem gravar.
+      const gravou = await atualizarAluno(aluno.id, { turmaId: turma.id })
+      if (gravou === false) throw new Error('Não foi possível gravar a turma do aluno.')
+      await onEntrou({ ...aluno, turmaId: turma.id }, turma)
     } catch(e) {
       console.error(e)
-      setErro('Erro ao entrar na turma. Tente novamente.')
+      setErro('Não foi possível entrar na turma. Verifique sua conexão e tente novamente.')
     } finally {
+      enviando.current = false
       setLoading(false)
     }
   }
@@ -104,11 +120,6 @@ export default function EntrarTurma({ aluno, onEntrou, onPular }) {
             }
           </TouchableOpacity>
 
-          {onPular && (
-            <TouchableOpacity style={s.btnPular} onPress={onPular}>
-              <Text style={s.btnPularTxt}>Fazer isso depois</Text>
-            </TouchableOpacity>
-          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -134,6 +145,4 @@ const s = StyleSheet.create({
   erroTxt:     { fontSize: 13, fontFamily: fonts.semibold, color: '#c0392b', textAlign: 'center' },
   btnEntrar:   { backgroundColor: VERDE, borderRadius: 14, paddingVertical: 18, alignItems: 'center', marginBottom: 12, elevation: 4, shadowColor: VERDE, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
   btnEntrarTxt:{ fontSize: 16, fontFamily: fonts.bold, color: '#fff' },
-  btnPular:    { alignItems: 'center', paddingVertical: 10 },
-  btnPularTxt: { fontSize: 13, fontFamily: fonts.medium, color: '#aaa' },
 })

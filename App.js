@@ -45,7 +45,7 @@ const tema = {
   },
 }
 import { colors } from './theme'
-import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp } from './services/storage'
+import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp, aoSessaoInvalida, temTokenAluno, estadoNuvemServidor } from './services/storage'
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
@@ -129,6 +129,16 @@ function AppInterno() {
           return
         }
         if (sessao?.tipo === 'aluno' && sessao.usuario?.id) {
+          // Sessão salva por uma versão anterior (sem token) e o banco já tem a persistência em nuvem
+          // (ou respondeu com erro de configuração): NÃO vale como sessão autenticada; exige novo login.
+          // Sem resposta (rede) ou sem a migration (modo legado) a sessão local segue como antes.
+          // O atalho local 'loja' nunca tem token e fica de fora.
+          if (sessao.usuario.id !== 'loja' && !(await temTokenAluno())
+              && ['disponivel', 'configuracao'].includes(await estadoNuvemServidor())) {
+            await limparSessaoApp()
+            if (ativo) setTela('login')
+            return
+          }
           const alunoSalvo = sessao.usuario
           setAluno(alunoSalvo)
           if (!alunoSalvo.turmaId) {
@@ -162,6 +172,11 @@ function AppInterno() {
     return () => { ativo = false }
   }, [fontsLoaded])
 
+  // Token de aluno recusado pelo servidor (expirado/revogado): volta ao login.
+  // O ref evita closure velha de `sair`/`professor`.
+  const sairRef = useRef(null)
+  useEffect(() => aoSessaoInvalida(() => sairRef.current?.()), [])
+
   // Destino desconhecido (nome digitado errado, tela removida, estado
   // inconsistente) nunca deixa `tela` num valor que nenhum bloco abaixo
   // trata — em vez de ficar com a tela em branco, cai na 404.
@@ -184,11 +199,23 @@ function AppInterno() {
   // Aluno sem pet (turma sem pet configurado, ou turma inexistente)
   // não fica preso na tela "Pet não encontrado" — cai direto na tela
   // do código da turma, pra poder entrar em outra turma.
+  // Só redireciona se HÁ aluno logado: no logout o estado é limpo (aluno e
+  // turma nulos) enquanto a tela 'pet' ainda está visível durante o fade, e
+  // esse redirecionamento disputava com o destino 'login' — quem chegava por
+  // último vencia e o usuário ficava em "Entre na sua turma" sem aluno.
   useEffect(() => {
     if (tela !== 'pet') return
+    if (!aluno?.id) return
     if (turmaAluno?.pet) return
     navegarCom('entrarTurma')
-  }, [tela, turmaAluno])
+  }, [tela, turmaAluno, aluno])
+
+  // EntrarTurma só faz sentido com aluno autenticado. Sessão ausente ou
+  // inválida volta ao login correto (nunca cria aluno fictício).
+  useEffect(() => {
+    if (tela !== 'entrarTurma' || aluno?.id) return
+    navegarCom(professor ? 'loginProfessor' : 'login')
+  }, [tela, aluno])
 
   async function entrarAreaProfessor(usuario) {
     const tipo = ['admin', 'coordenador'].includes(usuario?.tipo) ? usuario.tipo : 'professor'
@@ -262,13 +289,6 @@ function AppInterno() {
     setTimeout(() => navegarCom('pet'), 2000)
   }
 
-  async function pularEntradaNaTurma() {
-    setTurmaAluno(null)
-    const progresso = aluno?.id ? await consultarProgressoGeral(aluno.id) : null
-    setProgressoAluno(progresso)
-    navegarCom('pet')
-  }
-
   async function sair() {
     try {
       await limparSessaoApp()
@@ -281,6 +301,8 @@ function AppInterno() {
     setProgressoAluno(null)
     navegarCom(professor ? 'loginProfessor' : 'login')
   }
+
+  sairRef.current = sair
 
   if (!fontsLoaded || tela === 'splash' || tela === 'splashLogin') {
     return (
@@ -315,7 +337,7 @@ function AppInterno() {
           <EntrarTurma
             aluno={aluno}
             onEntrou={handleEntrarTurma}
-            onPular={pularEntradaNaTurma}
+            onSemSessao={() => navegarCom('login')}
           />
         )}
 
