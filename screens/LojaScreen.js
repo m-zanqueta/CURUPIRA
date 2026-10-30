@@ -1,11 +1,13 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   View, StyleSheet, ScrollView, TouchableOpacity,
   StatusBar, Platform, Image, Modal,
 } from 'react-native'
-import { Appbar, Chip, Text, ActivityIndicator } from 'react-native-paper'
+import { Appbar, Chip, Text, ActivityIndicator, Surface, Button } from 'react-native-paper'
 import { colors, fonts } from '../theme'
 import { carregarEstadoLoja, comprarItem, listarAcessoriosLoja, obterResultadoMigracao } from '../services/storage'
+import { IconeAcessorio } from '../components/IconeUI'
+import TextoContorno from '../components/TextoContorno'
 
 // Texto do aviso de sincronização conforme o estado explícito devolvido por carregarEstadoLoja.
 function avisoDeSincronizacao(e) {
@@ -19,7 +21,7 @@ function avisoDeSincronizacao(e) {
   switch (m.estado) {
     case 'pendente_rede': return 'Seu inventário antigo ainda não foi sincronizado (sem conexão). Ele continua salvo neste aparelho e será enviado automaticamente.'
     case 'pendente_configuracao': return 'Não foi possível sincronizar seu inventário antigo (erro de configuração do servidor). Seus dados locais estão preservados; avise seu professor.'
-    case 'pendente_sessao': return null // a sessão inválida volta ao login (tratado em App.js)
+    case 'pendente_sessao': return null
     case 'pendente_reconciliacao':
     case 'pendente': return 'A sincronização do inventário antigo não foi confirmada. Seus dados locais estão preservados e uma nova tentativa será feita.'
     case 'concluida_com_pendencias': {
@@ -29,9 +31,6 @@ function avisoDeSincronizacao(e) {
     default: return null
   }
 }
-import { IconeAcessorio } from '../components/IconeUI'
-import TextoContorno from '../components/TextoContorno'
-import { listarItensComprados, comprarItem, listarAcessoriosLoja } from '../services/storage'
 
 // Uma página (deslizável) por categoria
 const CATEGORIAS = [
@@ -69,11 +68,7 @@ function BotaoGordo({ face, lip, onPress, disabled, children, style }) {
   )
 }
 
-// Modal de confirmação de compra — substitui window.confirm/Alert.alert
-// (que na web, depois que o navegador "lembra" a escolha de não mostrar
-// mais diálogos, simplesmente para de abrir — travando a compra). Usa
-// react-native Modal, que já funciona tanto na web quanto no nativo (é o
-// mesmo componente usado em ModalItens na tela do pet).
+// Modal de confirmação de compra
 function ModalConfirmarCompra({ item, saldo, processando, erro, onCancelar, onConfirmar }) {
   const visible = !!item
   const saldoApos = item ? saldo - item.preco : saldo
@@ -84,7 +79,6 @@ function ModalConfirmarCompra({ item, saldo, processando, erro, onCancelar, onCo
           {item && (
             <>
               <Text variant="titleMedium" style={s.confirmTitulo}>Confirmar compra</Text>
-
               <View style={s.confirmItemRow}>
                 {item.imagem
                   ? <Image source={{ uri: item.imagem }} style={s.confirmItemImg} resizeMode="contain" />
@@ -95,7 +89,6 @@ function ModalConfirmarCompra({ item, saldo, processando, erro, onCancelar, onCo
                   <Text variant="bodyMedium" style={s.confirmPreco}>{item.preco} moedas</Text>
                 </View>
               </View>
-
               <View style={s.confirmSaldoBox}>
                 <View style={s.confirmSaldoRow}>
                   <Text variant="bodySmall" style={s.confirmSaldoLabel}>Saldo atual</Text>
@@ -108,32 +101,16 @@ function ModalConfirmarCompra({ item, saldo, processando, erro, onCancelar, onCo
                   </Text>
                 </View>
               </View>
-
               {!!erro && (
                 <View style={s.confirmErroBox}>
                   <Text variant="bodySmall" style={s.confirmErroTxt}>{erro}</Text>
                 </View>
               )}
-
               <View style={s.confirmBotoesRow}>
-                <Button
-                  mode="outlined"
-                  onPress={onCancelar}
-                  disabled={processando}
-                  style={[s.confirmBtn, { borderColor: 'rgba(245,244,217,0.3)' }]}
-                  textColor="rgba(245,244,217,0.8)"
-                >
+                <Button mode="outlined" onPress={onCancelar} disabled={processando} style={[s.confirmBtn, { borderColor: 'rgba(245,244,217,0.3)' }]} textColor="rgba(245,244,217,0.8)">
                   Cancelar
                 </Button>
-                <Button
-                  mode="contained"
-                  onPress={onConfirmar}
-                  disabled={processando}
-                  loading={processando}
-                  buttonColor={colors.green}
-                  textColor="#fff"
-                  style={s.confirmBtn}
-                >
+                <Button mode="contained" onPress={onConfirmar} disabled={processando} loading={processando} buttonColor={colors.green} textColor="#fff" style={s.confirmBtn}>
                   {processando ? 'Processando...' : 'Confirmar compra'}
                 </Button>
               </View>
@@ -150,15 +127,16 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
   const [comprados,    setComprados]    = useState([])
   const [produtos,     setProdutos]     = useState([])
   const [loading,      setLoading]      = useState(true)
-  const [pendente,     setPendente]     = useState(null)  // item aguardando confirmação no modal
-  const [processando,  setProcessando]  = useState(false) // true durante a chamada de comprarItem (evita cliques repetidos)
+  const [pendente,     setPendente]     = useState(null)
+  const [processando,  setProcessando]  = useState(false)
   const [erroCompra,   setErroCompra]   = useState(null)
-  // Saldo vindo do servidor (null = modo local/legado, saldo derivado do XP do login).
   const [saldoServidor, setSaldoServidor] = useState(null)
-  const [aviso,        setAviso]        = useState(null)  // falha ao carregar / itens não migrados
-  // Trava síncrona: o state `processando` só atualiza no próximo render, então
-  // dois cliques no mesmo tick passariam pelo `if (processando)`. O ref fecha essa janela.
+  const [aviso,        setAviso]        = useState(null)
   const travaCompra = useRef(false)
+
+  const [idx,       setIdx]       = useState(0)
+  const [pager,     setPager]     = useState({ w: 0, h: 0 })
+  const pagerRef = useRef(null)
 
   useEffect(() => {
     if (!aluno?.id) { setComprados([]); return }
@@ -172,7 +150,6 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
       })
       .catch(erro => {
         console.error('Erro ao carregar inventário:', erro?.codigo || erro?.message)
-        // sessao_invalida é tratada globalmente (volta ao login); aqui só avisa falha de rede.
         if (!ativo || erro?.codigo === 'sessao_invalida') return
         setAviso(erro?.codigo === 'configuracao' || erro?.codigo === 'migration_ausente'
           ? 'Erro de configuração do servidor ao carregar seu inventário. Avise seu professor.'
@@ -180,16 +157,7 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
       })
     return () => { ativo = false }
   }, [aluno?.id])
-  const [moedas,    setMoedas]    = useState(aluno?.moedas || aluno?.xp || 0)
-  const [comprados, setComprados] = useState([])
-  const [produtos,  setProdutos]  = useState([])
-  const [loading,   setLoading]   = useState(true)
-  const [idx,       setIdx]       = useState(0)
-  const [pager,     setPager]     = useState({ w: 0, h: 0 })
-  const [dialogo,   setDialogo]   = useState(null)
-  const pagerRef = useRef(null)
 
-  useEffect(() => { listarItensComprados().then(setComprados) }, [])
   useEffect(() => {
     listarAcessoriosLoja()
       .then(itens => setProdutos(itens || []))
@@ -199,13 +167,6 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
 
   const cardW = Math.max(120, (pager.w - 28 - 10) / 2)
 
-  // O saldo NÃO é um valor próprio persistido — é derivado do XP do aluno
-  // (vindo do Supabase) menos o custo dos itens que ele já comprou (lista
-  // persistida em AsyncStorage, ver services/storage.js). Isso garante que
-  // o saldo exibido sempre bate com o inventário real depois de um
-  // recarregamento (F5/Ctrl+R): como "comprados" é recarregado do
-  // AsyncStorage no mount, o saldo recalculado aqui já sai correto, sem
-  // precisar guardar "moedas restantes" em nenhum lugar separado.
   const saldoBase = aluno?.xp ?? 1000
   const totalGasto = useMemo(
     () => produtos
@@ -213,78 +174,37 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
       .reduce((soma, p) => soma + (Number(p.preco) || 0), 0),
     [produtos, comprados]
   )
-  // Com nuvem, o saldo é o do servidor; sem nuvem, o derivado de antes. Em ambos, nunca negativo na tela.
-  // Saldo real negativo (XP caiu depois de compras) é permitido no servidor; a tela sempre mostra 0 e bloqueia novas compras.
   const saldo = Math.max(0, saldoServidor != null ? saldoServidor : saldoBase - totalGasto)
+
   function irPara(i) {
     setIdx(i)
     pagerRef.current?.scrollTo({ x: i * pager.w, y: 0, animated: true })
   }
+  
   function aoTerminarArraste(e) {
     if (!pager.w) return
     setIdx(Math.round(e.nativeEvent.contentOffset.x / pager.w))
   }
 
-  // Alert.alert não funciona no navegador (web), por isso a confirmação é um modal próprio
   function handleComprar(p) {
     if (comprados.includes(p.id)) return
-    if (moedas < p.preco) {
-      setDialogo({ tipo: 'aviso', titulo: 'Moedas insuficientes', texto: `Você precisa de ${p.preco} moedas.\nSeu saldo: ${moedas} moedas.` })
-      return
-    }
-    setDialogo({
-      tipo: 'confirmar', item: p,
-      titulo: `Comprar ${p.nome}?`,
-      texto: `Custo: ${p.preco} moedas\nSaldo depois: ${moedas - p.preco} moedas`,
-    })
+    setErroCompra(null)
+    setPendente(p)
   }
 
   async function confirmarCompra(p) {
-    setDialogo(null)
-    try {
-      await comprarItem(p.id)
-      setMoedas(m => m - p.preco)
-      setComprados(prev => [...prev, p.id])
-      setDialogo({ tipo: 'aviso', item: p, titulo: 'Comprado!', texto: `${p.nome} foi para o inventário do seu pet!` })
-    } catch (e) {
-      console.error(e)
-      setDialogo({ tipo: 'aviso', titulo: 'Ops!', texto: 'Não foi possível comprar agora. Tente de novo.' })
-    }
-  }
-
-  function renderCard(p) {
-    const comprado  = comprados.includes(p.id)
-    const semMoedas = !comprado && moedas < p.preco
-    const rar       = RAR_CFG[p.raridade?.toLowerCase()] || RAR_CFG.comum
-    const fundo     = p.slot === 'fundo'
-    const face = comprado ? '#4CD137' : semMoedas ? '#9AA5B1' : '#FFC928'
-    const lip  = comprado ? '#2E8B1E' : semMoedas ? '#5F6B7A' : '#C47F00'
-    const imgW = cardW - 28
-    return (
-      <View key={p.id} style={[s.prodCard, { width: cardW }, comprado && { borderColor: '#69F0AE' }]}>
-        <View style={[s.rarBadge, { backgroundColor: rar.bg }]}>
-          <Text variant="labelSmall" style={[s.rarLabel, { color: rar.cor }]}>{rar.label}</Text>
-        </View>
-
-        <View style={{ width: imgW, height: fundo ? imgW * 1.2 : imgW, alignItems: 'center', justifyContent: 'center' }}>
-          {p.imagem
-            ? <Image source={{ uri: p.imagem }} style={{ width: '100%', height: '100%', borderRadius: fundo ? 12 : 0 }} resizeMode={fundo ? 'cover' : 'contain'} />
-            : <View style={s.prodImgPlaceholder} />}
-        </View>
-
+    if (travaCompra.current) return
     travaCompra.current = true
     setProcessando(true)
     setErroCompra(null)
+    
     try {
-      const r = await comprarItem(aluno.id, item.id)
-      // Daqui em diante o servidor JÁ confirmou a compra: nada abaixo pode mostrar "falha na compra".
+      const r = await comprarItem(aluno.id, p.id)
       if (r?.saldo != null) {
         setSaldoServidor(r.saldo)
-        setComprados(prev => (prev.some(id => String(id) === String(item.id)) ? prev : [...prev, item.id]))
+        setComprados(prev => (prev.some(id => String(id) === String(p.id)) ? prev : [...prev, p.id]))
       }
       setPendente(null)
-      // Recarrega o estado real (servidor ou local no modo legado); se só essa releitura falhar, a tela
-      // mantém o que o servidor acabou de confirmar.
       try {
         const atualizado = await carregarEstadoLoja(aluno.id)
         setComprados(atualizado.comprados)
@@ -302,8 +222,28 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
       travaCompra.current = false
       setProcessando(false)
     }
-        <Text style={s.prodNome} numberOfLines={2}>{p.nome}</Text>
+  }
 
+  function renderCard(p) {
+    const comprado  = comprados.includes(p.id)
+    const semMoedas = !comprado && saldo < p.preco
+    const rar       = RAR_CFG[p.raridade?.toLowerCase()] || RAR_CFG.comum
+    const fundo     = p.slot === 'fundo'
+    const face = comprado ? '#4CD137' : semMoedas ? '#9AA5B1' : '#FFC928'
+    const lip  = comprado ? '#2E8B1E' : semMoedas ? '#5F6B7A' : '#C47F00'
+    const imgW = cardW - 28
+    
+    return (
+      <View key={p.id} style={[s.prodCard, { width: cardW }, comprado && { borderColor: '#69F0AE' }]}>
+        <View style={[s.rarBadge, { backgroundColor: rar.bg }]}>
+          <Text variant="labelSmall" style={[s.rarLabel, { color: rar.cor }]}>{rar.label}</Text>
+        </View>
+        <View style={{ width: imgW, height: fundo ? imgW * 1.2 : imgW, alignItems: 'center', justifyContent: 'center' }}>
+          {p.imagem
+            ? <Image source={{ uri: p.imagem }} style={{ width: '100%', height: '100%', borderRadius: fundo ? 12 : 0 }} resizeMode={fundo ? 'cover' : 'contain'} />
+            : <View style={s.prodImgPlaceholder} />}
+        </View>
+        <Text style={s.prodNome} numberOfLines={2}>{p.nome}</Text>
         <BotaoGordo face={face} lip={lip} disabled={comprado} onPress={() => handleComprar(p)} style={{ width: '100%' }}>
           {comprado
             ? <TextoContorno size={13}>No inventário</TextoContorno>
@@ -322,17 +262,10 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
       <View style={s.bgBase} />
       <View style={s.bgCard} />
 
-      {/* App Bar — react-native-paper Appbar */}
       <Appbar.Header style={[s.appBar, { backgroundColor: 'transparent' }]} statusBarHeight={Platform.OS === 'android' ? 0 : undefined}>
         <Appbar.BackAction onPress={onLogout} color="#fff" />
         <Appbar.Content title="Loja" titleStyle={s.appBarTitle} />
-        {/* Chip de moedas */}
-        <Chip
-          style={s.moedasChip}
-          textStyle={s.moedasVal}
-          icon={() => <Text style={{ fontSize: 14 }}>⭐</Text>}
-          compact
-        >
+        <Chip style={s.moedasChip} textStyle={s.moedasVal} icon={() => <Text style={{ fontSize: 14 }}>⭐</Text>} compact>
           {saldo.toLocaleString('pt-BR')}
         </Chip>
       </Appbar.Header>
@@ -341,7 +274,6 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
         <Text variant="labelSmall" style={{ color: '#ffb74d', textAlign: 'center', paddingHorizontal: 16, paddingBottom: 6 }}>{aviso}</Text>
       ) : null}
 
-      {/* Hero Card — react-native-paper Surface */}
       <Surface style={s.heroCard} elevation={2}>
         <View style={{ flex: 1, gap: 4 }}>
           <Text variant="titleMedium" style={s.heroTitle}>Loja do Curupira</Text>
@@ -358,167 +290,117 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
         </View>
       </Surface>
 
-      {/* Filter Chips — react-native-paper Chip */}
+            {/* Filter Chips — react-native-paper Chip */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filtrosRow}>
-        {CATEGORIAS.map(c => (
+        {CATEGORIAS.map((c, i) => (
           <Chip
             key={c.id}
-            selected={cat === c.id}
-            onPress={() => setCat(c.id)}
-            style={[s.filterChip, cat === c.id && s.filterChipAtivo]}
-            textStyle={[s.filterChipLabel, cat === c.id && { color: '#00C853' }]}
+            selected={idx === i}
+            onPress={() => irPara(i)}
+            style={[s.filterChip, idx === i && s.filterChipAtivo]}
+            textStyle={[s.filterChipLabel, idx === i && { color: '#00C853' }]}
             selectedColor="#00C853"
             showSelectedCheck
             compact
           >
             {c.label}
           </Chip>
-        </Appbar.Header>
+        ))}
+      </ScrollView>
 
-        {/* Placa da loja */}
-        <View style={s.heroCard}>
-          <View style={s.heroPetCircle}>
-            {turma?.pet
-              ? <Image source={{ uri: turma.pet }} style={{ width: 48, height: 48 }} resizeMode="contain" />
-              : <Image source={require('../assets/logo.png')} style={{ width: 40, height: 40 }} resizeMode="contain" />}
+      <View style={{ flex: 1 }} onLayout={e => setPager({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
+        {loading ? (
+          <View style={s.centralWrap}>
+            <ActivityIndicator animating color="#69F0AE" size="large" />
+            <Text variant="bodyMedium" style={s.centralTxt}>Carregando itens...</Text>
           </View>
-          <View style={{ flex: 1, gap: 4 }}>
-            <Text style={s.heroTitle} numberOfLines={1} adjustsFontSizeToFit>Loja do Curupira</Text>
-            <View style={s.heroPill}>
-              <Text style={s.heroPillTxt}>{comprados.length} {comprados.length === 1 ? 'item' : 'itens'}</Text>
-            </View>
-            <Text style={s.heroDica}>Itens comprados aparecem no seu pet</Text>
-          </View>
-        </View>
-
-        {/* Abas de categoria */}
-        <View style={s.tabs}>
-          {CATEGORIAS.map((c, i) => {
-            const ativo = i === idx
-            return (
-              <TouchableOpacity key={c.id} activeOpacity={0.85} onPress={() => irPara(i)} style={{ flex: 1 }}>
-                <View style={[s.tabLip, { backgroundColor: ativo ? '#C47F00' : '#0A2A1D' }]}>
-                  <View style={[s.tabFace, { backgroundColor: ativo ? '#FFC928' : '#1F6B49' }]}>
-                    <IconeAcessorio slot={c.id} size={26} />
-                    <Text style={[s.tabTxt, { color: ativo ? '#3E2723' : '#FFFFFF' }]} numberOfLines={1}>{c.label}</Text>
-                  </View>
+        ) : pager.w > 0 && (
+          <ScrollView
+            ref={pagerRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={aoTerminarArraste}
+            style={{ flex: 1 }}
+          >
+            {CATEGORIAS.map(c => {
+              const lista = produtos.filter(p => p.slot === c.id)
+              return (
+                <View key={c.id} style={{ width: pager.w, height: pager.h }}>
+                  {lista.length === 0 ? (
+                    <View style={s.centralWrap}>
+                      <IconeAcessorio slot={c.id} size={64} />
+                      <Text variant="titleMedium" style={s.centralTitulo}>Nada por aqui ainda</Text>
+                      <Text variant="bodyMedium" style={s.centralTxt}>Novos itens em breve!</Text>
+                    </View>
+                  ) : (
+                    <ScrollView contentContainerStyle={s.grade} showsVerticalScrollIndicator={false}>
+                      {lista.map(renderCard)}
+                      <View style={{ width: '100%', height: 24 }} />
+                    </ScrollView>
+                  )}
                 </View>
-              </TouchableOpacity>
-            )
-          })}
-        </View>
-
-        {/* Páginas: deslize para o lado para trocar de categoria */}
-        <View style={{ flex: 1 }} onLayout={e => setPager({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
-          {loading ? (
-            <View style={s.centralWrap}>
-              <ActivityIndicator animating color="#69F0AE" size="large" />
-              <Text variant="bodyMedium" style={s.centralTxt}>Carregando itens...</Text>
-            </View>
-          ) : pager.w > 0 && (
-            <ScrollView
-              ref={pagerRef}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={aoTerminarArraste}
-              style={{ flex: 1 }}
-            >
-              {CATEGORIAS.map(c => {
-                const lista = produtos.filter(p => p.slot === c.id)
-                return (
-                  <View key={c.id} style={{ width: pager.w, height: pager.h }}>
-                    {lista.length === 0 ? (
-                      <View style={s.centralWrap}>
-                        <IconeAcessorio slot={c.id} size={64} />
-                        <Text variant="titleMedium" style={s.centralTitulo}>Nada por aqui ainda</Text>
-                        <Text variant="bodyMedium" style={s.centralTxt}>Novos itens em breve!</Text>
-                      </View>
-                    ) : (
-                      <ScrollView contentContainerStyle={s.grade} showsVerticalScrollIndicator={false}>
-                        {lista.map(renderCard)}
-                        <View style={{ width: '100%', height: 24 }} />
-                      </ScrollView>
-                    )}
-                  </View>
-                )
-              })}
-            </ScrollView>
-          )}
-        </View>
+              )
+            })}
+          </ScrollView>
+        )}
       </View>
 
-      {/* Janela de confirmação / aviso */}
-      <Modal transparent visible={!!dialogo} animationType="fade" onRequestClose={() => setDialogo(null)}>
-        <View style={s.overlay}>
-          <View style={s.dlg}>
-            {dialogo?.item?.imagem && (
-              <Image source={{ uri: dialogo.item.imagem }} style={s.dlgImg} resizeMode="contain" />
-            )}
-            <Text style={s.dlgTitulo}>{dialogo?.titulo}</Text>
-            <Text style={s.dlgTexto}>{dialogo?.texto}</Text>
-            <View style={s.dlgBtns}>
-              {dialogo?.tipo === 'confirmar' && (
-                <BotaoGordo face="#9AA5B1" lip="#5F6B7A" onPress={() => setDialogo(null)} style={{ flex: 1 }}>
-                  <TextoContorno size={15}>Cancelar</TextoContorno>
-                </BotaoGordo>
-              )}
-              <BotaoGordo
-                face="#4CD137" lip="#2E8B1E" style={{ flex: 1 }}
-                onPress={() => dialogo?.tipo === 'confirmar' ? confirmarCompra(dialogo.item) : setDialogo(null)}
-              >
-                <TextoContorno size={15}>{dialogo?.tipo === 'confirmar' ? 'Comprar' : 'Ok'}</TextoContorno>
-              </BotaoGordo>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <ModalConfirmarCompra
+        item={pendente}
+        saldo={saldo}
+        processando={processando}
+        erro={erroCompra}
+        onCancelar={() => { if (!processando) { setPendente(null); setErroCompra(null); } }}
+        onConfirmar={() => confirmarCompra(pendente)}
+      />
     </View>
   )
 }
 
 const s = StyleSheet.create({
-  // No navegador a tela precisa de altura fixa; senão a lista não rola
   root:               { flex: 1, ...(Platform.OS === 'web' ? { height: '100vh', overflow: 'hidden' } : {}) },
   bgBase:             { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#0E3B2A' },
   bgCard:             { position: 'absolute', top: '15%', left: 0, right: 0, bottom: 0, backgroundColor: '#165238', borderTopLeftRadius: 32, borderTopRightRadius: 32 },
-  coluna:             { flex: 1, width: '100%', maxWidth: 480, alignSelf: 'center' },
   appBar:             { elevation: 0 },
   appBarTitle:        { fontSize: 20, fontFamily: fonts.extrabold, color: '#fff', letterSpacing: 0.5 },
   moedasChip:         { backgroundColor: colors.yellowLight + '22', borderColor: colors.yellow + '66', borderWidth: 1.5, marginRight: 8 },
   moedasVal:          { fontSize: 13, fontFamily: fonts.bold, color: colors.yellow },
-
   heroCard:           { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginBottom: 12, backgroundColor: '#FFF8E1', borderRadius: 22, borderWidth: 3.5, borderColor: '#1B5E20', borderBottomWidth: 8, padding: 12 },
   heroPetCircle:      { width: 62, height: 62, borderRadius: 31, backgroundColor: '#E6F7EA', borderWidth: 3.5, borderColor: '#1B5E20', alignItems: 'center', justifyContent: 'center' },
   heroTitle:          { fontFamily: fonts.extrabold, fontSize: 21, color: '#1B5E20' },
-  heroPill:           { alignSelf: 'flex-start', backgroundColor: '#FFC928', borderRadius: 14, borderWidth: 2.5, borderColor: '#3E2723', paddingHorizontal: 10, paddingVertical: 2 },
-  heroPillTxt:        { fontFamily: fonts.extrabold, fontSize: 13, color: '#3E2723' },
+  heroSub:            { fontFamily: fonts.regular, fontSize: 13, color: '#5D4037' },
   heroDica:           { fontFamily: fonts.semibold, fontSize: 12, color: '#5D4037' },
-
-  tabs:               { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 10 },
-  tabLip:             { borderRadius: 16, borderWidth: 3, borderColor: '#0A2A1D', paddingBottom: 4 },
-  tabFace:            { height: 42, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 4 },
-  tabTxt:             { fontSize: 13, fontFamily: fonts.extrabold },
-
+  filtrosRow:         { paddingHorizontal: 16, gap: 8, paddingBottom: 10 },
+  filterChip:         { backgroundColor: 'rgba(255,255,255,0.1)' },
+  filterChipAtivo:    { backgroundColor: 'rgba(0,200,83,0.2)' },
+  filterChipLabel:    { color: 'rgba(255,255,255,0.7)', fontFamily: fonts.semibold },
   grade:              { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10, paddingHorizontal: 14, paddingTop: 4 },
   prodCard:           { borderRadius: 20, borderWidth: 2, borderColor: 'rgba(245,244,217,0.18)', backgroundColor: 'rgba(255,255,255,0.09)', padding: 14, alignItems: 'center', gap: 8 },
   rarBadge:           { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, alignSelf: 'center' },
   rarLabel:           { fontSize: 11, fontFamily: fonts.bold, letterSpacing: 1 },
   prodImgPlaceholder: { width: '100%', height: '100%', backgroundColor: 'rgba(245,244,217,0.06)', borderRadius: 12 },
   prodNome:           { fontFamily: fonts.bold, fontSize: 15, color: '#FFFFFF', textAlign: 'center' },
-
   bLip:               { borderRadius: 16, borderWidth: 3, borderColor: '#1B1030', paddingBottom: 5 },
   bFace:              { height: 42, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, overflow: 'hidden', paddingHorizontal: 8 },
   bShine:             { position: 'absolute', top: 0, left: 0, right: 0, height: '45%', backgroundColor: 'rgba(255,255,255,0.3)' },
-
   centralWrap:        { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   centralTitulo:      { fontFamily: fonts.bold, color: colors.cream },
   centralTxt:         { fontFamily: fonts.regular, color: 'rgba(245,244,217,0.75)' },
-
-  overlay:            { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  dlg:                { width: '100%', maxWidth: 360, backgroundColor: '#FFF8E1', borderRadius: 24, borderWidth: 4, borderColor: '#1B5E20', borderBottomWidth: 9, padding: 20, alignItems: 'center', gap: 10 },
-  dlgImg:             { width: 110, height: 110 },
-  dlgTitulo:          { fontFamily: fonts.extrabold, fontSize: 20, color: '#1B5E20', textAlign: 'center' },
-  dlgTexto:           { fontFamily: fonts.semibold, fontSize: 14, color: '#5D4037', textAlign: 'center' },
-  dlgBtns:            { flexDirection: 'row', gap: 10, marginTop: 6, width: '100%' },
+  confirmBg:          { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  confirmSheet:       { width: '100%', maxWidth: 400, backgroundColor: '#1B432D', borderRadius: 24, padding: 24, gap: 16, borderWidth: 2, borderColor: 'rgba(245,244,217,0.1)' },
+  confirmTitulo:      { fontFamily: fonts.bold, color: '#FFF8E1', textAlign: 'center', marginBottom: 4 },
+  confirmItemRow:     { flexDirection: 'row', alignItems: 'center', gap: 16, backgroundColor: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 16 },
+  confirmItemImg:     { width: 60, height: 60, borderRadius: 8 },
+  confirmItemImgPlaceholder: { width: 60, height: 60, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.1)' },
+  confirmItemNome:    { color: '#FFF8E1', fontFamily: fonts.bold },
+  confirmPreco:       { color: colors.yellow, fontFamily: fonts.semibold },
+  confirmSaldoBox:    { backgroundColor: 'rgba(0,0,0,0.15)', padding: 12, borderRadius: 12, gap: 8 },
+  confirmSaldoRow:    { flexDirection: 'row', justifyContent: 'space-between' },
+  confirmSaldoLabel:  { color: 'rgba(245,244,217,0.6)' },
+  confirmSaldoValor:  { color: '#FFF8E1', fontFamily: fonts.bold },
+  confirmErroBox:     { backgroundColor: 'rgba(255,107,107,0.15)', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,107,107,0.3)' },
+  confirmErroTxt:     { color: '#ff6b6b', textAlign: 'center' },
+  confirmBotoesRow:   { flexDirection: 'row', gap: 12, marginTop: 8 },
+  confirmBtn:         { flex: 1 },
 })
