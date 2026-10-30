@@ -1,0 +1,88 @@
+CURUPIRA · V4 (segurança) — RESULTADOS FINAIS (execução real de 2026-10-28)
+================================================================================
+AMBIENTE: PostgreSQL 16 LOCAL (porta 55432) + simulador PostgREST-like (testes/shim) + Playwright/Chromium + Node 22.
+NENHUM teste foi executado contra Supabase real (homologação ou produção). Nenhum SQL, migration, fechamento ou rollback foi aplicado a um Supabase real.
+Repositório original (/home/claude/curupira): não modificado (sem commit/push/merge/rebase/reset). `.env`: nunca lido, impresso, copiado nem incluído.
+
+COMANDO (suíte completa):
+  cd entrega_v4_2/testes && ./rodar_tudo_v4.sh <migrations de origin/dev> <build web do Expo (expo export)>
+  usado: ./rodar_tudo_v4.sh /tmp/claude-0/-home-claude/d00bb331-91e4-5223-8cd9-b37770f7c4d5/scratchpad/dev_ref_m/supabase/migrations /tmp/claude-0/-home-claude/d00bb331-91e4-5223-8cd9-b37770f7c4d5/scratchpad/webout_devv4_2      (S = diretório de trabalho da sessão)
+CÓDIGO DE SAÍDA REAL: 0 (suítes com falha: 0). Cada suíte propaga seu código de saída; falha de execução, ERROR de SQL ou 0 verificações contam como falha.
+LOG BRUTO: /tmp/claude-0/-home-claude/d00bb331-91e4-5223-8cd9-b37770f7c4d5/scratchpad/rodar_tudo_v4_2_final.out (+ logs por suíte em /tmp/pgtest/logs_tudo/, descartáveis, não incluídos no ZIP).
+
+================= RESUMO POR SUÍTE (cada linha é independente; ambiente: PostgreSQL local simulado + shim PostgREST-like) =================
+OK | SQL · RPCs V4 (antes do fechamento) | v4_antes: PASS=117 FAIL=0 ERROS=0
+OK | SQL · RPCs V4 (depois do fechamento) | v4_rd: PASS=117 FAIL=0 ERROS=0
+OK | SQL · tarefas globais/etapas/moedas (antes) | v4_ta: PASS=36 FAIL=0 ERROS=0
+OK | SQL · tarefas globais/etapas/moedas (depois) | v4_td: PASS=36 FAIL=0 ERROS=0
+OK | SQL · exposição (ANTES: vulnerabilidades reproduzidas) | v4_xa (antes): PASS=43 FAIL=0 ERROS=0
+OK | SQL · exposição (DEPOIS: mesmas operações bloqueadas) | v4_xd (depois): PASS=43 FAIL=0 ERROS=0
+OK | SQL · leituras com escopo de sessão (antes do fechamento) | v4_l_antes (antes): PASS=54 FAIL=0 ERROS=0
+OK | SQL · leituras com escopo de sessão (depois do fechamento) | v4_l_depois (depois): PASS=54 FAIL=0 ERROS=0
+OK | SQL · Storage: RPC de autorização (migration 29) | v4_sto: PASS=35 FAIL=0 ERROS=0
+OK | Node · Edge Function imagens-admin (política real + RPC em PostgreSQL local + Storage FALSO) | TOTAL PASS=55 FAIL=0
+OK | SQL · Storage: scripts manuais de fechamento/rollback (schema storage SIMULADO) | TOTAL PASS=39 FAIL=0
+OK | SQL · Fase 2 (senhas sem texto puro) + rollback estrutural | FASE2: 43 aprovados, 0 falhas
+OK | SQL · variações de fechamento / rollback seguro / migrations / pós-check | TOTAL PASS=70 FAIL=0
+OK | SQL · concorrência de recompensas | TOTAL PASS=6 FAIL=0
+OK | SQL · pós-check no banco fechado (false esperado: 0; NULL = não verificado) | falhas: 0  nao_verificadas(NULL): 1  linhas: 104
+OK | Estático · varredura do app (.from restantes, Storage direto, segredos, .env) | TOTAL PASS=5 FAIL=0
+OK | Estático · RPCs chamadas pelo app × assinaturas do banco | TOTAL chamadas=54 PASS=54 FAIL=0
+OK | Node · cliente (services/storage.js REAL) × shim fechado + Edge Function simulada | TOTAL PASS=24 FAIL=0
+OK | E2E · test_nuvem_e2e | 46/46 verificações OK — E2E nuvem (Postgres local + shim; NÃO é o Supabase real)
+OK | E2E · test_login_paralelo | 4/4 verificações OK — limite de login paralelo (Postgres local + shim; NÃO é o Supabase real)
+OK | E2E · test_migracao_e2e | 18/18 verificações OK — migração local→nuvem (Postgres local + shim; NÃO é o Supabase real)
+OK | E2E · test_endurecimento_e2e | 13/13 verificações OK — endurecimento (Postgres local + shim; NÃO é o Supabase real)
+OK | E2E · test_regras_aprovadas_e2e | 23/23 verificações OK — regras aprovadas: saldo negativo e item desativado (Postgres local + shim; NÃO é o Supabase real)
+OK | E2E · test_v4_staff_e2e | 42/42 verificações OK — V4 staff/autorização (Postgres local FECHADO + shim; NÃO é o Supabase real)
+================= suítes com falha: 0 =================
+Terminated
+
+Correção desta rodada: E2E test_v4_staff_e2e item E5. Antes exigia HTTP 200 nas 6 leituras diretas (contrato antigo, pré-migration 28). Agora verifica separadamente:
+  E5a leitura direta BLOQUEADA (401/403) em turmas, pets, missoes, missoes_turmas, alunos_missoes, conquistas;
+  E5b catálogos acessorios e icones_missoes legíveis (200);
+  E5c INSERT anônimo nos catálogos bloqueado.
+  Nenhuma permissão foi aberta; os 401 observados eram o comportamento correto. (Confirmado também por has_table_privilege no banco fechado.)
+
+SOBRE A MENSAGEM "Terminated" no log da suíte completa
+  Causa comprovada e inofensiva: é o aviso do bash quando o shim (servidor auxiliar PostgREST-like) é encerrado de propósito por `kill` em
+  testes/subir_servicos.sh ao trocar o banco apontado (rodar_cliente.sh recria o banco v4_cli e reinicia o shim). Reproduzido isoladamente (script sem nenhum teste:
+  subir_servicos v4_e2e → subir_servicos v4_cli imprime "Terminated"). Não é teste sendo encerrado: o teste do cliente roda DEPOIS, com rc=0 (24/24 PASS; execução isolada
+  de rodar_cliente.sh também rc=0). A mensagem não foi escondida; o código de saída de cada suíte é verificado. A alteração `& disown` em subir_servicos.sh é sintaticamente
+  válida (bash -n) e não mudou o aviso (que vem do kill intencional), nem o funcionamento (o shim permanece ativo: verificado com pgrep/__sql).
+
+1) CONCLUÍDO E COMPROVADO (em ambiente LOCAL/SIMULADO)
+  * Migrations 27/28/29 aplicam em sequência e são idempotentes; rollbacks recusam por dependência (29→27, 28→27, fechamento→28/27, Fase 2→27) e o rollback da 29 remove só uma função.
+  * Todas as RPCs de escrita/leitura V4 com papel e escopo derivados do token (antes e depois do fechamento); leituras diretas das tabelas protegidas bloqueadas depois do fechamento.
+  * Catálogos acessorios/icones_missoes: SELECT público, sem escrita anônima.
+  * Fase 2 (professores e alunos): BEFORE trigger, sem texto puro, sem nova tabela de cópia, rollback só estrutural (43/43).
+  * Rollback do fechamento seguro por padrão (RPCs legadas continuam revogadas; reexposição só por níveis com boolean + frase; recusa sem retrato).
+  * Autorização de Storage por RPC (35/35); política da Edge Function com a RPC real local e Storage FALSO (55/55); scripts de fechamento/rollback do Storage em schema `storage` SIMULADO (39/39).
+  * Cliente (services/storage.js real + supabase-js real) contra o shim FECHADO: leituras por RPC com isolamento entre papéis; upload/remoção só pela função; nenhuma requisição a tabela protegida (24/24).
+  * Varredura estática do app: só leituras diretas de acessorios/icones_missoes; nenhum upload/remoção direto no Storage; sem service_role/segredo/.env (5/5, com controle negativo); 54 chamadas RPC conferidas contra o catálogo.
+  * Build web (expo export) sem service_role no bundle (ver limitação abaixo).
+
+2) VALIDADO APENAS EM SIMULAÇÃO (não prova o Supabase real)
+  * Todo o item 1. O shim mapeia SQLSTATE→HTTP à sua maneira (42501→401); o PostgREST real pode devolver 401/403, trata cabeçalhos/CORS/cache de schema de forma própria.
+  * `service_role` é um role criado pelo teste; o `storage` é um schema simulado; a Storage API é um Map em memória; a Edge Function roda no Node 22 dentro do shim (mesma politica.js).
+
+3) PENDENTE DE HOMOLOGAÇÃO NO SUPABASE REAL (nada disto foi feito)
+  * Aplicar 20261027→28→29 e conferir o catálogo `supabase_migrations` (a linha do pós-check é NULL = NÃO VERIFICADO no simulador).
+  * Implantar e executar `imagens-admin` (index.ts nunca foi executado; Deno, `npm:@supabase/supabase-js`, `Deno.serve`, service_role injetada pelo runtime, CORS/verify_jwt, limites do bucket).
+  * Upload/remoção reais pela Storage API; `functions.invoke` com FormData em web/iOS/Android; códigos PT401…PT429 chegando pelo PostgREST.
+  * Rodar V4_STORAGE_consultas_pre_pos.sql e revisar as políticas REAIS antes de V4_STORAGE_fechar_upload_anonimo.sql (políticas genéricas afetam outros buckets; script avisa por NOTICE).
+  * Fechamento/pós-check/regressão no Supabase real; limite de login por IP (x-forwarded-for); mapeamento 401×403.
+  * Fase 2 só com backup externo RESTAURÁVEL e testado (a fase não cria cópia de texto puro).
+  * `.env`: remover do índice (git rm --cached) em todas as branches que o rastreiam, avaliar e rotacionar credenciais (supabase/LEIAME_ENV.md). NÃO RESOLVIDO por esta entrega; o histórico continua com o arquivo.
+
+4) LIMITAÇÕES DE BUILD CONHECIDAS
+  * `screens/LojaScreen.js` de origin/dev NÃO compila: "Identifier 'comprarItem' has already been declared (34:31)". PRÉ-EXISTENTE: o arquivo na cópia isolada é idêntico ao de origin/dev (verificado por diff).
+    Build bruto da cópia: rc=1 (log: /tmp/claude-0/-home-claude/d00bb331-91e4-5223-8cd9-b37770f7c4d5/scratchpad/build_raw_v4_2.log).
+  * O build que passou (rc=0, /tmp/claude-0/-home-claude/d00bb331-91e4-5223-8cd9-b37770f7c4d5/scratchpad/build_devv4_2.log) usou LojaScreen.js/PetScreen.js da V3 como fixture, fora da entrega. NÃO se afirma que o app compila integralmente a partir de origin/dev.
+    Telas de outros integrantes não foram alteradas.
+  * aluno_avancar_etapa existe e é testada, mas nenhuma tela a chama (fora do escopo).
+
+5) NÃO EXECUTADO
+  * Nada contra Supabase real; Deno; test_cenario.py/test_pr_pet.py (mocks visuais antigos, fora do escopo); teste E2E no navegador do fluxo de upload pela interface do administrador (o fluxo é coberto no nível de serviço, item 1).
+
+6) APLICAÇÃO, VALIDAÇÃO E REVERSÃO: ver V4_README.md §4–§5 e §8, V4_MATRIZ_ACESSOS.md, storage/LEIAME_STORAGE.md, LEIAME_ENV.md.
