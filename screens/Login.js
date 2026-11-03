@@ -18,21 +18,9 @@ export default function Login({ onLogin, onCriarPerfil, onSouProfessor }) {
   }
 
   async function handleLogin() {
-    if (!email || !senha) {
-      setErro('Preencha e-mail e senha para continuar.')
-      return
-    }
-    if (!validarEmail(email)) {
-      setErro('Informe um e-mail válido.')
-      return
-    }
-    const encontrado = await buscarAluno(email.trim().toLowerCase(), senha)
-    if (!encontrado) {
-      setErro('E-mail ou senha incorretos.')
-      return
-    }
-    setErro('')
-    onLogin(encontrado)
+  if (!email || !senha) {
+    setErro('Preencha e-mail e senha para continuar.')
+    return
   }
   if (!validarEmail(email)) {
     setErro('Informe um e-mail válido.')
@@ -44,6 +32,8 @@ export default function Login({ onLogin, onCriarPerfil, onSouProfessor }) {
   } catch (e) {
     setErro(e?.codigo === 'muitas_tentativas'
       ? 'Muitas tentativas de login. Aguarde alguns minutos e tente novamente.'
+      : e?.codigo === 'migration_ausente'
+      ? 'O servidor ainda não foi atualizado para esta versão do app. Avise seu professor ou o administrador.'
       : e?.codigo === 'configuracao'
       ? 'Erro de configuração do servidor. Avise seu professor ou o administrador do app.'
       : 'Não foi possível conectar. Verifique sua internet e tente novamente.')

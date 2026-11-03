@@ -23,7 +23,7 @@ const CAMPOS_OBRIGATORIOS = {
 }
 
 const ROTULOS = {
-  id: 'ID', nome: 'Nome', email: 'E-mail', senha: 'Senha', xp: 'XP',
+  id: 'ID', nome: 'Nome', email: 'E-mail', senha: 'Nova senha (opcional)', xp: 'XP',
   icone: 'Imagem / ícone', estagio: 'Estágio', emocao: 'Emoção',
   cosmetico: 'Cosmético', turma_id: 'ID da turma', turmaId: 'ID da turma',
   professor_id: 'ID do professor', professorId: 'ID do professor',
@@ -158,6 +158,7 @@ export default function AdminDataManager({ visible, onClose }) {
     if (!selecionado) return
     const obrigatorios = CAMPOS_OBRIGATORIOS[aba] || []
     const faltantes = Object.fromEntries(obrigatorios
+      .filter(chave => chave !== 'senha')   // senha é opcional: em branco = manter a atual (o servidor nunca devolve a senha)
       .filter(chave => Object.prototype.hasOwnProperty.call(selecionado, chave) && !String(rascunho[chave] ?? '').trim())
       .map(chave => [chave, `Preencha ${rotuloCampo(chave).toLowerCase()}.`]))
     setErrosCampos(faltantes)

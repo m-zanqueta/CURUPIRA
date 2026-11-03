@@ -45,7 +45,7 @@ const tema = {
   },
 }
 import { colors } from './theme'
-import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp, aoSessaoInvalida, temTokenAluno, estadoNuvemServidor } from './services/storage'
+import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp, aoSessaoInvalida, temTokenAluno, restaurarSessaoStaff, restaurarPerfilAluno } from './services/storage'
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
@@ -118,28 +118,38 @@ function AppInterno() {
         const sessao = await obterSessaoApp()
         if (!ativo) return
 
-        if (sessao?.tipo === 'admin' && sessao.usuario) {
-          setProfessor({ ...sessao.usuario, tipo: 'admin' })
-          setTela('dashboardAdmin')
-          return
-        }
-        if (['professor', 'coordenador'].includes(sessao?.tipo) && sessao.usuario?.id) {
-          setProfessor(sessao.usuario)
-          setTela('dashboardProfessor')
+        // Professor/coordenador/admin: o JSON local NÃO prova nada. O token é validado no servidor e o perfil
+        // (inclusive o papel) volta do banco. Sem token válido (ou sem conseguir verificar) => tela de login.
+        if (['admin', 'professor', 'coordenador'].includes(sessao?.tipo)) {
+          let perfil = null
+          try { perfil = await restaurarSessaoStaff() } catch (e) { console.warn('Sessão de staff não verificada:', e?.codigo) }
+          if (!ativo) return
+          if (!perfil) {
+            await limparSessaoApp()
+            setTela('loginProfessor')
+            return
+          }
+          setProfessor(perfil)
+          setTela(perfil.tipo === 'admin' ? 'dashboardAdmin' : 'dashboardProfessor')
           return
         }
         if (sessao?.tipo === 'aluno' && sessao.usuario?.id) {
-          // Sessão salva por uma versão anterior (sem token) e o banco já tem a persistência em nuvem
-          // (ou respondeu com erro de configuração): NÃO vale como sessão autenticada; exige novo login.
-          // Sem resposta (rede) ou sem a migration (modo legado) a sessão local segue como antes.
-          // O atalho local 'loja' nunca tem token e fica de fora.
-          if (sessao.usuario.id !== 'loja' && !(await temTokenAluno())
-              && ['disponivel', 'configuracao'].includes(await estadoNuvemServidor())) {
-            await limparSessaoApp()
-            if (ativo) setTela('login')
-            return
+          // Aluno (exceto o atalho local 'loja') só vale com token de servidor. Sem token => novo login.
+          // Com token, o perfil (xp, turma...) é relido do servidor: o JSON local não é fonte de verdade.
+          let alunoSalvo = sessao.usuario
+          if (sessao.usuario.id !== 'loja') {
+            if (!(await temTokenAluno())) {
+              await limparSessaoApp()
+              if (ativo) setTela('login')
+              return
+            }
+            try {
+              const perfil = await restaurarPerfilAluno()
+              if (!perfil) { await limparSessaoApp(); if (ativo) setTela('login'); return }
+              alunoSalvo = { ...sessao.usuario, ...perfil }
+            } catch (e) { console.warn('Perfil do aluno não verificado (sem rede?):', e?.codigo) }
           }
-          const alunoSalvo = sessao.usuario
+          if (!ativo) return
           setAluno(alunoSalvo)
           if (!alunoSalvo.turmaId) {
             setTela('entrarTurma')

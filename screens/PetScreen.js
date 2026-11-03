@@ -8,7 +8,7 @@ import {
   Text, ActivityIndicator, Surface, ProgressBar, Chip,
 } from 'react-native-paper'
 import { colors, fonts } from '../theme'
-import { listarItensComprados, listarAcessoriosLoja } from '../services/storage'
+import { listarItensComprados, listarAcessoriosLoja, listarEquipados, atualizarEquipado } from '../services/storage'
 import IconeUI, { IconeAcessorio } from '../components/IconeUI'
 import TextoContorno from '../components/TextoContorno'
 

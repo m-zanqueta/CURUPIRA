@@ -46,7 +46,12 @@ export default function CriarPerfil({ onVoltar, onCriado }) {
       return
     }
     const novoAluno = { usuario, email, senha, receberInfo }
-    await salvarUsuario(novoAluno)
+    try {
+      await salvarUsuario(novoAluno)   // lança em caso de falha: antes o erro era engolido e o app mostrava "sucesso"
+    } catch (e) {
+      setErro(e?.message || 'Não foi possível criar a conta. Tente novamente.')
+      return
+    }
     setErro('')
     setSucesso(true)
   }

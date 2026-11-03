@@ -3,8 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, Image, ActivityIndicator,
 } from 'react-native'
-import { supabase } from '../services/supabase'
-import { atualizarAluno } from '../services/storage'
+import { entrarNaTurma } from '../services/storage'
 import { fonts } from '../theme'
 import { cores } from '../constants/cores'
 
@@ -32,37 +31,15 @@ export default function EntrarTurma({ aluno, onEntrou, onSemSessao }) {
     setErro('')
     setLoading(true)
     try {
-      const { data: turma, error } = await supabase
-        .from('turmas')
-        .select('id, nome, codigo, professor_id')
-        .eq('codigo', codigo.trim().toUpperCase())
-        .maybeSingle()
-
-      if (error) throw error
-      if (!turma) { setErro('Código inválido. Verifique com seu professor.'); return }
-
-      // Verifica se a turma tem pet configurado — sem pet, o PetScreen
-      // mostraria "Pet não encontrado" e o aluno voltaria pra cá (loop).
-      const { data: pet, error: petError } = await supabase
-        .from('pets')
-        .select('id')
-        .eq('turma_id', turma.id)
-        .maybeSingle()
-
-      if (petError) throw petError
-      if (!pet) {
-        setErro('Essa turma ainda não tem pet configurado. Fale com seu professor.')
-        return
-      }
-
-      // atualizarAluno devolve false quando o UPDATE falha (ele não lança):
-      // sem isso o app seguiria como se tivesse entrado na turma sem gravar.
-      const gravou = await atualizarAluno(aluno.id, { turmaId: turma.id })
-      if (gravou === false) throw new Error('Não foi possível gravar a turma do aluno.')
+      // A turma e o aluno são decididos no servidor (o token identifica o aluno; o cliente só envia o código).
+      const { turma } = await entrarNaTurma(codigo)
       await onEntrou({ ...aluno, turmaId: turma.id }, turma)
     } catch(e) {
-      console.error(e)
-      setErro('Não foi possível entrar na turma. Verifique sua conexão e tente novamente.')
+      console.error(e?.codigo || e?.message)
+      const conhecidos = ['codigo_invalido', 'turma_sem_pet', 'ja_em_turma', 'muitas_tentativas', 'sessao_invalida', 'migration_ausente', 'configuracao']
+      setErro(conhecidos.includes(e?.codigo) && e.codigo !== 'configuracao' ? e.message
+        : 'Não foi possível entrar na turma. Verifique sua conexão e tente novamente.')
+      if (e?.codigo === 'sessao_invalida') onSemSessao?.()
     } finally {
       enviando.current = false
       setLoading(false)
