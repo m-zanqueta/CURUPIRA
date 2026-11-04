@@ -9,7 +9,7 @@ import { cores } from '../constants/cores'
 
 const VERDE = cores.verdePrimario || '#009D25'
 
-export default function EntrarTurma({ aluno, onEntrou, onSemSessao }) {
+export default function EntrarTurma({ aluno, onEntrou, onSemSessao, onVoltarLogin }) {
   const [codigo,  setCodigo]  = useState('')
   const [erro,    setErro]    = useState('')
   const [loading, setLoading] = useState(false)
@@ -97,6 +97,15 @@ export default function EntrarTurma({ aluno, onEntrou, onSemSessao }) {
             }
           </TouchableOpacity>
 
+          <TouchableOpacity
+            style={s.btnVoltar}
+            onPress={onVoltarLogin}
+            disabled={loading}
+            activeOpacity={0.75}
+          >
+            <Text style={s.btnVoltarTxt}>Voltar ao login</Text>
+          </TouchableOpacity>
+
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -122,4 +131,6 @@ const s = StyleSheet.create({
   erroTxt:     { fontSize: 13, fontFamily: fonts.semibold, color: '#c0392b', textAlign: 'center' },
   btnEntrar:   { backgroundColor: VERDE, borderRadius: 14, paddingVertical: 18, alignItems: 'center', marginBottom: 12, elevation: 4, shadowColor: VERDE, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
   btnEntrarTxt:{ fontSize: 16, fontFamily: fonts.bold, color: '#fff' },
+  btnVoltar:   { alignItems: 'center', paddingVertical: 12 },
+  btnVoltarTxt:{ fontSize: 14, fontFamily: fonts.semibold, color: VERDE },
 })

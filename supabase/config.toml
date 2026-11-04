@@ -1,2 +1,5 @@
 [functions.migrar-login]
 verify_jwt = false
+
+[functions.verificar-email-aluno]
+verify_jwt = false

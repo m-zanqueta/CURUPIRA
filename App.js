@@ -348,6 +348,7 @@ function AppInterno() {
             aluno={aluno}
             onEntrou={handleEntrarTurma}
             onSemSessao={() => navegarCom('login')}
+            onVoltarLogin={sair}
           />
         )}
 
@@ -361,14 +362,14 @@ function AppInterno() {
 
         {tela === 'dashboardAdmin' && (
           professor?.tipo === 'admin'
-            ? <AdminDashboardScreen usuario={professor} onLogout={sair} />
+            ? <AdminDashboardScreen usuario={professor} onLogout={sair} onAdminAtualizado={setProfessor} />
             : <LoginProfessor onLogin={entrarAreaProfessor} onAdminLogin={entrarAreaProfessor} onSouAluno={() => navegarCom('login')} />
         )}
 
         {tela === 'dashboardProfessor' && (
           professor?.tipo !== 'admin'
             ? <DashboardScreen professor={professor} onLogout={sair} />
-            : <AdminDashboardScreen usuario={professor} onLogout={sair} />
+            : <AdminDashboardScreen usuario={professor} onLogout={sair} onAdminAtualizado={setProfessor} />
         )}
 
         {tela === 'pet' && (
