@@ -299,6 +299,22 @@ function AppInterno() {
     setTimeout(() => navegarCom('pet'), 2000)
   }
 
+  function sairAluno() {
+    // A saída do aluno vai diretamente ao login. Não usa navegarCom porque a
+    // tela do PET pode ainda estar concluindo a animação horizontal quando o
+    // perfil chama sair; o destino de login é explícito e sempre válido.
+    setAluno(null)
+    setTurmaAluno(null)
+    setProgressoAluno(null)
+    setProfessor(null)
+    Animated.timing(fadeAnim, { toValue:0, duration:180, useNativeDriver:true }).start(({ finished }) => {
+      if (!finished) return
+      setTela('login')
+      Animated.timing(fadeAnim, { toValue:1, duration:180, useNativeDriver:true }).start()
+    })
+    limparSessaoApp().catch(error => console.error('Não foi possível limpar a sessão do aluno:', error))
+  }
+
   async function sair() {
     try {
       await limparSessaoApp()
@@ -348,7 +364,7 @@ function AppInterno() {
             aluno={aluno}
             onEntrou={handleEntrarTurma}
             onSemSessao={() => navegarCom('login')}
-            onVoltarLogin={sair}
+            onVoltarLogin={sairAluno}
           />
         )}
 
@@ -377,7 +393,7 @@ function AppInterno() {
             aluno={aluno}
             turma={turmaAluno}
             progresso={progressoAluno}
-            onLogout={sair}
+            onLogout={sairAluno}
             onLoja={() => navegarCom('loja')}
           />
         )}

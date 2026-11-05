@@ -291,7 +291,12 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
       </Surface>
 
             {/* Filter Chips — react-native-paper Chip */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filtrosRow}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={s.filtrosScroll}
+        contentContainerStyle={s.filtrosRow}
+      >
         {CATEGORIAS.map((c, i) => (
           <Chip
             key={c.id}
@@ -371,7 +376,8 @@ const s = StyleSheet.create({
   heroTitle:          { fontFamily: fonts.extrabold, fontSize: 21, color: '#1B5E20' },
   heroSub:            { fontFamily: fonts.regular, fontSize: 13, color: '#5D4037' },
   heroDica:           { fontFamily: fonts.semibold, fontSize: 12, color: '#5D4037' },
-  filtrosRow:         { paddingHorizontal: 16, gap: 8, paddingBottom: 10 },
+  filtrosScroll:      { height: 50, flexGrow: 0, flexShrink: 0, marginBottom: 8 },
+  filtrosRow:         { paddingHorizontal: 16, gap: 8, alignItems: 'center', flexGrow: 0 },
   filterChip:         { backgroundColor: 'rgba(255,255,255,0.1)' },
   filterChipAtivo:    { backgroundColor: 'rgba(0,200,83,0.2)' },
   filterChipLabel:    { color: 'rgba(255,255,255,0.7)', fontFamily: fonts.semibold },
