@@ -101,6 +101,7 @@ function AppInterno() {
   const [turmaAluno,    setTurmaAluno]    = useState(null)
   const [progressoAluno,setProgressoAluno]= useState(null)
   const fadeAnim = useRef(new Animated.Value(1)).current
+  const transicaoRef = useRef(0)
 
   const [fontsLoaded] = useFonts({
     Montserrat_400Regular,
@@ -191,11 +192,14 @@ function AppInterno() {
   // inconsistente) nunca deixa `tela` num valor que nenhum bloco abaixo
   // trata — em vez de ficar com a tela em branco, cai na 404.
   function navegarCom(destino) {
+    const transicao = ++transicaoRef.current
     const alvo = TELAS_VALIDAS.has(destino) ? destino : 'erro404'
     if (alvo === 'erro404' && destino !== 'erro404') {
       console.warn(`Destino de navegação inválido: "${destino}". Mostrando tela de erro (404).`)
     }
-    Animated.timing(fadeAnim, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => {
+    fadeAnim.stopAnimation()
+    Animated.timing(fadeAnim, { toValue: 0, duration: 400, useNativeDriver: true }).start(({ finished }) => {
+      if (!finished || transicao !== transicaoRef.current) return
       setTela(alvo)
       Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start()
     })
@@ -300,19 +304,18 @@ function AppInterno() {
   }
 
   function sairAluno() {
-    // A saída do aluno vai diretamente ao login. Não usa navegarCom porque a
-    // tela do PET pode ainda estar concluindo a animação horizontal quando o
-    // perfil chama sair; o destino de login é explícito e sempre válido.
+    // Logout tem prioridade sobre qualquer transição que ainda esteja em curso.
+    // Se uma navegação antiga terminar depois do clique, ela não pode trocar
+    // a tela de login por outro destino.
+    transicaoRef.current += 1
+    fadeAnim.stopAnimation()
+    fadeAnim.setValue(1)
     setAluno(null)
     setTurmaAluno(null)
     setProgressoAluno(null)
     setProfessor(null)
-    Animated.timing(fadeAnim, { toValue:0, duration:180, useNativeDriver:true }).start(({ finished }) => {
-      if (!finished) return
-      setTela('login')
-      Animated.timing(fadeAnim, { toValue:1, duration:180, useNativeDriver:true }).start()
-    })
     limparSessaoApp().catch(error => console.error('Não foi possível limpar a sessão do aluno:', error))
+    setTela('login')
   }
 
   async function sair() {

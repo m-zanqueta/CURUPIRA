@@ -158,6 +158,14 @@ export async function salvarCoordenadorAdmin(dados) {
   })
 }
 
+export async function salvarAlunoAdmin(dados) {
+  return rpcStaff('admin_criar_aluno', {
+    p_nome: dados.nome.trim(),
+    p_email: dados.email.trim().toLowerCase(),
+    p_senha: dados.senha,
+  })
+}
+
 // ── Imagens (pets-images) — TODA escrita/remoção passa pela Edge Function "imagens-admin" ─────────────────
 // O app NÃO grava nem apaga no Storage com a chave anon (sem fallback: se a função falhar, a operação falha com a mensagem do servidor).
 // O servidor valida token + papel admin + tipo REAL do arquivo + tamanho e GERA o nome do objeto; o app só recebe o caminho e a URL pública.
