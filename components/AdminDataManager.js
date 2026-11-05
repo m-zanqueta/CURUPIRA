@@ -290,7 +290,7 @@ export default function AdminDataManager({ visible, onClose, usuario, onAdminAtu
                   const obrigatorio = (CAMPOS_OBRIGATORIOS[aba] || []).includes(chave)
                   return (
                     <View key={chave} style={styles.field}>
-                      <Text style={styles.label}>{rotuloCampo(chave)}{obrigatorio ? ' *' : ''}{chave === 'id' ? ' · não editável' : ''}</Text>
+                      <Text style={styles.label}>{rotuloCampo(chave)}{obrigatorio && chave !== 'senha' ? ' *' : ''}{chave === 'id' || (aba === 'professores' && chave === 'tipo') ? ' · não editável' : ''}</Text>
                       {booleano ? (
                         <View style={styles.booleanOptions}>
                           {[['true', 'Sim'], ['false', 'Não']].map(([valor, texto]) => (
@@ -322,8 +322,8 @@ export default function AdminDataManager({ visible, onClose, usuario, onAdminAtu
                             setRascunho(prev => ({ ...prev, [chave]: valor }))
                             setErrosCampos(prev => ({ ...prev, [chave]: '' }))
                           }}
-                          editable={chave !== 'id' && !salvando}
-                          selectTextOnFocus={chave !== 'id'}
+                          editable={chave !== 'id' && !(aba === 'professores' && chave === 'tipo') && !salvando}
+                          selectTextOnFocus={chave !== 'id' && !(aba === 'professores' && chave === 'tipo')}
                           multiline={chave === 'descricao' || chave === 'icone' || (original !== null && typeof original === 'object')}
                           keyboardType={chave === 'email' ? 'email-address' : ehNumero(chave, original) ? 'numeric' : 'default'}
                           autoCapitalize={chave === 'email' || chave === 'icone' ? 'none' : 'sentences'}

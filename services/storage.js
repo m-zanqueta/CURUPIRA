@@ -62,7 +62,13 @@ export async function listarDadosAdmin(tabela) {
 export async function atualizarDadoAdmin(tabela, id, dados) {
   if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
   if (id === null || id === undefined) throw new Error('O registro não possui um ID válido.')
-  const { senha, ...resto } = dados || {}
+  const { senha, ...dadosSemSenha } = dados || {}
+  // O tipo/papel do colaborador não é editável pelo painel; para professor,
+  // a RPC aceita somente nome e e-mail. Filtrar aqui impede campos vindos de
+  // versões antigas do formulário de causar erro 422 no banco.
+  const resto = tabela === 'professores'
+    ? Object.fromEntries(Object.entries(dadosSemSenha).filter(([chave]) => ['nome', 'email'].includes(chave)))
+    : dadosSemSenha
   if (tabela === 'coordenadores') {
     if (Object.keys(resto).length) await rpcStaff('admin_atualizar_coordenador', { p_id: id, p_dados: resto })
     if (typeof senha === 'string' && senha !== '') await rpcStaff('admin_definir_senha_coordenador', { p_id: id, p_senha: senha })
