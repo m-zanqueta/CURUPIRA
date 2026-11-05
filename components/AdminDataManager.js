@@ -3,19 +3,22 @@ import {
   ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View,
 } from 'react-native'
-import { atualizarDadoAdmin, excluirDadoAdmin, listarDadosAdmin } from '../services/storage'
+import { atualizarDadoAdmin, excluirDadoAdmin, listarDadosAdmin, atualizarMeusDadosAdmin } from '../services/storage'
 import { colors, fonts } from '../theme'
 
 const ABAS = [
   { id: 'professores', titulo: 'Professores' },
+  { id: 'coordenadores', titulo: 'Coordenadores' },
+  { id: 'administrador', titulo: 'Editar adm' },
   { id: 'alunos', titulo: 'Alunos' },
   { id: 'pets', titulo: 'PETs' },
-  { id: 'icones_missoes', titulo: 'Ícones de missão' },
   { id: 'acessorios', titulo: 'Itens da loja' },
 ]
 
 const CAMPOS_OBRIGATORIOS = {
   professores: ['nome', 'email', 'senha'],
+  coordenadores: ['nome', 'email'],
+  administrador: ['nome', 'email'],
   alunos: ['nome', 'email', 'senha'],
   pets: ['nome', 'icone', 'estagio', 'xp'],
   icones_missoes: ['nome', 'icone'],
@@ -76,16 +79,14 @@ function converterValor(chave, valor, original) {
 function tituloRegistro(tabela, registro) {
   if (registro.nome) return String(registro.nome)
   if (registro.email) return String(registro.email)
-  const tipo = tabela === 'pets' ? 'PET' : tabela === 'icones_missoes' ? 'Ícone' : 'Item'
+  const tipo = tabela === 'pets' ? 'PET' : tabela === 'coordenadores' ? 'Coordenador' : 'Item'
   return `${tipo} #${registro.id}`
 }
 
 function resumoRegistro(tabela, registro) {
-  const campos = tabela === 'professores'
-    ? [registro.email]
-      : tabela === 'icones_missoes'
-        ? [registro.ativo ? 'Ativo' : 'Inativo']
-        : tabela === 'acessorios'
+  const campos = tabela === 'professores' || tabela === 'coordenadores' || tabela === 'administrador'
+    ? [registro.email, tabela === 'coordenadores' ? (registro.ativo ? 'Ativo' : 'Inativo') : null]
+      : tabela === 'acessorios'
           ? [registro.slot, registro.preco != null ? `${registro.preco} moedas` : null, registro.ativo ? 'Ativo' : 'Inativo']
     : tabela === 'alunos'
       ? [registro.email, registro.turmaId != null ? `Turma ${registro.turmaId}` : null, registro.xp != null ? `${registro.xp} XP` : null]
@@ -93,7 +94,7 @@ function resumoRegistro(tabela, registro) {
   return campos.filter(Boolean).join(' · ') || `ID ${registro.id}`
 }
 
-export default function AdminDataManager({ visible, onClose }) {
+export default function AdminDataManager({ visible, onClose, usuario, onAdminAtualizado }) {
   const [aba, setAba] = useState('professores')
   const [registros, setRegistros] = useState([])
   const [selecionado, setSelecionado] = useState(null)
@@ -106,6 +107,12 @@ export default function AdminDataManager({ visible, onClose }) {
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false)
 
   async function carregar(tabela = aba) {
+    if (tabela === 'administrador') {
+      setCarregando(false)
+      setErro('')
+      setRegistros(usuario?.id ? [{ id: usuario.id, nome: usuario.nome, email: usuario.email, senha: '' }] : [])
+      return
+    }
     setCarregando(true)
     setErro('')
     try {
@@ -167,7 +174,7 @@ export default function AdminDataManager({ visible, onClose }) {
       setErro('Escolha Chapéu, Colar ou Cenário para o tipo do item.')
       return
     }
-    if (aba === 'professores') {
+    if (aba === 'professores' || aba === 'coordenadores' || aba === 'administrador') {
       const email = String(rascunho.email || '').trim()
       if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
         setErro('Informe um e-mail válido, como nome@dominio.com.')
@@ -183,6 +190,7 @@ export default function AdminDataManager({ visible, onClose }) {
     try {
       Object.keys(selecionado).forEach(chave => {
         if (chave === 'id') return
+        if (chave === 'senha' && !String(rascunho.senha || '').trim()) return
         const novo = converterValor(chave, rascunho[chave], selecionado[chave])
         const anterior = selecionado[chave]
         const iguais = novo === anterior || (novo !== null && anterior !== null && typeof novo === 'object' && JSON.stringify(novo) === JSON.stringify(anterior))
@@ -201,9 +209,18 @@ export default function AdminDataManager({ visible, onClose }) {
     setSalvando(true)
     setErro('')
     try {
-      await atualizarDadoAdmin(aba, selecionado.id, alteracoes)
-      setSelecionado(null)
-      await carregar(aba)
+      if (aba === 'administrador') {
+        const perfil = await atualizarMeusDadosAdmin(alteracoes)
+        onAdminAtualizado?.(perfil)
+        const registroAdmin = { id: perfil.id, nome: perfil.nome, email: perfil.email, senha: '' }
+        setRegistros([registroAdmin])
+        setSelecionado(registroAdmin)
+        setRascunho(Object.fromEntries(Object.entries(registroAdmin).map(([chave, valor]) => [chave, textoValor(valor)])))
+      } else {
+        await atualizarDadoAdmin(aba, selecionado.id, alteracoes)
+        setSelecionado(null)
+        await carregar(aba)
+      }
     } catch (error) {
       setErro(error?.message || 'Não foi possível salvar. Confira as políticas de UPDATE no Supabase.')
     } finally {
@@ -273,7 +290,7 @@ export default function AdminDataManager({ visible, onClose }) {
                   const obrigatorio = (CAMPOS_OBRIGATORIOS[aba] || []).includes(chave)
                   return (
                     <View key={chave} style={styles.field}>
-                      <Text style={styles.label}>{rotuloCampo(chave)}{obrigatorio ? ' *' : ''}{chave === 'id' ? ' · não editável' : ''}</Text>
+                      <Text style={styles.label}>{rotuloCampo(chave)}{obrigatorio && chave !== 'senha' ? ' *' : ''}{chave === 'id' || (aba === 'professores' && chave === 'tipo') ? ' · não editável' : ''}</Text>
                       {booleano ? (
                         <View style={styles.booleanOptions}>
                           {[['true', 'Sim'], ['false', 'Não']].map(([valor, texto]) => (
@@ -305,8 +322,8 @@ export default function AdminDataManager({ visible, onClose }) {
                             setRascunho(prev => ({ ...prev, [chave]: valor }))
                             setErrosCampos(prev => ({ ...prev, [chave]: '' }))
                           }}
-                          editable={chave !== 'id' && !salvando}
-                          selectTextOnFocus={chave !== 'id'}
+                          editable={chave !== 'id' && !(aba === 'professores' && chave === 'tipo') && !salvando}
+                          selectTextOnFocus={chave !== 'id' && !(aba === 'professores' && chave === 'tipo')}
                           multiline={chave === 'descricao' || chave === 'icone' || (original !== null && typeof original === 'object')}
                           keyboardType={chave === 'email' ? 'email-address' : ehNumero(chave, original) ? 'numeric' : 'default'}
                           autoCapitalize={chave === 'email' || chave === 'icone' ? 'none' : 'sentences'}
@@ -321,7 +338,9 @@ export default function AdminDataManager({ visible, onClose }) {
                 {confirmandoExclusao ? (
                   <View style={styles.confirmCard}>
                     <Text style={styles.confirmTitle}>Excluir este cadastro?</Text>
-                    <Text style={styles.confirmText}>O registro “{tituloRegistro(aba, selecionado)}” será removido do banco. Se houver vínculos que impeçam a exclusão, o Supabase informará o motivo.</Text>
+                    <Text style={styles.confirmText}>{aba === 'acessorios'
+                      ? `O item “${tituloRegistro(aba, selecionado)}” será removido da loja, os alunos deixarão de possuí-lo e receberão de volta as moedas registradas em cada compra. O histórico ficará marcado como estornado.`
+                      : `O registro “${tituloRegistro(aba, selecionado)}” será removido do banco. Se houver vínculos que impeçam a exclusão, o Supabase informará o motivo.`}</Text>
                     <View style={styles.formActions}>
                       <TouchableOpacity style={styles.secondaryButton} disabled={salvando} onPress={() => { setConfirmandoExclusao(false); setErro('') }}>
                         <Text style={styles.secondaryText}>Manter cadastro</Text>
@@ -333,9 +352,9 @@ export default function AdminDataManager({ visible, onClose }) {
                   </View>
                 ) : (
                   <>
-                    <TouchableOpacity style={styles.deleteButton} disabled={salvando} onPress={() => { setConfirmandoExclusao(true); setErro('') }}>
+                    {aba !== 'administrador' && <TouchableOpacity style={styles.deleteButton} disabled={salvando} onPress={() => { setConfirmandoExclusao(true); setErro('') }}>
                       <Text style={styles.deleteText}>Excluir cadastro</Text>
-                    </TouchableOpacity>
+                    </TouchableOpacity>}
                     <View style={styles.formActions}>
                       <TouchableOpacity style={styles.secondaryButton} disabled={salvando} onPress={() => { setSelecionado(null); setConfirmandoExclusao(false); setErro('') }}>
                         <Text style={styles.secondaryText}>Cancelar</Text>

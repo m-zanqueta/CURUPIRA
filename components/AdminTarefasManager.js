@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
-import { listarIconesMissoes, listarTarefasAdmin, salvarTarefaAdmin } from '../services/storage'
+import { listarIconesMissoes, listarTarefasAdmin, salvarTarefaAdmin, removerMissaoStorage } from '../services/storage'
 import { colors, fonts } from '../theme'
 
 const VAZIA = { nome: '', descricao: '', moedas: '0', icone: '', etapas: [{ titulo: '', xp: '5' }] }
@@ -13,6 +13,7 @@ export default function AdminTarefasManager({ visible, onClose }) {
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
   const [salvando, setSalvando] = useState(false)
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false)
 
   async function carregar() {
     setCarregando(true)
@@ -25,7 +26,7 @@ export default function AdminTarefasManager({ visible, onClose }) {
     finally { setCarregando(false) }
   }
 
-  useEffect(() => { if (visible) { setForm(VAZIA); setEditando(false); carregar() } }, [visible])
+  useEffect(() => { if (visible) { setForm(VAZIA); setEditando(false); setConfirmandoExclusao(false); carregar() } }, [visible])
 
   function editar(tarefa) {
     setForm({
@@ -40,6 +41,7 @@ export default function AdminTarefasManager({ visible, onClose }) {
         : [{ titulo: '', xp: '5' }],
     })
     setErro('')
+    setConfirmandoExclusao(false)
     setEditando(true)
   }
 
@@ -56,9 +58,25 @@ export default function AdminTarefasManager({ visible, onClose }) {
       await salvarTarefaAdmin({ ...form, moedas })
       setForm(VAZIA)
       setEditando(false)
+      setConfirmandoExclusao(false)
       await carregar()
     } catch (e) { setErro(e?.message || 'Não foi possível salvar. Verifique as políticas do Supabase.') }
     finally { setSalvando(false) }
+  }
+
+  async function excluirTarefa() {
+    if (!form.id) return
+    setSalvando(true)
+    setErro('')
+    try {
+      await removerMissaoStorage(form.id)
+      setConfirmandoExclusao(false)
+      setForm(VAZIA)
+      setEditando(false)
+      await carregar()
+    } catch (e) {
+      setErro(e?.message || 'Não foi possível excluir a tarefa e estornar o XP.')
+    } finally { setSalvando(false) }
   }
 
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -68,7 +86,7 @@ export default function AdminTarefasManager({ visible, onClose }) {
         <TouchableOpacity onPress={onClose}><Text style={s.close}>×</Text></TouchableOpacity>
       </View>
       {editando ? <ScrollView contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
-        <TouchableOpacity onPress={() => { setEditando(false); setForm(VAZIA); setErro('') }}><Text style={s.back}>‹ Voltar à lista</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => { setEditando(false); setForm(VAZIA); setErro(''); setConfirmandoExclusao(false) }}><Text style={s.back}>‹ Voltar à lista</Text></TouchableOpacity>
         <Text style={s.label}>Título *</Text><TextInput value={form.nome} onChangeText={nome => setForm(v => ({ ...v, nome }))} style={s.input} placeholder="Ex.: Composteira caseira" />
         <Text style={s.label}>Descrição</Text><TextInput value={form.descricao} onChangeText={descricao => setForm(v => ({ ...v, descricao }))} style={[s.input, { minHeight: 68 }]} multiline />
         <Text style={s.label}>Ícone *</Text><View style={s.choices}>{icones.map(item => <TouchableOpacity key={item.id} onPress={() => setForm(v => ({ ...v, icone: item.icone }))} style={[s.choice, form.icone === item.icone && s.choiceActive]}><Text style={s.choiceText}>{item.nome}</Text></TouchableOpacity>)}</View>
@@ -83,8 +101,26 @@ export default function AdminTarefasManager({ visible, onClose }) {
           </View>
         </View>)}
         <TouchableOpacity style={s.secondary} onPress={() => setForm(v => ({ ...v, etapas: [...v.etapas, { titulo: '', xp: '5' }] }))}><Text style={s.secondaryText}>+ Adicionar etapa</Text></TouchableOpacity>
+        {form.id && <>
+          {!confirmandoExclusao ? (
+            <TouchableOpacity style={s.deleteButton} disabled={salvando} onPress={() => setConfirmandoExclusao(true)}>
+              <Text style={s.deleteText}>Excluir tarefa e trilhas</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={s.confirmCard}>
+              <Text style={s.confirmTitle}>Excluir esta tarefa de todas as turmas?</Text>
+              <Text style={s.confirmText}>A tarefa e todas as etapas serão removidas. O XP concedido por essa trilha será retirado dos alunos e dos PETs vinculados. As moedas concedidas pela tarefa também serão estornadas conforme o histórico.</Text>
+              <View style={s.confirmActions}>
+                <TouchableOpacity style={s.cancelDelete} disabled={salvando} onPress={() => setConfirmandoExclusao(false)}><Text style={s.cancelDeleteText}>Manter tarefa</Text></TouchableOpacity>
+                <TouchableOpacity style={[s.confirmDelete, salvando && { opacity: 0.6 }]} disabled={salvando} onPress={excluirTarefa}>
+                  {salvando ? <ActivityIndicator color="#fff" /> : <Text style={s.confirmDeleteText}>Excluir e estornar</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </>}
         {!!erro && <Text style={s.error}>{erro}</Text>}
-        <TouchableOpacity style={s.primary} onPress={salvar} disabled={salvando}>{salvando ? <ActivityIndicator color="#fff" /> : <Text style={s.primaryText}>{form.id ? 'Salvar tarefa' : 'Criar tarefa'}</Text>}</TouchableOpacity>
+        <TouchableOpacity style={s.primary} onPress={salvar} disabled={salvando || confirmandoExclusao}>{salvando ? <ActivityIndicator color="#fff" /> : <Text style={s.primaryText}>{form.id ? 'Salvar tarefa' : 'Criar tarefa'}</Text>}</TouchableOpacity>
       </ScrollView> : <>
         <TouchableOpacity style={s.primary} onPress={() => { setForm({ ...VAZIA }); setEditando(true); setErro('') }}><Text style={s.primaryText}>+ Nova tarefa</Text></TouchableOpacity>
         {carregando ? <ActivityIndicator style={{ margin: 24 }} color={colors.green} /> : <ScrollView style={s.list}>
@@ -110,5 +146,7 @@ const s = StyleSheet.create({
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, choice: { borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18 }, choiceActive: { borderColor: colors.green, backgroundColor: colors.greenLight }, choiceText: { color: colors.dark, fontFamily: fonts.regular },
   stage: { padding: 10, backgroundColor: '#f8f6df', borderRadius: 12, marginTop: 8, gap: 6 }, stageTitle: { fontFamily: fonts.semibold, color: colors.dark }, muted: { color: colors.muted, fontFamily: fonts.regular, marginTop: 5 }, error: { color: '#c0392b', fontFamily: fonts.semibold, marginTop: 10 },
   primary: { marginTop: 12, minHeight: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.green, padding: 11, borderRadius: 10 }, primaryText: { color: '#fff', fontFamily: fonts.bold }, secondary: { marginTop: 8, alignItems: 'center', padding: 10 }, secondaryText: { color: colors.green, fontFamily: fonts.semibold },
+  deleteButton: { marginTop: 18, minHeight: 42, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e3a5a5', borderRadius: 10, padding: 10 }, deleteText: { color: '#bd2727', fontFamily: fonts.bold },
+  confirmCard: { marginTop: 10, padding: 12, gap: 8, backgroundColor: '#fff5f5', borderColor: '#e8aaaa', borderWidth: 1, borderRadius: 10 }, confirmTitle: { color: '#a61b1b', fontFamily: fonts.bold }, confirmText: { color: colors.muted, fontFamily: fonts.regular, fontSize: 12, lineHeight: 18 }, confirmActions: { flexDirection: 'row', gap: 8, marginTop: 4 }, cancelDelete: { flex: 1, minHeight: 40, justifyContent: 'center', alignItems: 'center', borderColor: colors.border, borderWidth: 1, borderRadius: 8 }, cancelDeleteText: { color: colors.muted, fontFamily: fonts.semibold, fontSize: 12 }, confirmDelete: { flex: 1, minHeight: 40, justifyContent: 'center', alignItems: 'center', backgroundColor: '#bd2727', borderRadius: 8, paddingHorizontal: 6 }, confirmDeleteText: { color: '#fff', fontFamily: fonts.bold, fontSize: 12 },
   back: { color: colors.green, fontFamily: fonts.semibold, marginTop: 7 }, remove: { color: '#c0392b', fontFamily: fonts.semibold, padding: 7 },
 })

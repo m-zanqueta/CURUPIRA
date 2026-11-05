@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from './supabase'
 
-const TABELAS_ADMIN = new Set(['professores', 'alunos', 'pets', 'icones_missoes', 'acessorios'])  // lista fechada TAMBÉM no servidor (admin_*)
+const TABELAS_ADMIN = new Set(['professores', 'coordenadores', 'alunos', 'pets', 'acessorios'])  // lista fechada TAMBÉM no servidor (admin_*)
 const CHAVE_SESSAO_APP = 'curupira_sessao_app'
 // Token de sessão do aluno (emitido por login_aluno no Supabase). Fica separado
 // do objeto de sessão para nunca ser copiado junto com os dados do aluno.
@@ -50,6 +50,10 @@ export async function limparSessaoApp() {
 
 export async function listarDadosAdmin(tabela) {
   if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
+  if (tabela === 'coordenadores') {
+    const dados = await rpcStaff('admin_listar_coordenadores')
+    return (dados || []).map(r => ({ ...r, senha: '' }))
+  }
   const dados = await rpcStaff('admin_listar', { p_tabela: tabela })
   // alunos/professores nunca trazem senha; o campo "senha" do painel vira "nova senha" (vazio = manter)
   return (dados || []).map(r => (tabela === 'professores' || tabela === 'alunos') ? { ...r, senha: '' } : r)
@@ -58,19 +62,42 @@ export async function listarDadosAdmin(tabela) {
 export async function atualizarDadoAdmin(tabela, id, dados) {
   if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
   if (id === null || id === undefined) throw new Error('O registro não possui um ID válido.')
-  const { senha, ...resto } = dados || {}
+  const { senha, ...dadosSemSenha } = dados || {}
+  // O tipo/papel do colaborador não é editável pelo painel; para professor,
+  // a RPC aceita somente nome e e-mail. Filtrar aqui impede campos vindos de
+  // versões antigas do formulário de causar erro 422 no banco.
+  const resto = tabela === 'professores'
+    ? Object.fromEntries(Object.entries(dadosSemSenha).filter(([chave]) => ['nome', 'email'].includes(chave)))
+    : dadosSemSenha
+  if (tabela === 'coordenadores') {
+    if (Object.keys(resto).length) await rpcStaff('admin_atualizar_coordenador', { p_id: id, p_dados: resto })
+    if (typeof senha === 'string' && senha !== '') await rpcStaff('admin_definir_senha_coordenador', { p_id: id, p_senha: senha })
+    return
+  }
   if (Object.keys(resto).length) await rpcStaff('admin_atualizar', { p_tabela: tabela, p_id: id, p_dados: resto })
   if (typeof senha === 'string' && senha !== '') await rpcStaff('admin_definir_senha', { p_tabela: tabela, p_id: id, p_senha: senha })
+}
+
+export async function atualizarMeusDadosAdmin(dados) {
+  const resposta = await rpcStaff('admin_atualizar_meus_dados', {
+    p_nome: dados?.nome ?? null,
+    p_email: dados?.email ?? null,
+    p_senha: dados?.senha || null,
+  })
+  const perfil = { ...resposta, tipo: 'admin' }
+  await salvarSessaoApp({ tipo: 'admin', usuario: perfil })
+  return perfil
 }
 
 export async function excluirDadoAdmin(tabela, id) {
   if (!TABELAS_ADMIN.has(tabela)) throw new Error('Tabela não permitida para edição administrativa.')
   if (id === null || id === undefined) throw new Error('O registro não possui um ID válido.')
+  if (tabela === 'coordenadores') return rpcStaff('admin_excluir_coordenador', { p_id: id })
   try {
     await rpcStaff('admin_excluir', { p_tabela: tabela, p_id: id })
   } catch (error) {
     if (error.code === '23503' && tabela === 'acessorios') {
-      throw new Error('Este item já foi comprado por alunos e não pode ser excluído (o histórico é preservado). Desative-o (ativo = false) para tirá-lo da loja.')
+      throw new Error('O banco ainda não permite excluir itens com estorno. Execute a migration 20261104_admin_excluir_acessorio_com_estorno.sql no SQL Editor do Supabase e tente novamente.')
     }
     throw error
   }
@@ -121,6 +148,14 @@ export async function salvarProfessor(dados) {
   const r = await rpcStaff('admin_inserir', { p_tabela: 'professores', p_dados: {
     nome: dados.nome.trim(), email: dados.email.trim().toLowerCase(), senha: dados.senha } })
   return r
+}
+
+export async function salvarCoordenadorAdmin(dados) {
+  return rpcStaff('admin_criar_coordenador', {
+    p_nome: dados.nome.trim(),
+    p_email: dados.email.trim().toLowerCase(),
+    p_senha: dados.senha,
+  })
 }
 
 // ── Imagens (pets-images) — TODA escrita/remoção passa pela Edge Function "imagens-admin" ─────────────────
@@ -423,27 +458,26 @@ export async function buscarAluno(email, senha) {
   throw Object.assign(new Error('migration_ausente'), { codigo: 'migration_ausente' })
 }
 
-export async function buscarUsuario(email) {
-  try {
-    const { data, error } = await supabase.rpc('email_aluno_existe', { p_email: email.trim().toLowerCase() })
-    if (error) throw error
-    return data ? { email: email.trim().toLowerCase() } : null
-  } catch (error) {
-    return null
+async function chamarVerificacaoCadastro(body) {
+  const { data, error } = await supabase.functions.invoke('verificar-email-aluno', { body })
+  if (error) {
+    let detalhe = null
+    try { detalhe = await error.context?.json() } catch {}
+    throw new Error(detalhe?.erro || 'Não foi possível falar com o serviço de confirmação de e-mail.')
   }
+  if (data?.erro) throw new Error(data.erro)
+  return data
 }
 
-// Cadastro de aluno: o servidor valida e cria (xp=0, sem turma). O cliente não envia xp/turma/id.
-// Lança Error com .codigo em caso de falha (antes: engolia o erro e o app mostrava "sucesso").
-export async function salvarUsuario(dados) {
-  let resposta
-  try {
-    resposta = await supabase.rpc('cadastrar_aluno', {
-      p_nome: dados.usuario, p_email: dados.email.toLowerCase().trim(), p_senha: dados.senha })
-  } catch { const e = new Error(TEXTOS_STAFF.rede); e.codigo = 'rede'; throw e }
-  if (resposta.error) throw erroStaff(resposta.error)
-  if (resposta.data?.erro) { const e = new Error(TEXTOS_STAFF[resposta.data.erro] || resposta.data.erro); e.codigo = resposta.data.erro; throw e }
-  return resposta.data
+export async function solicitarCodigoCadastroAluno(email) {
+  return chamarVerificacaoCadastro({ acao: 'enviar', email: String(email || '').trim().toLowerCase() })
+}
+
+export async function confirmarCadastroAluno({ nome, email, senha, codigo }) {
+  const resposta = await chamarVerificacaoCadastro({
+    acao: 'confirmar', nome, email: String(email || '').trim().toLowerCase(), senha, codigo,
+  })
+  return resposta.aluno
 }
 
 // Atualizações de aluno feitas pelo STAFF, em lista fechada: só nome/iniciais ou remover da turma.
@@ -718,7 +752,9 @@ async function rpcStaff(nome, args = {}) {
   catch { const e = new Error(TEXTOS_STAFF.rede); e.codigo = 'rede'; throw e }
   if (resposta.error) {
     const e = erroStaff(resposta.error)
-    if (e.codigo === 'sessao_invalida' || e.codigo === 'migration_ausente') {
+    // PGRST202/404 numa RPC específica significa que falta publicar a migration dessa operação,
+    // não que o token de login expirou. Só encerre a sessão quando o servidor responder PT401.
+    if (e.codigo === 'sessao_invalida') {
       await AsyncStorage.removeItem(CHAVE_TOKEN_STAFF).catch(() => {})
       ouvinteSessaoInvalida?.()
     }
