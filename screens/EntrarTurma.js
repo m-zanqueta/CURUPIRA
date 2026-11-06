@@ -1,40 +1,47 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, Image, ActivityIndicator,
 } from 'react-native'
-import { supabase } from '../services/supabase'
-import { atualizarAluno } from '../services/storage'
+import { entrarNaTurma } from '../services/storage'
 import { fonts } from '../theme'
 import { cores } from '../constants/cores'
 
 const VERDE = cores.verdePrimario || '#009D25'
 
-export default function EntrarTurma({ aluno, onEntrou, onPular }) {
+export default function EntrarTurma({ aluno, onEntrou, onSemSessao, onVoltarLogin }) {
   const [codigo,  setCodigo]  = useState('')
   const [erro,    setErro]    = useState('')
   const [loading, setLoading] = useState(false)
+  // Trava síncrona: o estado `loading` só vale no próximo render, então dois
+  // cliques/toques no mesmo instante ainda passariam. A ref bloqueia na hora.
+  const enviando = useRef(false)
 
   async function handleEntrar() {
+    if (enviando.current) return
+    // Sem aluno identificado (sessão ausente/expirada) não há registro pra
+    // atualizar: avisa e manda pro login, sem inventar aluno nem tocar no banco.
+    if (!aluno?.id) {
+      setErro('Sua sessão expirou. Faça login novamente.')
+      onSemSessao?.()
+      return
+    }
     if (!codigo.trim()) { setErro('Digite o código da turma.'); return }
+    enviando.current = true
     setErro('')
     setLoading(true)
     try {
-      const { data: turma, error } = await supabase
-        .from('turmas')
-        .select('id, nome, codigo, professor_id')
-        .eq('codigo', codigo.trim().toUpperCase())
-        .maybeSingle()
-
-      if (error) throw error
-      if (!turma) { setErro('Código inválido. Verifique com seu professor.'); return }
-
-      await atualizarAluno(aluno.id, { turmaId: turma.id })
-      onEntrou({ ...aluno, turmaId: turma.id }, turma)
+      // A turma e o aluno são decididos no servidor (o token identifica o aluno; o cliente só envia o código).
+      const { turma } = await entrarNaTurma(codigo)
+      await onEntrou({ ...aluno, turmaId: turma.id }, turma)
     } catch(e) {
-      console.error(e)
-      setErro('Erro ao entrar na turma. Tente novamente.')
+      console.error(e?.codigo || e?.message)
+      const conhecidos = ['codigo_invalido', 'turma_sem_pet', 'ja_em_turma', 'muitas_tentativas', 'sessao_invalida', 'migration_ausente', 'configuracao']
+      setErro(conhecidos.includes(e?.codigo) && e.codigo !== 'configuracao' ? e.message
+        : 'Não foi possível entrar na turma. Verifique sua conexão e tente novamente.')
+      if (e?.codigo === 'sessao_invalida') onSemSessao?.()
     } finally {
+      enviando.current = false
       setLoading(false)
     }
   }
@@ -90,11 +97,15 @@ export default function EntrarTurma({ aluno, onEntrou, onPular }) {
             }
           </TouchableOpacity>
 
-          {onPular && (
-            <TouchableOpacity style={s.btnPular} onPress={onPular}>
-              <Text style={s.btnPularTxt}>Fazer isso depois</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={s.btnVoltar}
+            onPress={onVoltarLogin}
+            disabled={loading}
+            activeOpacity={0.75}
+          >
+            <Text style={s.btnVoltarTxt}>Voltar ao login</Text>
+          </TouchableOpacity>
+
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -120,6 +131,6 @@ const s = StyleSheet.create({
   erroTxt:     { fontSize: 13, fontFamily: fonts.semibold, color: '#c0392b', textAlign: 'center' },
   btnEntrar:   { backgroundColor: VERDE, borderRadius: 14, paddingVertical: 18, alignItems: 'center', marginBottom: 12, elevation: 4, shadowColor: VERDE, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
   btnEntrarTxt:{ fontSize: 16, fontFamily: fonts.bold, color: '#fff' },
-  btnPular:    { alignItems: 'center', paddingVertical: 10 },
-  btnPularTxt: { fontSize: 13, fontFamily: fonts.medium, color: '#aaa' },
+  btnVoltar:   { alignItems: 'center', paddingVertical: 12 },
+  btnVoltarTxt:{ fontSize: 14, fontFamily: fonts.semibold, color: VERDE },
 })

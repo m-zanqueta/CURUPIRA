@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme';
-import { listarAlunos, atualizarAluno, listarTurmas, listarProfessoresParaTurma, listarPetsParaTurma, salvarTurma, removerTurmaStorage, listarMissoes, listarIconesMissoes, listarStatusMissoes, salvarMissao, atualizarMissao, definirTurmasMissao, definirAtivaMissaoTurma, removerMissaoDaTurma as removerMissaoDaTurmaStorage, atualizarStatusAlunoMissao, removerMissaoStorage } from '../services/storage';
+import { listarAlunos, atualizarAluno, listarTurmas, listarProfessoresParaTurma, listarPetsParaTurma, salvarTurma, removerTurmaStorage, listarMissoes, listarIconesMissoes, listarStatusMissoes, salvarMissao, atualizarMissao, definirTurmasMissao, atribuirTarefaGlobal, definirAtivaMissaoTurma, removerMissaoDaTurma as removerMissaoDaTurmaStorage, atualizarStatusAlunoMissao, removerMissaoStorage } from '../services/storage';
 import { CORES, MEDALS, RARIDADE_CONFIG, CRITERIOS } from './dashboardConfig';
 import DashboardSidebar from './DashboardSidebar';
 
@@ -21,6 +21,9 @@ export default function DashboardScreen({ professor, onLogout }) {
   const [professoresParaTurma, setProfessoresParaTurma] = useState([])
   const [carregandoPets, setCarregandoPets] = useState(false)
   const [missions, setMissions]       = useState([])
+  const [tarefaSelecionada, setTarefaSelecionada] = useState(null)
+  const [tarefaParaAtribuir, setTarefaParaAtribuir] = useState(null)
+  const [modalEscolherTurmaTarefa, setModalEscolherTurmaTarefa] = useState(false)
   const [alunos, setAlunos]           = useState([])
   const [conquistas, setConquistas]   = useState([])
 
@@ -66,6 +69,7 @@ export default function DashboardScreen({ professor, onLogout }) {
 
   // Status de missão por aluno { missaoId_alunoId: 'pendente' | 'entregue' | 'aprovado' }
   const [statusMissao, setStatusMissao] = useState({})
+  const [etapasAluno, setEtapasAluno] = useState({})
 
   // Histórico de XP { alunoId: [{xp, missao, data}] }
   const [historicoXP, setHistoricoXP] = useState({})
@@ -89,21 +93,24 @@ export default function DashboardScreen({ professor, onLogout }) {
   useEffect(() => {
     let ativo = true
     async function recarregarDados() {
-      const [alunosResult, turmasResult, missoesResult, iconesResult, statusResult] = await Promise.allSettled([
+      const [alunosResult, turmasResult, missoesResult, iconesResult, statusResult, professoresResult] = await Promise.allSettled([
         listarAlunos(),
         listarTurmas(professor.id, isCoordenador),
         listarMissoes(professor.id, isCoordenador),
         listarIconesMissoes(),
         listarStatusMissoes(),
+        isCoordenador ? listarProfessoresParaTurma() : Promise.resolve([]),
       ])
       if (!ativo) return
 
       if (alunosResult.status === 'fulfilled') setAlunos(alunosResult.value || [])
+      if (professoresResult.status === 'fulfilled') setProfessoresParaTurma(professoresResult.value || [])
       const turmasCarregadas = turmasResult.status === 'fulfilled' ? turmasResult.value : []
       if (turmasResult.status === 'fulfilled') setTurmas(turmasCarregadas)
       if (iconesResult.status === 'fulfilled') setIconesMissoes(iconesResult.value || [])
       if (statusResult.status === 'fulfilled') {
         setStatusMissao(Object.fromEntries(statusResult.value.map(item => [`${item.missao_id}_${item.aluno_id}`, item.status])))
+        setEtapasAluno(Object.fromEntries(statusResult.value.map(item => [`${item.missao_id}_${item.aluno_id}`, Number(item.etapa_atual) || 0])))
       }
 
       if (missoesResult.status === 'rejected') {
@@ -120,6 +127,8 @@ export default function DashboardScreen({ professor, onLogout }) {
           textColor: m.textColor || '#006516',
           active: m.ativa ?? true,
           progress: Number(m.progress) || 0,
+          etapas: Array.isArray(m.etapas) ? m.etapas : [],
+          moedas: Number(m.moedas) || 0,
         })))
       }
     }
@@ -144,7 +153,7 @@ export default function DashboardScreen({ professor, onLogout }) {
 
   function atribuirMissao(missaoId) {
     const m = missions.find(item => String(item.id) === String(missaoId))
-    if (isCoordenador && m && turmaAtribuir && String(m.professorId) === String(turmaAtribuir.professorId)) solicitarVinculoMissao(m, turmaAtribuir)
+    if (isCoordenador && m && turmaAtribuir && (!m.professorId || String(m.professorId) === String(turmaAtribuir.professorId))) solicitarVinculoMissao(m, turmaAtribuir)
   }
 
   function missoesDaTurma(turma) {
@@ -191,7 +200,7 @@ export default function DashboardScreen({ professor, onLogout }) {
     const turmasIds = [...atuais, turmaId]
     setMissaoEmAcao(true)
     try {
-      await definirTurmasMissao(missao.id, missao.professorId || professor.id, turmasIds)
+      await atribuirTarefaGlobal(missao.id, turmaId)
       const nomeTurmas = turmasIds.map(id => turmas.find(t => String(t.id) === String(id))?.nome).filter(Boolean).join(', ')
       setMissions(prev => prev.map(m => String(m.id) === String(missao.id)
         ? { ...m, turmaIds: turmasIds, turma: nomeTurmas, turmaAtivas: { ...(m.turmaAtivas || {}), [String(turmaId)]: true } }
@@ -373,6 +382,7 @@ export default function DashboardScreen({ professor, onLogout }) {
   }
 
   function removerTurma(id) {
+    if (!isCoordenador) return
     if (Platform.OS === 'web') {
       if (window.confirm('Tem certeza que deseja remover esta turma?')) {
         confirmarRemocaoTurma(id);
@@ -505,7 +515,20 @@ export default function DashboardScreen({ professor, onLogout }) {
     return alunosDaMissao(missao).length
   }
 
+  function etapaAtualDoAluno(missao, aluno) {
+    const etapas = missao?.etapas || []
+    const status = getStatusAluno(missao?.id, aluno?.id)
+    if (status === 'aprovado') return etapas.length
+    return Math.max(0, Math.min(etapas.length, Number(etapasAluno[`${missao?.id}_${aluno?.id}`]) || 0))
+  }
+
+  function abrirSeletorTurmaTarefa(missao) {
+    setTarefaParaAtribuir(missao)
+    setModalEscolherTurmaTarefa(true)
+  }
+
   function abrirEditAluno(aluno) {
+    if (isCoordenador) return
     setAlunoEditando(aluno)
     setAlunoNomeEdit(aluno.nome)
     setErroAlunoEdit('')
@@ -513,6 +536,7 @@ export default function DashboardScreen({ professor, onLogout }) {
   }
 
   async function salvarEditAluno() {
+    if (isCoordenador) return
     if (!alunoNomeEdit.trim()) { setErroAlunoEdit('Preencha o nome do aluno.'); return }
     const initials = alunoNomeEdit.trim().split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2)
     const novos = {
@@ -556,6 +580,7 @@ export default function DashboardScreen({ professor, onLogout }) {
   }
 
   function removerAluno(alunoId) {
+    if (!isCoordenador) return
     const remover = async () => {
       setAlunos(prev => prev.map(a => a.id === alunoId ? { ...a, turmaId: null } : a))
       await atualizarAluno(alunoId, { turmaId: null })
@@ -582,6 +607,7 @@ export default function DashboardScreen({ professor, onLogout }) {
   }
 
   function darXP() {
+    if (isCoordenador) return
     const val = parseInt(xpValor)
     if (!val || val <= 0) { setErroXP('Preencha uma quantidade de XP válida, maior que zero.'); return }
     setErroXP('')
@@ -736,61 +762,50 @@ export default function DashboardScreen({ professor, onLogout }) {
           </TouchableOpacity>}
         </View>
         {turmas.map(t => {
-          const missoesDaTurmaList = missoesDaTurma(t)
-          const missoesAtivas = missoesDaTurmaList.filter(m => missaoAtivaNaTurma(m, t))
-          const missoesDesativadas = missoesDaTurmaList.length - missoesAtivas.length
           const alunosTurma = alunosDaTurma(t)
+          const xpPet = Math.max(0, Number(t.xp) || 0)
+          const alvoEvolucaoXP = xpPet < 500 ? 500 : xpPet < 1000 ? 1000 : null
+          const inicioEstagioXP = xpPet < 500 ? 0 : 500
+          const progressoPetPct = alvoEvolucaoXP
+            ? Math.max(0, Math.min(100, ((xpPet - inicioEstagioXP) / (alvoEvolucaoXP - inicioEstagioXP)) * 100))
+            : 100
+          const estagioPet = t.estagio ? `${t.estagio.charAt(0).toUpperCase()}${t.estagio.slice(1)}` : 'Infantil'
+          const emocaoPet = !t.emocao ? 'Neutro' : t.emocao
+          const professorResponsavel = professoresParaTurma.find(p => String(p.id) === String(t.professorId))
           return (
-            <View key={t.id} style={s.panel}>
-              <TouchableOpacity activeOpacity={0.8} onPress={() => abrirResumoTurma(t)}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <TouchableOpacity key={t.id} style={s.panel} activeOpacity={0.85} onPress={() => abrirResumoTurma(t)}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                   <View style={[s.petAvatarSmall, { borderColor: t.cor }]}>
                     <PetImage uri={t.pet} width={42} height={42} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={s.turmaName}>{t.nome}</Text>
-                    <Text style={s.turmaEstagio}>{alunosTurma.length} aluno(s) · {missoesAtivas.length} tarefa(s) ativa(s){missoesDesativadas ? ` · ${missoesDesativadas} desativada(s)` : ''}</Text>
-                    <Text style={[s.turmaEstagio, { color: t.cor }]}>{t.estagio} · PET com {Number(t.xp) || 0} XP</Text>
-                    <Text style={s.turmaEmocao}>{t.emocao || 'Sem emoção definida'} · {Number(t.progresso) || 0}% de progresso do PET</Text>
+                    <Text style={s.turmaEstagio}>{alunosTurma.length} matriculado(s)</Text>
+                    {isCoordenador && <Text style={s.turmaEmocao}>Prof.: {professorResponsavel?.nome || 'Não identificado'}</Text>}
                   </View>
                   <TouchableOpacity onPress={(event) => { event.stopPropagation?.(); abrirResumoTurma(t, 'informacoes') }} style={[s.btnToggle, { marginTop: 0, padding: 7, backgroundColor: colors.cream }]} accessibilityLabel={`Informações da turma ${t.nome}`}>
                     <Text style={{ fontSize: 17, color: colors.dark, fontFamily: fonts.bold }}>ⓘ</Text>
                   </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-              <View style={[s.petXpBgFull, { marginTop: 10 }]}>
-                <View style={[s.petXpFillFull, { width: `${Math.max(0, Math.min(100, Number(t.progresso) || 0))}%`, backgroundColor: t.cor }]} />
               </View>
-
-              {/* Alunos da turma */}
-              <View style={{ marginTop: 12, gap: 6 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={s.formLabel}>
-                    Alunos ({alunosTurma.length})
-                  </Text>
-                  <TouchableOpacity
-                    style={[s.btnNew, { paddingVertical: 5, paddingHorizontal: 10, backgroundColor: colors.purple }]}
-                    onPress={() => { setTurmaAtribuir(t); setModalAlunosTurma(true) }}
-                  >
-                    <Text style={[s.btnNewText, { fontSize: 11 }]}>👤 Listar alunos</Text>
-                  </TouchableOpacity>
+              <View style={{ marginTop: 10, gap: 6 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <View style={[s.turmaResumoPill, { flex: 1 }]}>
+                    <Text style={s.turmaResumoText}>⭐ {Number(t.xp) || 0} XP do PET</Text>
+                  </View>
+                  <View style={[s.turmaResumoPill, { flex: 1, justifyContent: 'flex-end' }]}>
+                    <Text style={s.turmaResumoText}>🐾 {estagioPet}</Text>
+                  </View>
+                </View>
+                <Text style={s.turmaEmocao}>{emocaoPet}</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text style={s.turmaEmocao}>{alvoEvolucaoXP ? `${Math.round(progressoPetPct)}% do estágio` : '100% completo'}</Text>
+                  <Text style={s.turmaEmocao}>{alvoEvolucaoXP ? `Faltam ${alvoEvolucaoXP - xpPet} XP` : 'Nível máximo'}</Text>
+                </View>
+                <View style={s.petXpBgFull}>
+                  <View style={[s.petXpFillFull, { width: `${progressoPetPct}%`, backgroundColor: t.cor }]} />
                 </View>
               </View>
-
-              {/* Gerenciamento das tarefas fica nas especificações da turma */}
-              <View style={{ marginTop: 12, gap: 6 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={s.formLabel}>Tarefas ({missoesDaTurmaList.length})</Text>
-                  <TouchableOpacity
-                    style={[s.btnNew, { paddingVertical: 5, paddingHorizontal: 10 }]}
-                    onPress={() => abrirResumoTurma(t, 'tarefas')}
-                  >
-                    <Text style={[s.btnNewText, { fontSize: 11 }]}>Gerenciar tarefas</Text>
-                  </TouchableOpacity>
-                </View>
-                <Text style={{ fontSize: 12, color: colors.muted, fontFamily: fonts.regular }}>{missoesAtivas.length} ativa(s) · {missoesDesativadas} desativada(s)</Text>
-              </View>
-            </View>
+            </TouchableOpacity>
           )
         })}
         {turmas.length === 0 && (
@@ -806,24 +821,73 @@ export default function DashboardScreen({ professor, onLogout }) {
 
   // ─── TELA MISSÕES ───────────────────────────────────────
   function renderMissoes() {
+    if (tarefaSelecionada) {
+      const tarefa = missions.find(m => String(m.id) === String(tarefaSelecionada.id)) || tarefaSelecionada
+      const etapas = tarefa.etapas || []
+      const participantes = alunosDaMissao(tarefa).sort((a, b) => etapaAtualDoAluno(tarefa, b) - etapaAtualDoAluno(tarefa, a))
+      return (
+        <View style={{ gap: 14 }}>
+          <View style={s.screenHeader}>
+            <TouchableOpacity onPress={() => setTarefaSelecionada(null)}><Text style={[s.screenTitle, { color: colors.green }]}>‹ Tarefas</Text></TouchableOpacity>
+            {isCoordenador && <TouchableOpacity style={s.btnNew} onPress={() => abrirSeletorTurmaTarefa(tarefa)}><Text style={s.btnNewText}>Atribuir à turma</Text></TouchableOpacity>}
+          </View>
+          <View style={s.panel}>
+            <Text style={s.panelTitle}>{tarefa.name}</Text>
+            {!!tarefa.descricao && <Text style={[s.missionMeta, { marginTop: 6 }]}>{tarefa.descricao}</Text>}
+            <Text style={[s.missionMeta, { marginTop: 8 }]}>{etapas.length} etapas · {etapas.reduce((total, etapa) => total + (Number(etapa.xp) || 0), 0)} XP · {tarefa.moedas || 0} moedas ao concluir</Text>
+            <Text style={[s.formLabel, { marginTop: 16, marginBottom: 8 }]}>Trilha da tarefa</Text>
+            {etapas.length ? etapas.map((etapa, index) => {
+              const concluidos = participantes.filter(aluno => etapaAtualDoAluno(tarefa, aluno) > index).length
+              return <View key={`${index}-${etapa.titulo}`} style={{ flexDirection: 'row', gap: 10, paddingVertical: 9 }}>
+                <View style={{ alignItems: 'center', width: 28 }}>
+                  <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: concluidos ? colors.green : colors.cream, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: concluidos ? '#fff' : colors.dark, fontFamily: fonts.bold }}>{index + 1}</Text></View>
+                  {index < etapas.length - 1 && <View style={{ width: 2, height: 28, backgroundColor: colors.border }} />}
+                </View>
+                <View style={{ flex: 1, paddingBottom: 8, borderBottomWidth: index < etapas.length - 1 ? 1 : 0, borderColor: colors.border }}>
+                  <Text style={s.missionName}>{etapa.titulo}</Text>
+                  <Text style={s.missionMeta}>{Number(etapa.xp) || 0} XP · {concluidos}/{participantes.length} alunos concluíram</Text>
+                </View>
+              </View>
+            }) : <Text style={s.missionMeta}>Esta tarefa ainda não tem etapas cadastradas.</Text>}
+          </View>
+          <View style={s.panel}>
+            <Text style={s.panelTitle}>Progresso dos alunos</Text>
+            {!participantes.length ? <Text style={[s.missionMeta, { marginTop: 8 }]}>Nenhum aluno nas turmas vinculadas.</Text> : participantes.map(aluno => {
+              const atual = etapaAtualDoAluno(tarefa, aluno)
+              const percentual = etapas.length ? Math.round(atual / etapas.length * 100) : (getStatusAluno(tarefa.id, aluno.id) === 'aprovado' ? 100 : 0)
+              return <View key={aluno.id} style={{ marginTop: 12, paddingBottom: 10, borderBottomWidth: 1, borderColor: colors.border }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+                  <Text style={s.missionName}>{aluno.nome}</Text><Text style={s.missionMeta}>{percentual}%</Text>
+                </View>
+                <View style={[s.petXpBgFull, { marginTop: 6 }]}><View style={[s.petXpFillFull, { width: `${percentual}%` }]} /></View>
+                <Text style={s.missionMeta}>{atual >= etapas.length && etapas.length ? 'Tarefa concluída' : atual > 0 ? `Próxima: ${etapas[atual]?.titulo || 'aguardando conclusão'}` : getStatusAluno(tarefa.id, aluno.id) === 'entregue' ? 'Enviada para avaliação' : 'Ainda não iniciou'}</Text>
+              </View>
+            })}
+          </View>
+        </View>
+      )
+    }
     return (
       <View style={{ gap: 14 }}>
         <View style={s.screenHeader}>
           <Text style={s.screenTitle}>🏆 Tarefas</Text>
         </View>
-        {missions.map(m => (
-          <View key={m.id} style={[s.panel, m.active && { borderColor: colors.green, borderWidth: 2 }]}>
+        {missions.map(m => {
+          const etapas = m.etapas || []
+          const participantes = alunosDaMissao(m)
+          const concluidos = participantes.filter(aluno => getStatusAluno(m.id, aluno.id) === 'aprovado').length
+          const totalXP = etapas.reduce((total, etapa) => total + (Number(etapa.xp) || 0), 0) || Number(m.xp) || 0
+          return <TouchableOpacity key={m.id} activeOpacity={0.85} onPress={() => setTarefaSelecionada(m)} style={[s.panel, m.active && { borderColor: colors.green, borderWidth: 2 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={[s.missionIcon, { backgroundColor: m.color }]}>
-                <Image source={{ uri: m.icon }} style={{ width: 30, height: 30 }} resizeMode="contain" />
+                {!!m.icon && <Image source={{ uri: m.icon }} style={{ width: 30, height: 30 }} resizeMode="contain" />}
               </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Text style={s.missionName}>{m.name}</Text>
                   {m.active && <View style={s.activePill}><Text style={s.activePillText}>ativa</Text></View>}
                 </View>
-                <Text style={s.missionMeta}>{(m.turmaIds || []).length} turma(s) · {qtdAlunosMissao(m)} alunos · +{m.xp} XP</Text>
-                {/* As ações de vínculo e ativação ficam nas especificações da turma. */}
+                <Text style={s.missionMeta}>{(m.turmaIds || []).length} turma(s) · {participantes.length} alunos · {etapas.length} etapas · {totalXP} XP</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
                   {(m.turmaIds || []).map(id => {
                     const t = turmas.find(item => String(item.id) === String(id))
@@ -833,7 +897,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                       <TouchableOpacity
                         key={t.id}
                         style={[s.turmaPill, atribuida && s.turmaPillActive, { paddingVertical: 3 }]}
-                        onPress={() => abrirResumoTurma(t, 'tarefas')}
+                        onPress={(event) => { event.stopPropagation?.(); abrirResumoTurma(t, isCoordenador ? 'tarefas' : 'resumo') }}
                       >
                         <Text style={[s.turmaPillText, atribuida && s.turmaPillTextActive]}>
                           {atribuida ? (missaoAtivaNaTurma(m, t) ? '✓ ' : 'Ⅱ ') : ''}{t.nome}{atribuida && !missaoAtivaNaTurma(m, t) ? ' · desativada' : ''}
@@ -841,48 +905,18 @@ export default function DashboardScreen({ professor, onLogout }) {
                       </TouchableOpacity>
                     )
                   })}
-                  {(m.turmaIds || []).length === 0 && <Text style={s.missionMeta}>Sem turma vinculada. Atribua pela aba Tarefas de uma turma.</Text>}
+                  {(m.turmaIds || []).length === 0 && <Text style={s.missionMeta}>Sem turma vinculada.</Text>}
                 </View>
               </View>
             </View>
-            {m.active && (
-              <View style={{ marginTop: 10 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <Text style={[s.missionProgressTxt, { color: colors.muted }]}>Progresso real</Text>
-                  <Text style={s.missionProgressTxt}>{progressoRealMissao(m)}% aprovados</Text>
-                </View>
-                <View style={s.missionProgressBgFull}>
-                  <View style={[s.missionProgressFillFull, { width: progressoRealMissao(m) + '%' }]} />
-                </View>
-                <Text style={[s.missionProgressTxt, { marginTop: 4, color: colors.muted, fontSize: 10 }]}>
-                  {alunosDaMissao(m).filter(a => getStatusAluno(m.id, a.id) === 'aprovado').length} de {qtdAlunosMissao(m)} alunos aprovados
-                </Text>
-              </View>
-            )}
-
-            {/* Alunos sincronizados com lista real */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10, backgroundColor: colors.cream, borderRadius: 8, padding: 10 }}>
-              <Text style={{ fontSize: 13, fontFamily: fonts.semibold, color: colors.dark, flex: 1 }}>
-                👥 Alunos participando:
-              </Text>
-              <Text style={{ fontSize: 18, fontFamily: fonts.bold, color: colors.green }}>
-                {qtdAlunosMissao(m)}
-              </Text>
+            <View style={{ marginTop: 10 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}><Text style={s.missionProgressTxt}>Concluíram a tarefa</Text><Text style={s.missionProgressTxt}>{participantes.length ? Math.round(concluidos / participantes.length * 100) : 0}%</Text></View>
+              <View style={s.missionProgressBgFull}><View style={[s.missionProgressFillFull, { width: `${participantes.length ? concluidos / participantes.length * 100 : 0}%` }]} /></View>
+              <Text style={[s.missionMeta, { marginTop: 5 }]}>{concluidos} de {participantes.length} alunos · toque para ver a trilha e o progresso individual</Text>
             </View>
-
-            {/* Ver alunos participantes */}
-            <TouchableOpacity
-              style={[s.btnToggle, { backgroundColor: colors.purpleLight, marginTop: 6 }]}
-              onPress={() => { setMissaoAlunos(m); setModalAlunos(true) }}
-            >
-              <Text style={[s.btnToggleText, { color: colors.purple }]}>
-                👤 Ver alunos participantes ({qtdAlunosMissao(m)})
-              </Text>
-            </TouchableOpacity>
-
-            <Text style={[s.missionMeta, { marginTop: 8 }]}>{isCoordenador ? 'Para gerenciar esta tarefa, abra a turma correspondente.' : 'Acompanhamento disponível para consulta. As alterações são feitas pela coordenação.'}</Text>
-          </View>
-        ))}
+            {isCoordenador && <TouchableOpacity style={[s.btnToggle, { backgroundColor: colors.greenLight }]} onPress={(event) => { event.stopPropagation?.(); abrirSeletorTurmaTarefa(m) }}><Text style={[s.btnToggleText, { color: colors.green }]}>Atribuir a uma turma</Text></TouchableOpacity>}
+          </TouchableOpacity>
+        })}
         {missions.length === 0 && (
           <View style={s.emptyState}>
             <Text style={s.emptyIcon}>🏆</Text>
@@ -1312,7 +1346,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                   <View style={[s.petAvatarSmall, { borderColor: turmaAtribuir.cor }]}><PetImage uri={turmaAtribuir.pet} width={42} height={42} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={s.modalTitle}>{turmaAtribuir.nome}</Text>
-                    <Text style={s.missionMeta}>{turmaAlunos.length} alunos · {turmaMissoes.length} missões</Text>
+                    <Text style={s.missionMeta}>{isCoordenador ? `${turmaAlunos.length} alunos · ${turmaMissoes.length} tarefas` : `${turmaAlunos.length} alunos · acompanhamento da turma`}</Text>
                   </View>
                   <TouchableOpacity onPress={() => setModalResumoTurma(false)} style={s.btnRemove} accessibilityLabel="Fechar">
                     <Text style={{ fontSize: 20, color: colors.muted }}>×</Text>
@@ -1323,9 +1357,9 @@ export default function DashboardScreen({ professor, onLogout }) {
                   <TouchableOpacity onPress={() => setAbaDetalhesTurma('resumo')} style={[s.turmaPill, { flex: 1, alignItems: 'center' }, abaDetalhesTurma === 'resumo' && s.turmaPillActive]}>
                     <Text style={[s.turmaPillText, abaDetalhesTurma === 'resumo' && s.turmaPillTextActive]}>Resumo</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setAbaDetalhesTurma('tarefas')} style={[s.turmaPill, { flex: 1, alignItems: 'center' }, abaDetalhesTurma === 'tarefas' && s.turmaPillActive]}>
+                  {isCoordenador && <TouchableOpacity onPress={() => setAbaDetalhesTurma('tarefas')} style={[s.turmaPill, { flex: 1, alignItems: 'center' }, abaDetalhesTurma === 'tarefas' && s.turmaPillActive]}>
                     <Text style={[s.turmaPillText, abaDetalhesTurma === 'tarefas' && s.turmaPillTextActive]}>Tarefas</Text>
-                  </TouchableOpacity>
+                  </TouchableOpacity>}
                   <TouchableOpacity onPress={() => setAbaDetalhesTurma('informacoes')} style={[s.turmaPill, { flex: 1, alignItems: 'center' }, abaDetalhesTurma === 'informacoes' && s.turmaPillActive]}>
                     <Text style={[s.turmaPillText, abaDetalhesTurma === 'informacoes' && s.turmaPillTextActive]}>ⓘ Info</Text>
                   </TouchableOpacity>
@@ -1340,9 +1374,6 @@ export default function DashboardScreen({ professor, onLogout }) {
                     </View>
                     <Text style={s.formLabel}>PET vinculado</Text>
                     <Text style={[s.missionMeta, { marginTop: 4, marginBottom: 12 }]}>{turmaAtribuir.petNome || 'PET'} · {turmaAtribuir.estagio || 'Estágio não definido'}</Text>
-                    {!isCoordenador && <TouchableOpacity style={[s.btnRemove, { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#fde8e8', borderRadius: 8, paddingHorizontal: 12 }]} onPress={() => removerTurma(turmaAtribuir.id)}>
-                      <Text style={{ color: '#c0392b', fontFamily: fonts.semibold }}>🗑️ Excluir turma</Text>
-                    </TouchableOpacity>}
                   </ScrollView>
                 ) : abaDetalhesTurma === 'tarefas' ? (
                   <ScrollView style={{ maxHeight: 440 }}>
@@ -1409,10 +1440,12 @@ export default function DashboardScreen({ professor, onLogout }) {
                         { label: 'Alunos', value: turmaAlunos.length },
                         { label: 'XP total dos alunos', value: xpTotalAlunos },
                         { label: 'Média de XP por aluno', value: mediaXP },
-                        { label: 'Tarefas ativas', value: turmaMissoesAtivas.length },
-                        { label: 'Tarefas desativadas', value: turmaMissoesDesativadas.length },
-                        { label: 'Conclusões aprovadas', value: `${totalConclusoes}/${totalPossivel}` },
-                        { label: 'Conclusão das missões', value: `${progressoMissoes}%` },
+                        ...(isCoordenador ? [
+                          { label: 'Tarefas ativas', value: turmaMissoesAtivas.length },
+                          { label: 'Tarefas desativadas', value: turmaMissoesDesativadas.length },
+                          { label: 'Conclusões aprovadas', value: `${totalConclusoes}/${totalPossivel}` },
+                          { label: 'Conclusão das missões', value: `${progressoMissoes}%` },
+                        ] : []),
                       ].map(indicador => (
                         <View key={indicador.label} style={[s.statCard, { width: '48%', minWidth: 120, flexGrow: 1 }]}>
                           <Text style={[s.statNum, { fontSize: 19 }]}>{indicador.value}</Text>
@@ -1421,7 +1454,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                       ))}
                     </View>
 
-                    <Text style={[s.formLabel, { marginTop: 12, marginBottom: 6 }]}>Desempenho por missão</Text>
+                    {isCoordenador && <><Text style={[s.formLabel, { marginTop: 12, marginBottom: 6 }]}>Desempenho por missão</Text>
                     {turmaMissoes.length === 0 ? <Text style={s.missionMeta}>Nenhuma missão atribuída a esta turma.</Text> : turmaMissoes.map(missao => {
                       const aprovados = turmaAlunos.filter(aluno => getStatusAluno(missao.id, aluno.id) === 'aprovado').length
                       const entregues = turmaAlunos.filter(aluno => getStatusAluno(missao.id, aluno.id) === 'entregue').length
@@ -1434,6 +1467,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                         <Text style={[s.missionProgressTxt, { color: missaoAtivaNaTurma(missao, turmaAtribuir) ? colors.green : colors.muted }]}>{missaoAtivaNaTurma(missao, turmaAtribuir) ? 'Ativa' : 'Desativada'}</Text>
                       </View>
                     })}
+                    </>}
 
                     <Text style={[s.formLabel, { marginTop: 12, marginBottom: 6 }]}>XP individual dos alunos</Text>
                     <Text style={[s.missionMeta, { marginBottom: 8 }]}>
@@ -1501,32 +1535,13 @@ export default function DashboardScreen({ professor, onLogout }) {
                       >
                         <Text style={[s.btnToggleText, { color: colors.muted }]}>📋</Text>
                       </TouchableOpacity>
-                        {!isCoordenador && <>
-                          <TouchableOpacity
-                            style={[s.btnToggle, { marginTop: 0, backgroundColor: colors.purpleLight, paddingHorizontal: 8 }]}
-                            onPress={() => {
-                              setModalAlunosTurma(false)
-                              setTimeout(() => abrirEditAluno(a), 300)
-                            }}
-                          >
-                            <Text style={[s.btnToggleText, { color: colors.purple }]}>✏️</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[s.btnToggle, { marginTop: 0, backgroundColor: colors.yellowLight, paddingHorizontal: 8 }]}
-                            onPress={() => {
-                              setAlunoXP(a)
-                              setXpValor('')
-                              setErroXP('')
-                              setModalAlunosTurma(false)
-                              setTimeout(() => setModalXP(true), 300)
-                            }}
-                          >
-                            <Text style={[s.btnToggleText, { color: '#7a5f00' }]}>⭐</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={() => removerAluno(a.id)} style={[s.btnRemove, { marginLeft: 2 }]}>
-                            <Text style={s.btnRemoveText}>🗑️</Text>
-                          </TouchableOpacity>
-                        </>}
+                        {isCoordenador && <TouchableOpacity
+                          style={[s.btnToggle, { marginTop: 0, backgroundColor: '#fde8e8', paddingHorizontal: 10 }]}
+                          onPress={() => removerAluno(a.id)}
+                          accessibilityLabel={`Desvincular ${a.nome} da turma`}
+                        >
+                          <Text style={[s.btnToggleText, { color: '#c0392b' }]}>Desvincular</Text>
+                        </TouchableOpacity>}
                     </View>
                   ))
               )}
@@ -1540,6 +1555,26 @@ export default function DashboardScreen({ professor, onLogout }) {
       </Modal>
 
       {/* ── Modal Atribuir tarefa à turma ── */}
+      <Modal visible={modalEscolherTurmaTarefa} transparent animationType="slide" onRequestClose={() => setModalEscolherTurmaTarefa(false)}>
+        <View style={s.modalOverlay}><View style={s.modalBox}>
+          <Text style={s.modalTitle}>Atribuir tarefa</Text>
+          <Text style={s.missionMeta}>{tarefaParaAtribuir?.name} · escolha uma turma</Text>
+          <ScrollView style={{ maxHeight: 360, marginTop: 10 }}>
+            {turmas.map(turma => {
+              const vinculada = turmaTemMissao(turma, tarefaParaAtribuir?.id)
+              return <View key={turma.id} style={[s.missionRow, { paddingVertical: 10 }]}>
+                <Text style={[s.missionName, { flex: 1 }]}>{turma.nome}</Text>
+                <TouchableOpacity disabled={vinculada || missaoEmAcao} style={[s.btnToggle, { marginTop: 0, backgroundColor: vinculada ? colors.cream : colors.greenLight }]} onPress={() => { setModalEscolherTurmaTarefa(false); solicitarVinculoMissao(tarefaParaAtribuir, turma) }}>
+                  <Text style={[s.btnToggleText, { color: vinculada ? colors.muted : colors.green }]}>{vinculada ? 'Já atribuída' : 'Atribuir'}</Text>
+                </TouchableOpacity>
+              </View>
+            })}
+            {turmas.length === 0 && <Text style={s.missionMeta}>Não há turmas disponíveis.</Text>}
+          </ScrollView>
+          <TouchableOpacity style={[s.btnConfirm, { marginTop: 10 }]} onPress={() => setModalEscolherTurmaTarefa(false)}><Text style={s.btnConfirmText}>Fechar</Text></TouchableOpacity>
+        </View></View>
+      </Modal>
+
       <Modal visible={modalAtribuir} transparent animationType="slide" onRequestClose={() => setModalAtribuir(false)}>
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
@@ -2048,6 +2083,8 @@ const s = StyleSheet.create({
   turmaName:      { fontSize: 15, fontFamily: fonts.bold, color: colors.dark },
   turmaEstagio:   { fontSize: 12, fontFamily: fonts.semibold, marginTop: 2 },
   turmaEmocao:    { fontSize: 11, fontFamily: fonts.regular, color: colors.muted, marginTop: 2 },
+  turmaResumoPill:{ minHeight: 30, justifyContent: 'center', backgroundColor: colors.cream, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 5 },
+  turmaResumoText:{ fontSize: 11, fontFamily: fonts.semibold, color: colors.dark },
   petXpBgFull:    { height: 6, backgroundColor: colors.border, borderRadius: 3, overflow: 'hidden' },
   petXpFillFull:  { height: '100%', borderRadius: 3 },
   btnRemove:      { padding: 8 },

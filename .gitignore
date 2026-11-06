@@ -12,3 +12,9 @@ web-build/
 web-build/
 .DS_Store
 .env
+# segredos locais: nunca versionar (o .env que já estiver rastreado precisa sair do índice: veja supabase/LEIAME_ENV.md)
+.env.*
+!.env.example
+backup_*.sql 
+supabase/.temp/ 
+".env" 

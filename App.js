@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Component } from 'react'
 import { View, ActivityIndicator, Image, Text, StyleSheet, Animated } from 'react-native'
 import {
   useFonts,
@@ -45,7 +45,7 @@ const tema = {
   },
 }
 import { colors } from './theme'
-import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp } from './services/storage'
+import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp, aoSessaoInvalida, temTokenAluno, restaurarSessaoStaff, restaurarPerfilAluno } from './services/storage'
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
@@ -54,14 +54,54 @@ import DashboardScreen from './screens/DashboardScreen'
 import AdminDashboardScreen from './screens/AdminDashboardScreen'
 import PetScreen from './screens/PetScreen'
 import LojaScreen from './screens/LojaScreen'
+import ErroScreen from './screens/ErroScreen'
 
-export default function App() {
+// Todo destino que o app sabe navegar. navegarCom() usa isso pra decidir
+// se o destino pedido é válido ou se deve cair na tela de erro (404).
+const TELAS_VALIDAS = new Set([
+  'splash', 'splashLogin', 'login', 'criarPerfil', 'entrarTurma',
+  'loginProfessor', 'dashboardAdmin', 'dashboardProfessor', 'pet', 'loja', 'erro404',
+])
+
+// Captura qualquer erro de render não tratado em qualquer tela do Curupira
+// e mostra a mesma tela de erro genérica (ErroScreen), em vez de deixar a
+// tela em branco/travada. "Tentar novamente" só reseta o boundary — se o
+// erro era de um estado específico (ex: tela do pet depois de um clique
+// ruim), o app volta a renderizar normalmente a partir daqui.
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { comErro: false }
+  }
+  static getDerivedStateFromError() {
+    return { comErro: true }
+  }
+  componentDidCatch(erro, info) {
+    console.error('Erro não tratado no Curupira:', erro, info?.componentStack)
+  }
+  render() {
+    if (this.state.comErro) {
+      return (
+        <ErroScreen
+          titulo="Algo deu errado"
+          mensagem="O Curupira encontrou um erro inesperado nessa tela. Você pode tentar novamente."
+          textoBotao="Tentar novamente"
+          onVoltar={() => this.setState({ comErro: false })}
+        />
+      )
+    }
+    return this.props.children
+  }
+}
+
+function AppInterno() {
   const [tela,          setTela]          = useState('splash')
   const [professor,     setProfessor]     = useState(null)
   const [aluno,         setAluno]         = useState(null)
   const [turmaAluno,    setTurmaAluno]    = useState(null)
   const [progressoAluno,setProgressoAluno]= useState(null)
   const fadeAnim = useRef(new Animated.Value(1)).current
+  const transicaoRef = useRef(0)
 
   const [fontsLoaded] = useFonts({
     Montserrat_400Regular,
@@ -79,18 +119,38 @@ export default function App() {
         const sessao = await obterSessaoApp()
         if (!ativo) return
 
-        if (sessao?.tipo === 'admin' && sessao.usuario) {
-          setProfessor({ ...sessao.usuario, tipo: 'admin' })
-          setTela('dashboardAdmin')
-          return
-        }
-        if (['professor', 'coordenador'].includes(sessao?.tipo) && sessao.usuario?.id) {
-          setProfessor(sessao.usuario)
-          setTela('dashboardProfessor')
+        // Professor/coordenador/admin: o JSON local NÃO prova nada. O token é validado no servidor e o perfil
+        // (inclusive o papel) volta do banco. Sem token válido (ou sem conseguir verificar) => tela de login.
+        if (['admin', 'professor', 'coordenador'].includes(sessao?.tipo)) {
+          let perfil = null
+          try { perfil = await restaurarSessaoStaff() } catch (e) { console.warn('Sessão de staff não verificada:', e?.codigo) }
+          if (!ativo) return
+          if (!perfil) {
+            await limparSessaoApp()
+            setTela('loginProfessor')
+            return
+          }
+          setProfessor(perfil)
+          setTela(perfil.tipo === 'admin' ? 'dashboardAdmin' : 'dashboardProfessor')
           return
         }
         if (sessao?.tipo === 'aluno' && sessao.usuario?.id) {
-          const alunoSalvo = sessao.usuario
+          // Aluno (exceto o atalho local 'loja') só vale com token de servidor. Sem token => novo login.
+          // Com token, o perfil (xp, turma...) é relido do servidor: o JSON local não é fonte de verdade.
+          let alunoSalvo = sessao.usuario
+          if (sessao.usuario.id !== 'loja') {
+            if (!(await temTokenAluno())) {
+              await limparSessaoApp()
+              if (ativo) setTela('login')
+              return
+            }
+            try {
+              const perfil = await restaurarPerfilAluno()
+              if (!perfil) { await limparSessaoApp(); if (ativo) setTela('login'); return }
+              alunoSalvo = { ...sessao.usuario, ...perfil }
+            } catch (e) { console.warn('Perfil do aluno não verificado (sem rede?):', e?.codigo) }
+          }
+          if (!ativo) return
           setAluno(alunoSalvo)
           if (!alunoSalvo.turmaId) {
             setTela('entrarTurma')
@@ -123,9 +183,24 @@ export default function App() {
     return () => { ativo = false }
   }, [fontsLoaded])
 
+  // Token de aluno recusado pelo servidor (expirado/revogado): volta ao login.
+  // O ref evita closure velha de `sair`/`professor`.
+  const sairRef = useRef(null)
+  useEffect(() => aoSessaoInvalida(() => sairRef.current?.()), [])
+
+  // Destino desconhecido (nome digitado errado, tela removida, estado
+  // inconsistente) nunca deixa `tela` num valor que nenhum bloco abaixo
+  // trata — em vez de ficar com a tela em branco, cai na 404.
   function navegarCom(destino) {
-    Animated.timing(fadeAnim, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => {
-      setTela(destino)
+    const transicao = ++transicaoRef.current
+    const alvo = TELAS_VALIDAS.has(destino) ? destino : 'erro404'
+    if (alvo === 'erro404' && destino !== 'erro404') {
+      console.warn(`Destino de navegação inválido: "${destino}". Mostrando tela de erro (404).`)
+    }
+    fadeAnim.stopAnimation()
+    Animated.timing(fadeAnim, { toValue: 0, duration: 400, useNativeDriver: true }).start(({ finished }) => {
+      if (!finished || transicao !== transicaoRef.current) return
+      setTela(alvo)
       Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start()
     })
   }
@@ -134,7 +209,27 @@ export default function App() {
     if (!usuario) return null
     const { senha, ...dados } = usuario
     return dados
-  }
+  }  
+  // Aluno sem pet (turma sem pet configurado, ou turma inexistente)
+  // não fica preso na tela "Pet não encontrado" — cai direto na tela
+  // do código da turma, pra poder entrar em outra turma.
+  // Só redireciona se HÁ aluno logado: no logout o estado é limpo (aluno e
+  // turma nulos) enquanto a tela 'pet' ainda está visível durante o fade, e
+  // esse redirecionamento disputava com o destino 'login' — quem chegava por
+  // último vencia e o usuário ficava em "Entre na sua turma" sem aluno.
+  useEffect(() => {
+    if (tela !== 'pet') return
+    if (!aluno?.id) return
+    if (turmaAluno?.pet) return
+    navegarCom('entrarTurma')
+  }, [tela, turmaAluno, aluno])
+
+  // EntrarTurma só faz sentido com aluno autenticado. Sessão ausente ou
+  // inválida volta ao login correto (nunca cria aluno fictício).
+  useEffect(() => {
+    if (tela !== 'entrarTurma' || aluno?.id) return
+    navegarCom(professor ? 'loginProfessor' : 'login')
+  }, [tela, aluno])
 
   async function entrarAreaProfessor(usuario) {
     const tipo = ['admin', 'coordenador'].includes(usuario?.tipo) ? usuario.tipo : 'professor'
@@ -189,25 +284,38 @@ export default function App() {
     await handleLoginAluno(alunoLogado)
   }
 
-  async function handleEntrarTurma(alunoAtualizado, turma) {
+    async function handleEntrarTurma(alunoAtualizado, turma) {
     try {
       await salvarSessaoApp({ tipo: 'aluno', usuario: usuarioSemSenha(alunoAtualizado) })
     } catch (error) {
       console.error('Não foi possível atualizar a sessão do aluno:', error)
     }
-    const progresso = await consultarProgressoGeral(alunoAtualizado.id)
+    // Refaz a busca pra trazer o objeto turma COMPLETO (com pet aninhado) —
+    // o `turma` que o EntrarTurma devolve só tem id/nome/codigo/professor_id.
+    const [turmaCompleta, progresso] = await Promise.all([
+      buscarTurmaDoAluno(alunoAtualizado.turmaId),
+      consultarProgressoGeral(alunoAtualizado.id),
+    ])
     setAluno(alunoAtualizado)
-    setTurmaAluno(turma)
+    setTurmaAluno(turmaCompleta)
     setProgressoAluno(progresso)
     navegarCom('splashLogin')
     setTimeout(() => navegarCom('pet'), 2000)
   }
 
-  async function pularEntradaNaTurma() {
+  function sairAluno() {
+    // Logout tem prioridade sobre qualquer transição que ainda esteja em curso.
+    // Se uma navegação antiga terminar depois do clique, ela não pode trocar
+    // a tela de login por outro destino.
+    transicaoRef.current += 1
+    fadeAnim.stopAnimation()
+    fadeAnim.setValue(1)
+    setAluno(null)
     setTurmaAluno(null)
-    const progresso = aluno?.id ? await consultarProgressoGeral(aluno.id) : null
-    setProgressoAluno(progresso)
-    navegarCom('pet')
+    setProgressoAluno(null)
+    setProfessor(null)
+    limparSessaoApp().catch(error => console.error('Não foi possível limpar a sessão do aluno:', error))
+    setTela('login')
   }
 
   async function sair() {
@@ -222,6 +330,8 @@ export default function App() {
     setProgressoAluno(null)
     navegarCom(professor ? 'loginProfessor' : 'login')
   }
+
+  sairRef.current = sair
 
   if (!fontsLoaded || tela === 'splash' || tela === 'splashLogin') {
     return (
@@ -256,7 +366,8 @@ export default function App() {
           <EntrarTurma
             aluno={aluno}
             onEntrou={handleEntrarTurma}
-            onPular={pularEntradaNaTurma}
+            onSemSessao={() => navegarCom('login')}
+            onVoltarLogin={sairAluno}
           />
         )}
 
@@ -270,14 +381,14 @@ export default function App() {
 
         {tela === 'dashboardAdmin' && (
           professor?.tipo === 'admin'
-            ? <AdminDashboardScreen usuario={professor} onLogout={sair} />
+            ? <AdminDashboardScreen usuario={professor} onLogout={sair} onAdminAtualizado={setProfessor} />
             : <LoginProfessor onLogin={entrarAreaProfessor} onAdminLogin={entrarAreaProfessor} onSouAluno={() => navegarCom('login')} />
         )}
 
         {tela === 'dashboardProfessor' && (
           professor?.tipo !== 'admin'
             ? <DashboardScreen professor={professor} onLogout={sair} />
-            : <AdminDashboardScreen usuario={professor} onLogout={sair} />
+            : <AdminDashboardScreen usuario={professor} onLogout={sair} onAdminAtualizado={setProfessor} />
         )}
 
         {tela === 'pet' && (
@@ -285,7 +396,7 @@ export default function App() {
             aluno={aluno}
             turma={turmaAluno}
             progresso={progressoAluno}
-            onLogout={sair}
+            onLogout={sairAluno}
             onLoja={() => navegarCom('loja')}
           />
         )}
@@ -298,9 +409,23 @@ export default function App() {
           />
         )}
 
+        {tela === 'erro404' && (
+          <ErroScreen
+            onVoltar={() => navegarCom(professor ? 'loginProfessor' : 'login')}
+          />
+        )}
+
       </SafeAreaProvider>
       </PaperProvider>
     </Animated.View>
+  )
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppInterno />
+    </ErrorBoundary>
   )
 }
 

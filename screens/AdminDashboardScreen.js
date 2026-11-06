@@ -5,8 +5,9 @@ import {
 } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import AdminDataManager from '../components/AdminDataManager'
+import AdminTarefasManager from '../components/AdminTarefasManager'
 import { colors, fonts } from '../theme'
-import { salvarAcessorioAdmin, salvarIconeMissao, salvarPetAdmin, salvarProfessor } from '../services/storage'
+import { salvarAcessorioAdmin, salvarAlunoAdmin, salvarPetAdmin, salvarProfessor, salvarCoordenadorAdmin } from '../services/storage'
 
 const FORMULARIOS = {
   pet: {
@@ -15,18 +16,20 @@ const FORMULARIOS = {
       { id: 'nome', label: 'Nome do PET', placeholder: 'Ex.: Jatobá', required: true },
     ],
   },
-  professor: {
-    titulo: 'Adicionar professor',
+  colaborador: {
+    titulo: 'Adicionar colaborador',
     campos: [
-      { id: 'nome', label: 'Nome', placeholder: 'Nome do professor', required: true },
-      { id: 'email', label: 'E-mail', placeholder: 'professor@escola.com', required: true, email: true },
+      { id: 'nome', label: 'Nome', placeholder: 'Nome do colaborador', required: true },
+      { id: 'email', label: 'E-mail', placeholder: 'nome@escola.com', required: true, email: true },
       { id: 'senha', label: 'Senha', placeholder: '8+ caracteres, maiúscula, número e símbolo', required: true, secure: true },
     ],
   },
-  icone: {
-    titulo: 'Adicionar ícone de missão',
+  aluno: {
+    titulo: 'Adicionar aluno',
     campos: [
-      { id: 'nome', label: 'Nome do ícone', placeholder: 'Ex.: Livro', required: true },
+      { id: 'nome', label: 'Nome do aluno', placeholder: 'Nome completo', required: true },
+      { id: 'email', label: 'E-mail', placeholder: 'aluno@escola.com', required: true, email: true },
+      { id: 'senha', label: 'Senha inicial', placeholder: '8+ caracteres, maiúscula, número e símbolo', required: true, secure: true },
     ],
   },
   acessorio: {
@@ -40,18 +43,19 @@ const FORMULARIOS = {
 
 const DADOS_INICIAIS = {
   pet: { nome: '', imagem: null },
-  professor: { nome: '', email: '', senha: '' },
-  icone: { nome: '', imagem: null },
+  colaborador: { tipo: 'professor', nome: '', email: '', senha: '' },
+  aluno: { nome: '', email: '', senha: '' },
   acessorio: { nome: '', preco: '', slot: 'chapeu', imagem: null },
 }
 
-export default function AdminDashboardScreen({ usuario, onLogout }) {
+export default function AdminDashboardScreen({ usuario, onLogout, onAdminAtualizado }) {
   const [formulario, setFormulario] = useState(null)
   const [dados, setDados] = useState(DADOS_INICIAIS.pet)
   const [erros, setErros] = useState({})
   const [salvando, setSalvando] = useState(false)
   const [mensagem, setMensagem] = useState('')
   const [alterarDadosVisivel, setAlterarDadosVisivel] = useState(false)
+  const [tarefasVisivel, setTarefasVisivel] = useState(false)
 
   function abrirFormulario(tipo) {
     setDados({ ...DADOS_INICIAIS[tipo] })
@@ -97,8 +101,8 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
         novosErros[campo.id] = 'Use ao menos 8 caracteres, com maiúscula, minúscula, número e símbolo.'
       }
     })
-    if (['pet', 'icone', 'acessorio'].includes(formulario)) {
-      const tipoImagem = formulario === 'pet' ? 'PET' : formulario === 'icone' ? 'ícone' : 'acessório'
+    if (['pet', 'acessorio'].includes(formulario)) {
+      const tipoImagem = formulario === 'pet' ? 'PET' : 'acessório'
       if (!dados.imagem) novosErros.imagem = `Selecione a imagem do ${tipoImagem} para enviar ao Supabase Storage.`
     }
     if (formulario === 'acessorio') {
@@ -112,8 +116,11 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
     setSalvando(true)
     try {
       if (formulario === 'pet') await salvarPetAdmin(dados)
-      if (formulario === 'professor') await salvarProfessor(dados)
-      if (formulario === 'icone') await salvarIconeMissao(dados)
+      if (formulario === 'colaborador') {
+        if (dados.tipo === 'coordenador') await salvarCoordenadorAdmin(dados)
+        else await salvarProfessor(dados)
+      }
+      if (formulario === 'aluno') await salvarAlunoAdmin(dados)
       if (formulario === 'acessorio') await salvarAcessorioAdmin(dados)
       setFormulario(null)
       setMensagem(`${config.titulo.replace('Adicionar ', '')} cadastrado com sucesso.`)
@@ -144,10 +151,11 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
 
         <View style={styles.actions}>
           <AdminAction icon="🐾" title="Adicionar PET" description="Cadastre uma imagem PET disponível para uma turma." onPress={() => abrirFormulario('pet')} />
-          <AdminAction icon="👩‍🏫" title="Adicionar professor" description="Crie um novo acesso para a área do professor." onPress={() => abrirFormulario('professor')} />
-          <AdminAction icon="🖼️" title="Adicionar ícone missão" description="Inclua uma imagem no catálogo de ícones das missões." onPress={() => abrirFormulario('icone')} />
+          <AdminAction icon="👥" title="Adicionar colaborador" description="Crie um acesso de professor ou coordenador." onPress={() => abrirFormulario('colaborador')} />
+          <AdminAction icon="🧑‍🎓" title="Adicionar aluno" description="Crie o acesso do aluno; ele poderá entrar na turma pelo código do professor." onPress={() => abrirFormulario('aluno')} />
+          <AdminAction icon="🧭" title="Gerenciar tarefas" description="Crie e edite tarefas, etapas e XP de cada etapa." onPress={() => setTarefasVisivel(true)} />
           <AdminAction icon="🛍️" title="Adicionar item à loja" description="Cadastre acessórios com imagem e preço em moedas." onPress={() => abrirFormulario('acessorio')} />
-          <AdminAction icon="📝" title="Alterar dados" description="Consulte, edite e exclua professores, alunos, PETs, ícones e itens da loja." onPress={() => setAlterarDadosVisivel(true)} />
+          <AdminAction icon="📝" title="Alterar dados" description="Consulte, edite e exclua professores, coordenadores, alunos, PETs e itens da loja." onPress={() => setAlterarDadosVisivel(true)} />
         </View>
 
         <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
@@ -161,12 +169,27 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
             <View style={styles.modal}>
               <Text style={styles.modalTitle}>{config?.titulo}</Text>
               {formulario === 'pet' && <Text style={styles.hint}>A imagem será enviada ao Supabase. O PET começa no estágio infantil, com 0 XP, emoção vazia e sem turma vinculada.</Text>}
-              {formulario === 'icone' && <Text style={styles.hint}>Escolha a imagem do ícone. Ela será enviada ao Supabase Storage.</Text>}
+              {formulario === 'aluno' && <Text style={styles.hint}>O aluno será criado sem turma. Ele poderá entrar usando o código da turma fornecido pelo professor.</Text>}
               {formulario === 'acessorio' && <Text style={styles.hint}>{dados.slot === 'fundo' ? 'Envie uma imagem de cenário para usar como fundo do PET.' : 'Envie uma imagem PNG transparente para sobrepor ao PET animado.'}</Text>}
-              {['pet', 'icone', 'acessorio'].includes(formulario) && (
+              {formulario === 'colaborador' && (
+                <View style={styles.field}>
+                  <Text style={styles.label}>Tipo de colaborador *</Text>
+                  <View style={styles.stageOptions}>
+                    {[
+                      { id: 'professor', nome: 'Professor' },
+                      { id: 'coordenador', nome: 'Coordenador' },
+                    ].map(tipo => (
+                      <TouchableOpacity key={tipo.id} style={[styles.stageOption, dados.tipo === tipo.id && styles.stageOptionActive]} onPress={() => atualizarCampo('tipo', tipo.id)}>
+                        <Text style={[styles.stageText, dados.tipo === tipo.id && styles.stageTextActive]}>{tipo.nome}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+              {['pet', 'acessorio'].includes(formulario) && (
                 <>
                   <View style={styles.field}>
-                    <Text style={styles.label}>{formulario === 'pet' ? 'Imagem do PET' : formulario === 'icone' ? 'Imagem do ícone' : dados.slot === 'fundo' ? 'Imagem do cenário' : 'Imagem do acessório'} *</Text>
+                    <Text style={styles.label}>{formulario === 'pet' ? 'Imagem do PET' : dados.slot === 'fundo' ? 'Imagem do cenário' : 'Imagem do acessório'} *</Text>
                     <TouchableOpacity style={styles.imagePicker} onPress={escolherImagem}>
                       {dados.imagem?.uri
                         ? <Image source={{ uri: dados.imagem.uri }} style={styles.imagePreview} resizeMode="contain" />
@@ -225,7 +248,8 @@ export default function AdminDashboardScreen({ usuario, onLogout }) {
         </View>
       </Modal>
 
-      <AdminDataManager visible={alterarDadosVisivel} onClose={() => setAlterarDadosVisivel(false)} />
+      <AdminDataManager visible={alterarDadosVisivel} onClose={() => setAlterarDadosVisivel(false)} usuario={usuario} onAdminAtualizado={onAdminAtualizado} />
+      <AdminTarefasManager visible={tarefasVisivel} onClose={() => setTarefasVisivel(false)} />
     </SafeAreaView>
   )
 }

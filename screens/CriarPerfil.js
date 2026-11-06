@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import {
-  View, Text, TextInput, TouchableOpacity,
+  ActivityIndicator, View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Image,
 } from 'react-native'
-import { salvarUsuario, buscarUsuario } from '../services/storage'
+import { solicitarCodigoCadastroAluno, confirmarCadastroAluno } from '../services/storage'
 import { cores } from '../constants/cores'
 
 export default function CriarPerfil({ onVoltar, onCriado }) {
@@ -14,6 +14,9 @@ export default function CriarPerfil({ onVoltar, onCriado }) {
   const [receberInfo, setReceberInfo] = useState(false)
   const [erro, setErro] = useState('')
   const [sucesso, setSucesso] = useState(false)
+  const [codigoSolicitado, setCodigoSolicitado] = useState(false)
+  const [codigo, setCodigo] = useState('')
+  const [enviando, setEnviando] = useState(false)
 
   function validarEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -24,6 +27,7 @@ export default function CriarPerfil({ onVoltar, onCriado }) {
   }
 
   async function handleCriar() {
+    setErro('')
     if (!usuario || !email || !senha) {
       setErro('Preencha todos os campos para continuar.')
       return
@@ -40,15 +44,46 @@ export default function CriarPerfil({ onVoltar, onCriado }) {
       setErro('A senha deve ter mínimo 8 caracteres, 1 maiúscula e 1 número.')
       return
     }
-    const existente = await buscarUsuario(email)
-    if (existente) {
-      setErro('Já existe uma conta com esse e-mail.')
+    setEnviando(true)
+    try {
+      await solicitarCodigoCadastroAluno(email)
+      setCodigoSolicitado(true)
+      setCodigo('')
+    } catch (e) {
+      setErro(e?.message || 'Não foi possível enviar o código. Tente novamente.')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  async function handleConfirmarCodigo() {
+    setErro('')
+    if (!/^[0-9]{6}$/.test(codigo.trim())) {
+      setErro('Digite o código de 6 números recebido por e-mail.')
       return
     }
-    const novoAluno = { usuario, email, senha, receberInfo }
-    await salvarUsuario(novoAluno)
+    setEnviando(true)
+    try {
+      await confirmarCadastroAluno({ nome: usuario.trim(), email, senha, codigo: codigo.trim() })
+      setSucesso(true)
+    } catch (e) {
+      setErro(e?.message || 'Não foi possível confirmar o código. Tente novamente.')
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  async function reenviarCodigo() {
     setErro('')
-    setSucesso(true)
+    setEnviando(true)
+    try {
+      await solicitarCodigoCadastroAluno(email)
+      setCodigo('')
+    } catch (e) {
+      setErro(e?.message || 'Não foi possível reenviar o código.')
+    } finally {
+      setEnviando(false)
+    }
   }
 
   // Tela de sucesso — agora tem botão que vai direto pro pet
@@ -118,6 +153,29 @@ export default function CriarPerfil({ onVoltar, onCriado }) {
           </View>
 
           <View style={styles.campos}>
+            {codigoSolicitado ? (
+              <>
+                <Text style={styles.instrucaoCodigo}>Enviamos um código para {email}. Ele expira em 10 minutos.</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Código de 6 números"
+                  placeholderTextColor="#bbb"
+                  keyboardType="number-pad"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={codigo}
+                  onChangeText={valor => setCodigo(valor.replace(/\D/g, '').slice(0, 6))}
+                />
+                <View style={styles.acoesCodigo}>
+                  <TouchableOpacity disabled={enviando} onPress={reenviarCodigo}>
+                    <Text style={styles.linkCodigo}>Reenviar código</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity disabled={enviando} onPress={() => { setCodigoSolicitado(false); setCodigo(''); setErro('') }}>
+                    <Text style={styles.linkCodigo}>Alterar cadastro</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : <>
             <TextInput
               style={styles.input}
               placeholder="Usuário"
@@ -151,6 +209,7 @@ export default function CriarPerfil({ onVoltar, onCriado }) {
 
             <TouchableOpacity
               style={styles.checkRow}
+              disabled={enviando}
               onPress={() => setReceberInfo(!receberInfo)}
             >
               <View style={[styles.checkbox, receberInfo && styles.checkboxAtivo]}>
@@ -160,12 +219,13 @@ export default function CriarPerfil({ onVoltar, onCriado }) {
                 Eu gostaria de receber mais informações sobre o projeto por email
               </Text>
             </TouchableOpacity>
+            </>}
 
             {erro ? <Text style={styles.erro}>{erro}</Text> : null}
           </View>
 
-          <TouchableOpacity style={styles.btnCriar} onPress={handleCriar}>
-            <Text style={styles.btnCriarTxt}>Criar</Text>
+          <TouchableOpacity style={[styles.btnCriar, enviando && styles.btnDesabilitado]} onPress={codigoSolicitado ? handleConfirmarCodigo : handleCriar} disabled={enviando}>
+            {enviando ? <ActivityIndicator color={cores.branco} /> : <Text style={styles.btnCriarTxt}>{codigoSolicitado ? 'Confirmar código e criar conta' : 'Enviar código'}</Text>}
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -196,6 +256,10 @@ const styles = StyleSheet.create({
   checkmark: { color: cores.branco, fontSize: 12, fontWeight: 'bold' },
   checkLabel: { flex: 1, fontSize: 13, color: '#555', lineHeight: 20 },
   erro: { color: 'red', fontSize: 13, marginTop: 4 },
+  instrucaoCodigo: { fontSize: 14, color: '#444', lineHeight: 21 },
+  acoesCodigo: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  linkCodigo: { color: cores.verde, fontSize: 14, fontWeight: '600' },
+  btnDesabilitado: { opacity: 0.65 },
   btnCriar: { backgroundColor: cores.verde, borderRadius: 30, paddingVertical: 16, alignItems: 'center', marginBottom: 16 },
   btnCriarTxt: { color: cores.branco, fontSize: 16, fontWeight: 'bold' },
   sucessoContainer: { flex: 1, backgroundColor: cores.branco },

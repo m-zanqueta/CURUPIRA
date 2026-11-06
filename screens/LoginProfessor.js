@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Image,
 } from 'react-native'
-import { buscarCoordenador, buscarProfessor } from '../services/storage'
+import { loginStaff } from '../services/storage'
 import { cores } from '../constants/cores'
 
 export default function LoginProfessor({ onLogin, onAdminLogin, onSouAluno }) {
@@ -17,35 +17,21 @@ export default function LoginProfessor({ onLogin, onAdminLogin, onSouAluno }) {
       setErro('Preencha usuário e senha para continuar.')
       return
     }
-    if (emailNormalizado === 'adm@email.com') {
-      if (senha !== 'Adm123!') {
-        setErro('Senha do administrador incorreta.')
-        return
-      }
-      setErro('')
-      onAdminLogin?.({ nome: 'Administrador', tipo: 'admin' })
-      return
-    }
-    let coordenador = null
+    // Professor, coordenador e administrador entram pelo MESMO caminho: a senha é conferida no servidor (bcrypt)
+    // e o papel (tipo) volta do banco. Não há senha nem e-mail de administrador embutidos no app.
+    let usuario = null
     try {
-      coordenador = await buscarCoordenador(emailNormalizado, senha)
+      usuario = await loginStaff(emailNormalizado, senha)
     } catch (error) {
-      // Se a migração ainda não foi aplicada, mantém o login atual dos professores.
-      console.warn('Não foi possível consultar a tabela de coordenadores:', error.message)
-    }
-    if (coordenador) {
-      setErro('')
-      onLogin(coordenador)
+      setErro(error?.codigo === 'configuracao' ? 'Erro de configuração do servidor. Avise o administrador do app.' : (error?.message || 'Não foi possível entrar.'))
       return
     }
-
-    const encontrado = await buscarProfessor(emailNormalizado, senha)
-    if (!encontrado) {
+    if (!usuario) {
       setErro('Usuário ou senha incorretos.')
       return
     }
     setErro('')
-    onLogin(encontrado)
+    onLogin(usuario)
   }
 
   return (
