@@ -4,6 +4,7 @@ import { colors } from '../theme';
 export const NAV = [
   { id: 'overview', label: 'Visão Geral', icon: '📊' },
   { id: 'turmas', label: 'Turmas', icon: '👥' },
+  { id: 'cadastrar-professor', label: 'Cadastrar professor', icon: '✉️', coordenadorOnly: true },
   { id: 'missoes', label: 'Tarefas', icon: '🏆' },
   { id: 'relatorio', label: 'Relatórios', icon: '📈' },
 ];

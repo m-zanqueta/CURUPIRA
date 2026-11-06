@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.verificar-email-aluno]
 verify_jwt = false
+
+[functions.convidar-professor]
+verify_jwt = false
