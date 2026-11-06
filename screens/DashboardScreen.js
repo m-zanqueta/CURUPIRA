@@ -5,9 +5,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme';
-import { listarAlunos, atualizarAluno, listarTurmas, listarProfessoresParaTurma, listarPetsParaTurma, salvarTurma, removerTurmaStorage, listarMissoes, listarIconesMissoes, listarStatusMissoes, salvarMissao, atualizarMissao, definirTurmasMissao, atribuirTarefaGlobal, definirAtivaMissaoTurma, removerMissaoDaTurma as removerMissaoDaTurmaStorage, atualizarStatusAlunoMissao, removerMissaoStorage } from '../services/storage';
+import { listarAlunos, atualizarAluno, listarTurmas, listarProfessoresParaTurma, listarPetsParaTurma, salvarTurma, removerTurmaStorage, renomearTurmaStorage, atribuirProfessorTurmaStorage, atribuirPetTurmaStorage, listarMissoes, listarIconesMissoes, listarStatusMissoes, salvarMissao, atualizarMissao, definirTurmasMissao, atribuirTarefaGlobal, definirAtivaMissaoTurma, removerMissaoDaTurma as removerMissaoDaTurmaStorage, atualizarStatusAlunoMissao, removerMissaoStorage } from '../services/storage';
 import { CORES, MEDALS, RARIDADE_CONFIG, CRITERIOS } from './dashboardConfig';
 import DashboardSidebar from './DashboardSidebar';
+import CadastrarProfessor from './CadastrarProfessor';
 
 const { width } = Dimensions.get('window');
 
@@ -48,6 +49,14 @@ export default function DashboardScreen({ professor, onLogout }) {
   // Modal de alunos da turma
   const [modalAlunosTurma, setModalAlunosTurma] = useState(false)
   const [modalResumoTurma, setModalResumoTurma] = useState(false)
+  const [editandoNomeTurma, setEditandoNomeTurma] = useState(false)
+  const [nomeTurmaEditado, setNomeTurmaEditado] = useState('')
+  const [salvandoNomeTurma, setSalvandoNomeTurma] = useState(false)
+  const [professorTurmaSelecionado, setProfessorTurmaSelecionado] = useState(null)
+  const [salvandoProfessorTurma, setSalvandoProfessorTurma] = useState(false)
+  const [petTurmaSelecionado, setPetTurmaSelecionado] = useState(null)
+  const [salvandoPetTurma, setSalvandoPetTurma] = useState(false)
+  const [carregandoPetsTurma, setCarregandoPetsTurma] = useState(false)
   const [abaDetalhesTurma, setAbaDetalhesTurma] = useState('resumo')
   const [filtroTarefasTurma, setFiltroTarefasTurma] = useState('todas')
 
@@ -164,11 +173,94 @@ export default function DashboardScreen({ professor, onLogout }) {
     return turma ? alunos.filter(a => String(a.turmaId) === String(turma.id)) : []
   }
 
-  function abrirResumoTurma(turma, aba = 'resumo') {
+  async function abrirResumoTurma(turma, aba = 'resumo') {
     setTurmaAtribuir(turma)
     setAbaDetalhesTurma(aba)
     setFiltroTarefasTurma('todas')
+    setEditandoNomeTurma(false)
+    setNomeTurmaEditado(turma?.nome || '')
+    setProfessorTurmaSelecionado(turma?.professorId ?? null)
+    setPetTurmaSelecionado(turma?.petId ?? null)
     setModalResumoTurma(true)
+    if (isCoordenador) {
+      setCarregandoPetsTurma(true)
+      try {
+        setPetsParaTurma(await listarPetsParaTurma())
+      } catch (error) {
+        Alert.alert('Erro', `Não foi possível carregar os PETs: ${formatarErroSupabase(error)}`)
+      } finally {
+        setCarregandoPetsTurma(false)
+      }
+    }
+  }
+
+  async function salvarNomeTurma() {
+    if (!isCoordenador || !turmaAtribuir) return
+    const nome = nomeTurmaEditado.trim()
+    if (!nome) { Alert.alert('Nome inválido', 'Informe um nome para a turma.'); return }
+    setSalvandoNomeTurma(true)
+    try {
+      await renomearTurmaStorage(turmaAtribuir.id, nome)
+      setTurmas(prev => prev.map(t => String(t.id) === String(turmaAtribuir.id) ? { ...t, nome } : t))
+      setTurmaAtribuir(prev => prev ? { ...prev, nome } : prev)
+      setEditandoNomeTurma(false)
+    } catch (error) {
+      Alert.alert('Erro', `Não foi possível renomear a turma: ${formatarErroSupabase(error)}`)
+    } finally {
+      setSalvandoNomeTurma(false)
+    }
+  }
+
+  async function salvarProfessorTurma() {
+    if (!isCoordenador || !turmaAtribuir || !professorTurmaSelecionado) return
+    setSalvandoProfessorTurma(true)
+    try {
+      await atribuirProfessorTurmaStorage(turmaAtribuir.id, professorTurmaSelecionado)
+      const professorAtualizado = professoresParaTurma.find(p => String(p.id) === String(professorTurmaSelecionado))
+      setTurmas(prev => prev.map(t => String(t.id) === String(turmaAtribuir.id)
+        ? { ...t, professorId: professorTurmaSelecionado }
+        : t))
+      setTurmaAtribuir(prev => prev ? { ...prev, professorId: professorTurmaSelecionado } : prev)
+      Alert.alert('Professor vinculado', `${professorAtualizado?.nome || 'O professor'} agora está vinculado a esta turma.`)
+    } catch (error) {
+      Alert.alert('Erro', `Não foi possível vincular o professor: ${formatarErroSupabase(error)}`)
+    } finally {
+      setSalvandoProfessorTurma(false)
+    }
+  }
+
+  async function salvarPetTurma() {
+    if (!isCoordenador || !turmaAtribuir || !petTurmaSelecionado) return
+    setSalvandoPetTurma(true)
+    try {
+      await atribuirPetTurmaStorage(turmaAtribuir.id, petTurmaSelecionado)
+      const petEscolhido = petsParaTurma.find(p => String(p.id) === String(petTurmaSelecionado))
+      if (!petEscolhido) throw new Error('O PET escolhido não está mais disponível. Atualize a página e tente novamente.')
+      const petAnteriorId = turmaAtribuir.petId
+      const petAtualizado = {
+        ...turmaAtribuir,
+        petId: petEscolhido.id,
+        pet: petEscolhido.icone,
+        petNome: petEscolhido.nome,
+        estagio: petEscolhido.estagio || 'infantil',
+        xp: Number(petEscolhido.xp) || 0,
+        progresso: Math.min(100, Math.floor(((Number(petEscolhido.xp) || 0) % 1000) / 10)),
+        emocao: petEscolhido.emocao ?? null,
+        cosmetico: petEscolhido.cosmetico || false,
+      }
+      setTurmas(prev => prev.map(t => String(t.id) === String(turmaAtribuir.id) ? petAtualizado : t))
+      setTurmaAtribuir(petAtualizado)
+      setPetsParaTurma(prev => prev.map(pet => {
+        if (String(pet.id) === String(petAnteriorId)) return { ...pet, turma_id: null, turmaNome: null, disponivel: true }
+        if (String(pet.id) === String(petEscolhido.id)) return { ...pet, turma_id: turmaAtribuir.id, turmaNome: turmaAtribuir.nome, disponivel: false }
+        return pet
+      }))
+      Alert.alert('PET atualizado', `${petEscolhido.nome} agora está vinculado a esta turma.`)
+    } catch (error) {
+      Alert.alert('Erro', `Não foi possível trocar o PET: ${formatarErroSupabase(error)}`)
+    } finally {
+      setSalvandoPetTurma(false)
+    }
   }
 
   function turmaTemMissao(turma, missaoId) {
@@ -1061,7 +1153,11 @@ export default function DashboardScreen({ professor, onLogout }) {
         visible={menuOpen}
         activeNav={activeNav}
         professor={professor}
-        onNavigate={(section) => { setActiveNav(section); setMenuOpen(false); }}
+        onNavigate={(section) => {
+          if (section === 'cadastrar-professor' && !isCoordenador) return
+          setActiveNav(section)
+          setMenuOpen(false)
+        }}
         onClose={() => setMenuOpen(false)}
         onLogout={() => { setMenuOpen(false); onLogout && onLogout(); }}
       />
@@ -1367,13 +1463,100 @@ export default function DashboardScreen({ professor, onLogout }) {
 
                 {abaDetalhesTurma === 'informacoes' ? (
                   <ScrollView>
+                    {isCoordenador && (
+                      <View style={{ marginBottom: 14 }}>
+                        <Text style={s.formLabel}>Nome da turma</Text>
+                        {editandoNomeTurma ? (
+                          <>
+                            <TextInput
+                              style={[s.formInput, { marginTop: 6 }]}
+                              value={nomeTurmaEditado}
+                              onChangeText={setNomeTurmaEditado}
+                              maxLength={100}
+                              editable={!salvandoNomeTurma}
+                              accessibilityLabel="Novo nome da turma"
+                            />
+                            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                              <TouchableOpacity disabled={salvandoNomeTurma} style={[s.btnConfirm, salvandoNomeTurma && { opacity: 0.6 }]} onPress={salvarNomeTurma}>
+                                <Text style={s.btnConfirmText}>{salvandoNomeTurma ? 'Salvando…' : 'Salvar nome'}</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity disabled={salvandoNomeTurma} style={s.btnToggle} onPress={() => { setEditandoNomeTurma(false); setNomeTurmaEditado(turmaAtribuir.nome) }}>
+                                <Text style={s.btnToggleText}>Cancelar</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </>
+                        ) : (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6 }}>
+                            <Text style={s.missionMeta}>{turmaAtribuir.nome}</Text>
+                            <TouchableOpacity style={s.btnToggle} onPress={() => { setNomeTurmaEditado(turmaAtribuir.nome); setEditandoNomeTurma(true) }}>
+                              <Text style={s.btnToggleText}>Editar nome</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                        <Text style={[s.formLabel, { marginTop: 16 }]}>Professor responsável</Text>
+                        {professoresParaTurma.length ? (
+                          <View style={[s.petPicker, { marginTop: 8 }]}>
+                            {professoresParaTurma.map(item => (
+                              <TouchableOpacity
+                                key={item.id}
+                                disabled={salvandoProfessorTurma}
+                                style={[s.turmaPill, String(professorTurmaSelecionado) === String(item.id) && s.turmaPillActive]}
+                                onPress={() => setProfessorTurmaSelecionado(item.id)}
+                              >
+                                <Text style={[s.turmaPillText, String(professorTurmaSelecionado) === String(item.id) && s.turmaPillTextActive]}>{item.nome}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        ) : <Text style={s.missionMeta}>Nenhum professor cadastrado.</Text>}
+                        <TouchableOpacity
+                          disabled={salvandoProfessorTurma || !professorTurmaSelecionado || String(professorTurmaSelecionado) === String(turmaAtribuir.professorId)}
+                          style={[s.btnConfirm, { marginTop: 8 }, (salvandoProfessorTurma || !professorTurmaSelecionado || String(professorTurmaSelecionado) === String(turmaAtribuir.professorId)) && { opacity: 0.55 }]}
+                          onPress={salvarProfessorTurma}
+                        >
+                          <Text style={s.btnConfirmText}>{salvandoProfessorTurma ? 'Salvando…' : 'Vincular professor'}</Text>
+                        </TouchableOpacity>
+                        <Text style={[s.formLabel, { marginTop: 16 }]}>PET vinculado</Text>
+                        <Text style={[s.missionMeta, { marginTop: 4 }]}>Escolha um PET livre ou o que já pertence a esta turma.</Text>
+                        {carregandoPetsTurma ? <Text style={s.missionMeta}>Carregando PETs...</Text> : <View style={[s.petPicker, { marginTop: 8 }]}>
+                          {petsParaTurma
+                            .filter(pet => pet.turma_id == null || String(pet.turma_id) === String(turmaAtribuir.id))
+                            .map(pet => (
+                              <TouchableOpacity
+                                key={pet.id}
+                                disabled={salvandoPetTurma}
+                                onPress={() => setPetTurmaSelecionado(pet.id)}
+                                style={[s.petOption, { width: 92, height: 88, padding: 6 }, String(petTurmaSelecionado) === String(pet.id) && s.petOptionActive]}
+                              >
+                                <PetImage uri={pet.icone} width={42} height={42} />
+                                <Text numberOfLines={1} style={{ fontSize: 10, color: colors.dark, fontFamily: fonts.semibold, maxWidth: 78 }}>{pet.nome}</Text>
+                                {pet.turma_id != null && <Text style={{ fontSize: 9, color: colors.muted }}>Atual</Text>}
+                              </TouchableOpacity>
+                            ))}
+                        </View>}
+                        {!petsParaTurma.some(pet => pet.turma_id == null || String(pet.turma_id) === String(turmaAtribuir.id)) && (
+                          <Text style={s.missionMeta}>Não há PETs livres disponíveis.</Text>
+                        )}
+                        <TouchableOpacity
+                          disabled={carregandoPetsTurma || salvandoPetTurma || !petTurmaSelecionado || String(petTurmaSelecionado) === String(turmaAtribuir.petId)}
+                          style={[s.btnConfirm, { marginTop: 8 }, (carregandoPetsTurma || salvandoPetTurma || !petTurmaSelecionado || String(petTurmaSelecionado) === String(turmaAtribuir.petId)) && { opacity: 0.55 }]}
+                          onPress={salvarPetTurma}
+                        >
+                          <Text style={s.btnConfirmText}>{salvandoPetTurma ? 'Salvando…' : 'Trocar PET'}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[s.btnToggle, { alignSelf: 'flex-start', marginTop: 10, backgroundColor: '#fff0f0' }]} onPress={() => removerTurma(turmaAtribuir.id)}>
+                          <Text style={[s.btnToggleText, { color: '#b3261e' }]}>Excluir turma</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
                     <Text style={s.formLabel}>Código para entrada dos alunos</Text>
                     <View style={[s.statCard, { marginTop: 6, marginBottom: 12 }]}>
                       <Text selectable style={[s.statNum, { fontSize: 24, letterSpacing: 2 }]}>{turmaAtribuir.codigo || 'Não definido'}</Text>
                       <Text style={s.statLabel}>Compartilhe este código com os alunos</Text>
                     </View>
-                    <Text style={s.formLabel}>PET vinculado</Text>
-                    <Text style={[s.missionMeta, { marginTop: 4, marginBottom: 12 }]}>{turmaAtribuir.petNome || 'PET'} · {turmaAtribuir.estagio || 'Estágio não definido'}</Text>
+                    {!isCoordenador && <>
+                      <Text style={s.formLabel}>PET vinculado</Text>
+                      <Text style={[s.missionMeta, { marginTop: 4, marginBottom: 12 }]}>{turmaAtribuir.petNome || 'PET'} · {turmaAtribuir.estagio || 'Estágio não definido'}</Text>
+                    </>}
                   </ScrollView>
                 ) : abaDetalhesTurma === 'tarefas' ? (
                   <ScrollView style={{ maxHeight: 440 }}>
@@ -1969,6 +2152,7 @@ export default function DashboardScreen({ professor, onLogout }) {
 
         {activeNav === 'overview'   && renderOverview()}
         {activeNav === 'turmas'     && renderTurmas()}
+        {activeNav === 'cadastrar-professor' && isCoordenador && <CadastrarProfessor />}
         {activeNav === 'missoes'    && renderMissoes()}
         {activeNav === 'relatorio'  && (
           <View style={s.emptyState}>

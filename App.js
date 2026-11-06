@@ -49,6 +49,7 @@ import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, sa
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
+import TrocarSenhaProfessor from './screens/TrocarSenhaProfessor'
 import EntrarTurma from './screens/EntrarTurma'
 import DashboardScreen from './screens/DashboardScreen'
 import AdminDashboardScreen from './screens/AdminDashboardScreen'
@@ -60,7 +61,7 @@ import ErroScreen from './screens/ErroScreen'
 // se o destino pedido é válido ou se deve cair na tela de erro (404).
 const TELAS_VALIDAS = new Set([
   'splash', 'splashLogin', 'login', 'criarPerfil', 'entrarTurma',
-  'loginProfessor', 'dashboardAdmin', 'dashboardProfessor', 'pet', 'loja', 'erro404',
+  'loginProfessor', 'trocarSenhaProfessor', 'dashboardAdmin', 'dashboardProfessor', 'pet', 'loja', 'erro404',
 ])
 
 // Captura qualquer erro de render não tratado em qualquer tela do Curupira
@@ -131,7 +132,7 @@ function AppInterno() {
             return
           }
           setProfessor(perfil)
-          setTela(perfil.tipo === 'admin' ? 'dashboardAdmin' : 'dashboardProfessor')
+          setTela(perfil.deveTrocarSenha ? 'trocarSenhaProfessor' : perfil.tipo === 'admin' ? 'dashboardAdmin' : 'dashboardProfessor')
           return
         }
         if (sessao?.tipo === 'aluno' && sessao.usuario?.id) {
@@ -239,7 +240,7 @@ function AppInterno() {
       console.error('Não foi possível salvar a sessão do professor:', error)
     }
     setProfessor(usuario)
-    navegarCom(usuario?.tipo === 'admin' ? 'dashboardAdmin' : 'dashboardProfessor')
+    navegarCom(usuario?.deveTrocarSenha ? 'trocarSenhaProfessor' : usuario?.tipo === 'admin' ? 'dashboardAdmin' : 'dashboardProfessor')
   }
 
   async function handleLoginAluno(alunoLogado) {
@@ -377,6 +378,10 @@ function AppInterno() {
             onAdminLogin={entrarAreaProfessor}
             onSouAluno={() => navegarCom('login')}
           />
+        )}
+
+        {tela === 'trocarSenhaProfessor' && professor?.tipo === 'professor' && (
+          <TrocarSenhaProfessor usuario={professor} onConcluido={sair} />
         )}
 
         {tela === 'dashboardAdmin' && (

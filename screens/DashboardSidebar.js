@@ -12,7 +12,7 @@ export default function DashboardSidebar({ visible, activeNav, professor, onNavi
           <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
           <Text style={styles.logoText}>CURUPIRA</Text>
         </View>
-        {NAV.map(item => (
+        {NAV.filter(item => !item.coordenadorOnly || professor?.tipo === 'coordenador').map(item => (
           <TouchableOpacity key={item.id} style={[styles.navItem, activeNav === item.id && styles.navActive]} onPress={() => onNavigate(item.id)}>
             <Text style={styles.navIcon}>{item.icon}</Text>
             <Text style={[styles.navLabel, activeNav === item.id && styles.navLabelActive]}>{item.label}</Text>

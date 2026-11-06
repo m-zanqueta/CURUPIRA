@@ -10,7 +10,17 @@
     },
     "web": {
       "favicon": "./assets/logo.png",
-      "bundler": "metro"
+      "bundler": "metro",
+      "name": "Curupira",
+      "shortName": "Curupira",
+      "lang": "pt-BR",
+      "description": "Curupira",
+      "themeColor": "#090C0E",
+      "backgroundColor": "#090C0E",
+      "display": "standalone",
+      "orientation": "portrait",
+      "startUrl": "/",
+      "barStyle": "black-translucent"
     },
     "platforms": [
       "ios",

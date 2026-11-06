@@ -166,6 +166,38 @@ export async function salvarAlunoAdmin(dados) {
   })
 }
 
+export async function convidarProfessorPorEmail({ nome, email }) {
+  const token = await obterTokenStaff()
+  if (!token) {
+    const e = new Error('Sua sessão expirou. Entre novamente.')
+    e.codigo = 'sessao_invalida'
+    ouvinteSessaoInvalida?.()
+    throw e
+  }
+  let resposta
+  try {
+    resposta = await supabase.functions.invoke('convidar-professor', {
+      body: { token, nome: String(nome || '').trim(), email: String(email || '').trim().toLowerCase() },
+    })
+  } catch {
+    const e = new Error('Não foi possível conectar ao servidor. Verifique a internet e tente de novo.')
+    e.codigo = 'rede'
+    throw e
+  }
+  if (resposta.error || resposta.data?.erro) {
+    let mensagem = resposta.data?.erro
+    if (!mensagem) {
+      try { mensagem = (await resposta.error?.context?.json?.())?.erro } catch {}
+    }
+    if (resposta.error?.context?.status === 401) {
+      await AsyncStorage.removeItem(CHAVE_TOKEN_STAFF).catch(() => {})
+      ouvinteSessaoInvalida?.()
+    }
+    throw new Error(mensagem || 'Não foi possível enviar o convite. Tente novamente.')
+  }
+  return resposta.data
+}
+
 // ── Imagens (pets-images) — TODA escrita/remoção passa pela Edge Function "imagens-admin" ─────────────────
 // O app NÃO grava nem apaga no Storage com a chave anon (sem fallback: se a função falhar, a operação falha com a mensagem do servidor).
 // O servidor valida token + papel admin + tipo REAL do arquivo + tamanho e GERA o nome do objeto; o app só recebe o caminho e a URL pública.
@@ -345,8 +377,20 @@ export async function salvarTurma(novaTurma) {
 }
 
 export async function removerTurmaStorage(id, _professorId) {
-  // O dono vem do token (professor: só a própria turma; admin: qualquer). O 2º parâmetro é ignorado de propósito.
+  // O servidor autoriza a exclusão somente para o coordenador.
   await rpcStaff('staff_excluir_turma', { p_turma_id: id })
+}
+
+export async function renomearTurmaStorage(id, nome) {
+  return rpcStaff('staff_renomear_turma', { p_turma_id: id, p_nome: String(nome || '').trim() })
+}
+
+export async function atribuirProfessorTurmaStorage(turmaId, professorId) {
+  return rpcStaff('staff_atribuir_professor_turma', { p_turma_id: turmaId, p_professor_id: professorId })
+}
+
+export async function atribuirPetTurmaStorage(turmaId, petId) {
+  return rpcStaff('staff_atribuir_pet_turma', { p_turma_id: turmaId, p_pet_id: petId })
 }
 
 // ── Missões e Conquistas (NOVOS) ─────────────────────────────────────────

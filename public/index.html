@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
+    <title>%WEB_TITLE%</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Curupira" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      /* These styles make the body full-height */
+      html,
+      body {
+        height: 100%;
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+
+      #pwa-install {
+        position: fixed;
+        z-index: 99999;
+        left: 16px;
+        right: 16px;
+        bottom: 16px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        max-width: 520px;
+        margin: 0 auto;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: #111a11;
+        color: #F5F4D9;
+        font-family: Montserrat, sans-serif;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+      }
+
+      #pwa-install[hidden] {
+        display: none;
+      }
+
+      #pwa-install p {
+        margin: 0;
+        flex: 1;
+        font-size: 14px;
+        line-height: 1.4;
+      }
+
+      #pwa-install button {
+        border: 0;
+        border-radius: 999px;
+        padding: 10px 14px;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      #pwa-install-btn {
+        background: #009D25;
+        color: #F5F4D9;
+      }
+
+      #pwa-install-dismiss {
+        background: transparent;
+        color: #F5F4D9;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Use static rendering with Expo Router to support running without JavaScript. -->
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <!-- The root element for your Expo app. -->
+    <div id="root"></div>
+    <div id="pwa-install" hidden>
+      <p id="pwa-install-text">Instale o Curupira para abrir como aplicativo.</p>
+      <button type="button" id="pwa-install-btn">Instalar</button>
+      <button type="button" id="pwa-install-dismiss">Agora não</button>
+    </div>
+    <script>
+      (function () {
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', function () {
+            navigator.serviceWorker.register('/sw.js');
+          });
+        }
+
+        var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        if (standalone) return;
+
+        var box = document.getElementById('pwa-install');
+        var text = document.getElementById('pwa-install-text');
+        var btn = document.getElementById('pwa-install-btn');
+        var dismiss = document.getElementById('pwa-install-dismiss');
+        var deferred = null;
+        var dismissed = false;
+
+        try {
+          dismissed = localStorage.getItem('curupira-pwa-dismiss') === '1';
+        } catch (error) {}
+
+        if (dismissed) return;
+
+        dismiss.addEventListener('click', function () {
+          box.hidden = true;
+          try {
+            localStorage.setItem('curupira-pwa-dismiss', '1');
+          } catch (error) {}
+        });
+
+        window.addEventListener('beforeinstallprompt', function (event) {
+          event.preventDefault();
+          deferred = event;
+          text.textContent = 'Instale o Curupira para abrir como aplicativo, sem a barra do navegador.';
+          btn.hidden = false;
+          box.hidden = false;
+        });
+
+        btn.addEventListener('click', function () {
+          if (!deferred) return;
+          deferred.prompt();
+          deferred.userChoice.finally(function () {
+            box.hidden = true;
+            deferred = null;
+          });
+        });
+
+        var ios = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+        var safari = /safari/i.test(window.navigator.userAgent) && !/crios|fxios|edgios/i.test(window.navigator.userAgent);
+        if (ios && safari) {
+          text.textContent = 'No Safari, toque em Compartilhar e escolha Adicionar à Tela de Início. O Curupira abre como aplicativo.';
+          btn.hidden = true;
+          box.hidden = false;
+        }
+      })();
+    </script>
+  </body>
+</html>
