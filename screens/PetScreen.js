@@ -11,6 +11,11 @@ import { colors, fonts } from '../theme'
 import { listarItensComprados, listarAcessoriosLoja, listarEquipados, atualizarEquipado } from '../services/storage'
 import IconeUI from '../components/IconeUI'
 import TextoContorno from '../components/TextoContorno'
+import PaginaCalendario from './PaginaCalendario'
+import PaginaTrilha from './PaginaTrilha'
+import PaginaConquistas from './PaginaConquistas'
+import PaginaPerfil from './PaginaPerfil'
+import useDadosAluno from './useDadosAluno'
 
 const WIN      = Dimensions.get('window')
 const W        = Math.min(WIN.width, 480)
@@ -279,10 +284,12 @@ function ModalItens({ visible, titulo, itens, selecionado, cor, carregando, onSe
   )
 }
 
-export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
+export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja }) {
   // A tela do PET ocupa a página central; há duas páginas vazias de cada lado.
   const [pagina, setPagina] = useState(2)
   const paginaRef = useRef(2)
+  // Dados reais das páginas laterais (tarefas, progresso). Consultas só rodam ao chegar na página.
+  const dados = useDadosAluno({ aluno, turma, progresso, pagina })
   const deslocamentoPaginas = useRef(new Animated.Value(-2 * W)).current
   const gestoHorizontal = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => false,
@@ -308,9 +315,10 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
 
   const cfg       = detectarCfg(turma?.petNome)
   avisarSemCalibracao(cfg)
-  const emocaoKey = turma?.emocao || 'feliz'
+  // O backend guarda a emoção como emoji (🤩 😄 😐 😴 😢); resolverEmocao converte para a chave de EMOCOES.
+  const emocaoKey = turma?.emocao ? resolverEmocao(turma.emocao) : 'feliz'
   const emocao    = EMOCOES[emocaoKey] || EMOCOES.feliz
-  const xp        = turma?.xp || 0
+  const xp        = dados.xpPet ?? (turma?.xp || 0)
   const estagioI  = getEstagio(xp)
   const estagio   = ESTAGIOS[estagioI]
   const proxEst   = ESTAGIOS[estagioI + 1]
@@ -448,8 +456,8 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
     <View style={s.telaExterna} {...gestoHorizontal.panHandlers}>
     <View style={s.root}>
       <Animated.View style={[s.trilhaPaginas, { width:W*5, transform:[{ translateX:deslocamentoPaginas }] }]}>
-      <PaginaCalendario width={W} petImage={turma?.pet} />
-      <PaginaTarefas width={W} petImage={turma?.pet} />
+      <PaginaCalendario width={W} petImage={turma?.pet} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} />
+      <PaginaTrilha width={W} petImage={turma?.pet} alunoId={aluno?.id} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} onAtualizado={dados.aposProgresso} />
       <View style={[s.paginaConteudo, { width:W }]}>
       <StatusBar barStyle={pagina === 1 || pagina === 3 ? 'dark-content' : 'light-content'} />
 
@@ -577,14 +585,9 @@ export default function PetScreen({ aluno, turma, onLogout, onLoja }) {
         itens={cenariosDispo} selecionado={cenario} cor={colors.yellow}
         carregando={carregando} onSel={selecionarCenario} onFechar={() => setModal(null)}
       />
-      <ModalItens
-        visible={modal==='cenarios'} titulo="Cenários"
-        itens={cenariosDispo} selecionado={cenario} cor={colors.yellow}
-        carregando={carregando} onSel={setCenario} onFechar={() => setModal(null)}
-      />
       </View>
-      <PaginaCursos width={W} petImage={turma?.pet} />
-      <PaginaPerfil width={W} aluno={aluno} onSair={onLogout} />
+      <PaginaConquistas width={W} petImage={turma?.pet} alunoId={aluno?.id} ativa={pagina === 3} />
+      <PaginaPerfil width={W} aluno={aluno} turma={turma} estagioPet={estagio.label} progresso={dados.progresso} erroProgresso={dados.erroProgresso} onAtualizar={dados.recarregarProgresso} onSair={onLogout} />
       </Animated.View>
       <View pointerEvents="none" style={s.pageDots}>
         {[0, 1, 2, 3, 4].map(indice => (
@@ -685,377 +688,4 @@ const s = StyleSheet.create({
   vazioSub:         { fontSize:12, fontFamily:fonts.regular, color:'rgba(245,244,217,0.45)', textAlign:'center' },
   modalBtnFechar:   { borderRadius:16, padding:15, alignItems:'center', marginTop:10 },
   modalBtnFecharTxt:{ fontSize:15, fontFamily:fonts.bold, color:'#fff' },
-})
-
-// Protótipos locais, sem RPCs. O perfil usa só o nome do aluno conectado e o
-// callback de logout solicitado.
-function criarEtapasComposteira() {
-  const hoje = new Date()
-  hoje.setHours(0, 0, 0, 0)
-  const dataDaEtapa = dias => {
-    const data = new Date(hoje)
-    data.setDate(data.getDate() + dias)
-    return data
-  }
-  return [
-    { titulo:'Pegar uma caixa', emoji:'📦', data:dataDaEtapa(0), feita:true },
-    { titulo:'Colocar terra', emoji:'🪴', data:dataDaEtapa(0), feita:true },
-    { titulo:'Adicionar minhocas', emoji:'🪱', data:dataDaEtapa(0), feita:false },
-    { titulo:'Adicionar adubo', emoji:'🍂', data:dataDaEtapa(0), feita:false },
-    { titulo:'Esperar 2 semanas', emoji:'⏳', data:dataDaEtapa(0), feita:false },
-    { titulo:'Retirar a terra adubada', emoji:'🌱', data:dataDaEtapa(14), feita:false },
-  ]
-}
-
-function chaveData(data) {
-  return `${data.getFullYear()}-${data.getMonth()}-${data.getDate()}`
-}
-
-function dataCurta(data) {
-  return data.toLocaleDateString('pt-BR', { day:'numeric', month:'short' }).replace('.', '')
-}
-
-// Calendário local do aparelho com eventos da composteira de demonstração.
-function MiniPet({ uri, emoji = '🌱', style }) {
-  return uri
-    ? <Image source={{ uri }} style={style} resizeMode="contain" />
-    : <Text style={style}>{emoji}</Text>
-}
-
-function PaginaCalendario({ width, petImage }) {
-  const hoje = new Date()
-  hoje.setHours(0, 0, 0, 0)
-  const etapas = criarEtapasComposteira()
-  const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
-  const inicioGrade = (primeiroDia.getDay() + 6) % 7
-  const dias = Array.from({ length:42 }, (_, indice) => new Date(hoje.getFullYear(), hoje.getMonth(), indice - inicioGrade + 1))
-  const nomeMes = hoje.toLocaleDateString('pt-BR', { month:'long', year:'numeric' })
-  const resumo = [
-    { data:etapas[0].data, titulo:'Montar a composteira', detalhe:'4 etapas', emoji:'📦' },
-    { data:etapas[5].data, titulo:'Terra adubada pronta', detalhe:'Finalizar composteira', emoji:'🌱' },
-  ]
-
-  return (
-    <View style={[p.page, { width }]}>
-      <View style={p.calendarHero}>
-        <View style={p.calendarHeroRow}>
-          <View style={p.calendarHeroText}>
-            <Text style={p.calendarTitle}>📅 Calendário</Text>
-            <Text style={p.calendarSubTitle}>Sua aventura de hoje</Text>
-          </View>
-          <MiniPet uri={petImage} emoji="🌿" style={p.calendarPet} />
-        </View>
-        <View style={p.monthRow}>
-          <Text style={p.monthArrow}>‹</Text>
-          <Text style={p.monthName}>{nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1)}</Text>
-          <Text style={p.monthArrow}>›</Text>
-        </View>
-        <View style={p.weekdays}>
-          {['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'].map(d => <Text key={d} style={p.weekday}>{d}</Text>)}
-        </View>
-      </View>
-      <ScrollView contentContainerStyle={p.calendarContent} showsVerticalScrollIndicator={false}>
-        <View style={p.calendarCard}>
-          {dias.map((data, i) => {
-            const mesmoMes = data.getMonth() === hoje.getMonth()
-            const selecionado = chaveData(data) === chaveData(hoje)
-            const temEvento = etapas.some(etapa => chaveData(etapa.data) === chaveData(data))
-            return (
-              <View key={`${data.getFullYear()}-${data.getMonth()}-${i}`} style={p.dayCell}>
-                <View style={[p.dayCircle, selecionado && p.selectedDay]}>
-                  <Text style={[p.dayText, !mesmoMes && p.mutedDay, selecionado && p.selectedDayText]}>{data.getDate()}</Text>
-                </View>
-                {temEvento ? <View style={[p.dayMark, selecionado && p.dayMarkSelected]} /> : <View style={p.dayMarkSpace} />}
-              </View>
-            )
-          })}
-        </View>
-        <View style={p.calendarToday}><Text style={p.calendarTodayEmoji}>🌿</Text><Text style={p.calendarTodayText}>Hoje, {dataCurta(hoje)}</Text></View>
-        <Text style={p.sectionTitle}>Composteira caseira</Text>
-        {resumo.map(item => (
-          <View key={item.titulo} style={p.calendarEvent}>
-            <View style={p.calendarEventIcon}><Text style={p.calendarEventEmoji}>{item.emoji}</Text></View>
-            <View style={p.calendarEventInfo}>
-              <Text style={p.calendarEventTitle}>{item.titulo}</Text>
-              <Text style={p.calendarEventSub}>{item.detalhe}</Text>
-            </View>
-            <Text style={p.calendarEventDate}>{dataCurta(item.data)}</Text>
-          </View>
-        ))}
-      </ScrollView>
-    </View>
-  )
-}
-
-function PaginaTarefas({ width, petImage }) {
-  const etapas = criarEtapasComposteira()
-  const feitas = etapas.filter(etapa => etapa.feita).length
-  return (
-    <View style={[p.page, { width }]}>
-      <View style={p.taskHero}>
-        <MiniPet uri={petImage} emoji="🌱" style={p.taskHeroPet} />
-        <View style={p.taskHeroText}>
-          <Text style={p.taskHeroEyebrow}>MISSÃO DO PET</Text>
-          <Text style={p.taskHeroTitle}>Composteira caseira</Text>
-        </View>
-        <View style={p.taskCount}><Text style={p.taskCountText}>{feitas}/{etapas.length}</Text></View>
-      </View>
-      <ScrollView contentContainerStyle={p.taskContent} showsVerticalScrollIndicator={false}>
-        <View style={p.taskProgressCard}>
-          <Text style={p.taskProgressTitle}>Sua trilha</Text>
-          <View style={p.taskProgressTrack}><View style={[p.taskProgressFill, { width:`${feitas / etapas.length * 100}%` }]} /></View>
-          <Text style={p.taskProgressSub}>{feitas} de {etapas.length} etapas prontas</Text>
-        </View>
-        <View style={p.stepsList}>
-          {etapas.map((etapa, i) => (
-            <View key={etapa.titulo} style={p.stepRow}>
-              <View style={p.stepRail}>
-                <View style={[p.stepNumber, etapa.feita && p.stepDone]}>
-                  <Text style={[p.stepNumberText, etapa.feita && p.stepDoneText]}>{etapa.feita ? '✓' : i + 1}</Text>
-                </View>
-                {i < etapas.length - 1 && <View style={[p.stepLine, etapa.feita && p.stepLineDone]} />}
-              </View>
-              <View style={[p.stepCard, etapa.feita && p.stepCardDone]}>
-                <Text style={p.stepEmoji}>{etapa.emoji}</Text>
-                <View style={p.stepInfo}>
-                  <Text style={p.stepTitle}>{etapa.titulo}</Text>
-                  <Text style={p.stepDate}>{i === 5 ? `Pronto em ${dataCurta(etapa.data)}` : i < feitas ? 'Etapa concluída' : 'Próxima etapa'}</Text>
-                </View>
-                <View style={p.stepXp}><Text style={p.stepXpText}>+5 XP</Text></View>
-              </View>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-    </View>
-  )
-}
-
-function PaginaCursos({ width, petImage }) {
-  const conquistas = [
-    { titulo:'Primeiro login', descricao:'Entrou no Curupira', emoji:'👋', ganha:true, cor:'#FFE27A' },
-    { titulo:'Chapéu para o PET', descricao:'Compre um chapéu', emoji:'🎩', ganha:false, cor:'#C6F1C9' },
-    { titulo:'Mãos na terra', descricao:'Complete uma etapa', emoji:'🪴', ganha:false, cor:'#D8C3F0' },
-    { titulo:'Composteira pronta', descricao:'Complete a missão', emoji:'🏆', ganha:false, cor:'#FFD2A8' },
-  ]
-  return (
-    <View style={[p.page, { width }]}>
-      <View style={p.simpleHeader}>
-        <Text style={p.headerEyebrow}>MEDALHAS DA AVENTURA</Text>
-        <Text style={p.simpleTitle}>Conquistas</Text>
-      </View>
-      <ScrollView contentContainerStyle={p.courseContent} showsVerticalScrollIndicator={false}>
-        <View style={p.achievementBanner}>
-          <MiniPet uri={petImage} emoji="🏅" style={p.bannerPet} />
-          <Text style={p.bannerText}>Sua coleção</Text>
-          <Text style={p.bannerCount}>1 / {conquistas.length}</Text>
-        </View>
-        {conquistas.map(item => (
-          <View key={item.titulo} style={[p.badgeCard, !item.ganha && p.badgeCardLocked]}>
-            <View style={[p.badgeArt, { backgroundColor:item.cor }, !item.ganha && p.badgeArtLocked]}><Text style={p.badgeEmoji}>{item.emoji}</Text></View>
-            <View style={p.badgeInfo}>
-              <Text style={p.badgeTitle}>{item.titulo}</Text>
-              <Text style={p.badgeDescription}>{item.descricao}</Text>
-              <Text style={[p.badgeStatus, item.ganha && p.badgeStatusWon]}>{item.ganha ? 'CONQUISTADA!' : 'BLOQUEADA'}</Text>
-            </View>
-            {item.ganha && <Text style={p.badgeCheck}>✓</Text>}
-          </View>
-        ))}
-      </ScrollView>
-    </View>
-  )
-}
-
-function PaginaPerfil({ width, aluno, onSair }) {
-  const nomeReal = String(aluno?.nome || '').trim()
-  return (
-    <View style={[p.page, { width }]}>
-      <ScrollView contentContainerStyle={p.profileScroll} showsVerticalScrollIndicator={false}>
-        <View style={p.profileHero}>
-          <View style={p.profileTopLine}>
-            <Text style={p.profilePageTitle}>Meu perfil</Text>
-          </View>
-          <View style={p.avatarCircle}><Text style={p.avatarGlyph}>🧑‍🌾</Text></View>
-        </View>
-        <View style={p.profileInfo}>
-          {nomeReal ? <Text style={p.profileName}>{nomeReal}</Text> : null}
-          <View style={p.profileTabs}>
-            <View style={p.profileTabActive}><Text style={p.profileTabActiveText}>Conquistas</Text></View>
-            <View style={p.profileTab}><Text style={p.profileTabText}>Meu PET</Text></View>
-          </View>
-          <View style={p.profileStats}>
-            <View style={p.profileStat}><Text style={p.profileStatValue}>1</Text><Text style={p.profileStatLabel}>conquista</Text></View>
-            <View style={p.statDivider} />
-            <View style={p.profileStat}><Text style={p.profileStatValue}>🌱</Text><Text style={p.profileStatLabel}>meu PET</Text></View>
-          </View>
-          <View style={p.profileWelcome}><Text style={p.profileWelcomeEmoji}>✨</Text><Text style={p.profileWelcomeText}>Continue sua aventura!</Text></View>
-          <TouchableOpacity onPress={onSair} activeOpacity={0.85} style={p.logoutButton}>
-            <Text style={p.logoutEmoji}>🚪</Text><Text style={p.logoutText}>Sair da conta</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </View>
-  )
-}
-
-const p = StyleSheet.create({
-  page: { flex:1, backgroundColor:colors.cream, overflow:'hidden' },
-  calendarHero: { backgroundColor:colors.green, paddingTop:Platform.OS === 'android' ? 34 : 48, paddingHorizontal:22, paddingBottom:18, borderBottomLeftRadius:24, borderBottomRightRadius:24, borderBottomWidth:5, borderBottomColor:'#08761F' },
-  calendarHeroRow: { minHeight:78, flexDirection:'row', alignItems:'center', justifyContent:'space-between' },
-  calendarHeroText: { flex:1, gap:4 },
-  heroEyebrow: { color:'rgba(255,255,255,0.72)', fontSize:10, fontFamily:fonts.bold, letterSpacing:1.5, textAlign:'center' },
-  calendarTitle: { color:colors.white, fontSize:22, fontFamily:fonts.extrabold },
-  calendarSubTitle: { color:'rgba(255,255,255,0.85)', fontSize:13, fontFamily:fonts.semibold },
-  calendarPet: { width:82, height:82, fontSize:54, textAlign:'center' },
-  monthRow: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop:14, paddingHorizontal:20 },
-  monthArrow: { color:colors.white, fontSize:28, fontFamily:fonts.medium },
-  monthName: { color:colors.white, fontSize:20, fontFamily:fonts.bold },
-  weekdays: { flexDirection:'row', justifyContent:'space-around', marginTop:16 },
-  weekday: { width:'14.28%', textAlign:'center', color:'rgba(255,255,255,0.8)', fontSize:10, fontFamily:fonts.semibold },
-  calendarContent: { padding:16, paddingBottom:74 },
-  calendarCard: { flexDirection:'row', flexWrap:'wrap', backgroundColor:colors.white, borderRadius:20, paddingVertical:12, paddingHorizontal:4, borderWidth:1, borderColor:colors.border },
-  dayCell: { width:'14.28%', height:42, alignItems:'center', justifyContent:'center', gap:3 },
-  dayCircle: { width:28, height:28, borderRadius:14, alignItems:'center', justifyContent:'center' },
-  selectedDay: { backgroundColor:colors.green },
-  dayText: { color:'#4B4B43', fontSize:13, fontFamily:fonts.bold },
-  mutedDay: { color:'#B8B8AD' },
-  selectedDayText: { color:colors.white, fontFamily:fonts.bold },
-  dayMark: { width:4, height:4, borderRadius:2, backgroundColor:colors.green, position:'absolute', bottom:1 },
-  dayMarkSelected: { backgroundColor:colors.white },
-  dayMarkSpace: { width:4, height:4, position:'absolute', bottom:1 },
-  calendarToday: { flexDirection:'row', alignItems:'center', gap:8, marginTop:18, marginBottom:12, backgroundColor:colors.purple, paddingHorizontal:14, paddingVertical:10, borderRadius:14, borderBottomWidth:4, borderBottomColor:'#4D0D75' },
-  calendarTodayEmoji: { fontSize:22 },
-  calendarTodayText: { color:colors.white, fontSize:16, fontFamily:fonts.extrabold },
-  calendarEvent: { flexDirection:'row', alignItems:'center', gap:10, backgroundColor:colors.white, borderRadius:16, padding:11, marginTop:8, borderWidth:1.5, borderColor:colors.border, borderBottomWidth:4, borderBottomColor:'#D8D4C1' },
-  calendarEventIcon: { width:54, height:54, borderRadius:16, backgroundColor:colors.greenLight, alignItems:'center', justifyContent:'center' },
-  calendarEventEmoji: { fontSize:32 },
-  calendarEventInfo: { flex:1, gap:3 },
-  calendarEventTitle: { color:'#20221D', fontSize:14, fontFamily:fonts.extrabold },
-  calendarEventSub: { color:'#77786F', fontSize:12, fontFamily:fonts.medium },
-  calendarEventDate: { color:colors.green, fontSize:13, fontFamily:fonts.extrabold },
-  sectionHeading: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginTop:22, marginBottom:10 },
-  sectionTitle: { color:'#171914', fontSize:18, fontFamily:fonts.extrabold },
-  sectionLink: { color:colors.green, fontSize:11, fontFamily:fonts.semibold },
-  agendaRow: { minHeight:44, flexDirection:'row', alignItems:'center', gap:10, borderBottomWidth:1, borderBottomColor:'#E9E8DE' },
-  agendaDot: { width:10, height:10, borderRadius:5, backgroundColor:colors.green },
-  agendaDotGold: { backgroundColor:colors.yellow },
-  agendaName: { flex:1, color:'#25261F', fontSize:12, fontFamily:fonts.medium },
-  agendaWhen: { color:'#77786F', fontSize:10, fontFamily:fonts.regular },
-
-  simpleHeader: { backgroundColor:colors.white, paddingTop:Platform.OS === 'android' ? 34 : 48, paddingBottom:14, alignItems:'center', borderBottomWidth:1, borderBottomColor:colors.border },
-  headerEyebrow: { color:colors.green, fontSize:9, fontFamily:fonts.bold, letterSpacing:1.4 },
-  simpleTitle: { color:'#171914', fontSize:23, fontFamily:fonts.extrabold, marginTop:3 },
-  taskHero: { minHeight:104, backgroundColor:colors.green, flexDirection:'row', alignItems:'center', paddingHorizontal:14, gap:9, borderBottomLeftRadius:22, borderBottomRightRadius:22, borderBottomWidth:5, borderBottomColor:'#08761F' },
-  taskHeroPet: { width:68, height:68, fontSize:48, textAlign:'center' },
-  taskHeroText: { flex:1, gap:4 },
-  taskHeroEyebrow: { color:'rgba(255,255,255,0.78)', fontSize:9, fontFamily:fonts.bold, letterSpacing:1 },
-  taskHeroTitle: { color:colors.white, fontSize:19, fontFamily:fonts.extrabold },
-  taskCount: { width:54, height:54, borderRadius:27, backgroundColor:colors.yellow, borderWidth:3, borderColor:'#835F00', alignItems:'center', justifyContent:'center' },
-  taskCountText: { color:'#171914', fontSize:14, fontFamily:fonts.extrabold },
-  taskContent: { paddingHorizontal:14, paddingTop:14, paddingBottom:84 },
-  taskProgressCard: { backgroundColor:colors.purple, borderRadius:18, padding:14, borderBottomWidth:5, borderBottomColor:'#4D0D75', marginBottom:14 },
-  taskProgressTitle: { color:colors.white, fontSize:17, fontFamily:fonts.extrabold },
-  taskProgressTrack: { height:14, borderRadius:8, backgroundColor:'rgba(255,255,255,0.25)', overflow:'hidden', marginTop:10 },
-  taskProgressFill: { height:'100%', borderRadius:8, backgroundColor:'#7CE82B' },
-  taskProgressSub: { color:'#F3E8FF', fontSize:12, fontFamily:fonts.bold, marginTop:7 },
-  stepsList: { gap:0 },
-  stepRow: { minHeight:72, flexDirection:'row', alignItems:'stretch', gap:9 },
-  stepRail: { width:32, alignItems:'center' },
-  stepNumber: { width:30, height:30, borderRadius:15, backgroundColor:colors.yellow, borderWidth:2, borderColor:'#8B6900', alignItems:'center', justifyContent:'center', zIndex:1 },
-  stepDone: { backgroundColor:colors.green, borderColor:'#08761F' },
-  stepNumberText: { color:'#302500', fontSize:12, fontFamily:fonts.extrabold },
-  stepDoneText: { color:colors.white, fontSize:15 },
-  stepLine: { position:'absolute', top:28, bottom:-2, width:4, backgroundColor:'#D9D6C8' },
-  stepLineDone: { backgroundColor:colors.green },
-  stepCard: { flex:1, minHeight:56, flexDirection:'row', alignItems:'center', gap:8, backgroundColor:colors.white, borderRadius:15, paddingHorizontal:9, paddingVertical:7, borderWidth:1.5, borderColor:colors.border, borderBottomWidth:4, borderBottomColor:'#D7D2BE', marginBottom:8 },
-  stepCardDone: { backgroundColor:colors.greenLight, borderColor:'#B6DDBE', borderBottomColor:'#8CC796' },
-  stepEmoji: { fontSize:31 },
-  stepInfo: { flex:1, gap:3 },
-  stepTitle: { color:'#20221D', fontSize:14, fontFamily:fonts.extrabold },
-  stepDate: { color:'#74766D', fontSize:11, fontFamily:fonts.semibold },
-  stepXp: { backgroundColor:colors.yellowLight, borderRadius:12, paddingHorizontal:8, paddingVertical:7 },
-  stepXpText: { color:'#785A00', fontSize:11, fontFamily:fonts.extrabold },
-  progressArea: { alignItems:'center', paddingTop:24, paddingBottom:20 },
-  progressRing: { width:144, height:144, borderRadius:72, borderWidth:3, borderColor:colors.green, alignItems:'center', justifyContent:'center', backgroundColor:colors.white },
-  progressInner: { alignItems:'center', justifyContent:'center' },
-  progressNumber: { color:colors.green, fontSize:16, fontFamily:fonts.bold },
-  progressCaption: { color:colors.yellow, fontSize:9, fontFamily:fonts.medium, marginTop:4 },
-  progressHint: { color:'#77786F', fontSize:11, fontFamily:fonts.medium, marginTop:10 },
-  taskListCard: { backgroundColor:colors.white, borderRadius:16, borderWidth:1, borderColor:colors.border, paddingHorizontal:14 },
-  taskRow: { minHeight:58, flexDirection:'row', alignItems:'center', gap:10 },
-  taskRowBorder: { borderTopWidth:1, borderTopColor:'#ECEBE3' },
-  taskStatusDot: { width:10, height:10, borderRadius:5, backgroundColor:colors.green },
-  taskDoneDot: { backgroundColor:'#B7DFC0' },
-  taskRowMain: { flex:1, gap:3 },
-  taskName: { color:'#23251F', fontSize:12, fontFamily:fonts.semibold },
-  taskDoneName: { color:'#77786F', textDecorationLine:'line-through' },
-  taskStatus: { color:colors.green, fontSize:9, fontFamily:fonts.medium },
-  taskDeadline: { color:'#77786F', fontSize:10, fontFamily:fonts.regular },
-  tipCard: { marginTop:16, backgroundColor:colors.greenLight, borderRadius:16, padding:16, borderWidth:1, borderColor:'#C5E7CD' },
-  tipTitle: { color:colors.green, fontSize:13, fontFamily:fonts.bold },
-  tipBody: { color:'#59645A', fontSize:11, fontFamily:fonts.regular, lineHeight:17, marginTop:5 },
-
-  courseContent: { padding:18, paddingBottom:78, gap:14 },
-  achievementBanner: { minHeight:78, flexDirection:'row', alignItems:'center', gap:10, backgroundColor:colors.purple, borderRadius:18, paddingHorizontal:14, borderBottomWidth:5, borderBottomColor:'#4D0D75' },
-  bannerPet: { width:58, height:58, fontSize:38, textAlign:'center' },
-  bannerText: { flex:1, color:colors.white, fontSize:18, fontFamily:fonts.extrabold },
-  bannerCount: { color:colors.yellow, fontSize:16, fontFamily:fonts.extrabold },
-  badgeCard: { minHeight:102, flexDirection:'row', alignItems:'center', gap:11, backgroundColor:colors.white, padding:12, borderRadius:18, borderWidth:1.5, borderColor:colors.border, borderBottomWidth:5, borderBottomColor:'#D7D2BE' },
-  badgeCardLocked: { opacity:0.78 },
-  badgeArt: { width:72, height:72, borderRadius:22, alignItems:'center', justifyContent:'center', borderWidth:2, borderColor:'rgba(0,0,0,0.06)' },
-  badgeArtLocked: { backgroundColor:'#E6E5DF' },
-  badgeEmoji: { fontSize:44 },
-  badgeInfo: { flex:1, gap:4 },
-  badgeTitle: { color:'#20221D', fontSize:16, fontFamily:fonts.extrabold },
-  badgeDescription: { color:'#74766D', fontSize:12, fontFamily:fonts.semibold },
-  badgeStatus: { color:'#8A8B83', fontSize:10, fontFamily:fonts.bold, letterSpacing:0.3 },
-  badgeStatusWon: { color:colors.green },
-  badgeCheck: { color:colors.green, fontSize:22, fontFamily:fonts.extrabold },
-  introText: { color:'#65665F', fontSize:12, fontFamily:fonts.regular, lineHeight:18, marginBottom:2 },
-  courseCard: { backgroundColor:colors.white, borderRadius:20, overflow:'hidden', borderWidth:1, borderColor:colors.border },
-  courseArt: { height:136, alignItems:'center', justifyContent:'center', position:'relative' },
-  courseArtCircle: { width:86, height:86, borderRadius:43, backgroundColor:'rgba(255,255,255,0.7)', alignItems:'center', justifyContent:'center' },
-  courseEmoji: { fontSize:42 },
-  courseBadge: { position:'absolute', top:12, left:12, backgroundColor:colors.white, borderRadius:12, paddingHorizontal:9, paddingVertical:5 },
-  courseBadgeText: { color:colors.green, fontSize:8, fontFamily:fonts.bold, letterSpacing:0.5 },
-  courseInfo: { padding:14 },
-  courseTitle: { color:'#20221D', fontSize:14, fontFamily:fonts.bold },
-  courseMeta: { color:'#77786F', fontSize:10, fontFamily:fonts.regular, marginTop:5 },
-  courseFooter: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop:12, borderTopWidth:1, borderTopColor:'#ECEBE3', paddingTop:10 },
-  courseProgress: { color:colors.green, fontSize:10, fontFamily:fonts.semibold },
-  courseArrow: { color:colors.green, fontSize:22, lineHeight:22 },
-
-  profileScroll: { paddingBottom:78, backgroundColor:colors.cream },
-  profileHero: { height:174, backgroundColor:colors.green, paddingTop:Platform.OS === 'android' ? 34 : 48, alignItems:'center' },
-  profileTopLine: { width:'100%', paddingHorizontal:22, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
-  profilePageTitle: { color:colors.white, fontSize:23, fontFamily:fonts.extrabold },
-  profileExitButton: { backgroundColor:'#08761F', borderRadius:14, paddingHorizontal:14, paddingVertical:8, borderBottomWidth:3, borderBottomColor:'#075819' },
-  profileExit: { color:colors.white, fontSize:14, fontFamily:fonts.extrabold },
-  avatarCircle: { position:'absolute', bottom:-46, width:104, height:104, borderRadius:52, backgroundColor:'#E8EFE9', borderWidth:5, borderColor:colors.white, alignItems:'center', justifyContent:'center', elevation:5 },
-  avatarGlyph: { color:'#79877B', fontSize:58, fontFamily:fonts.regular, lineHeight:66 },
-  profileInfo: { paddingTop:52, paddingHorizontal:18 },
-  profileName: { textAlign:'center', color:'#171914', fontSize:26, fontFamily:fonts.extrabold, marginBottom:10 },
-  profileTabs: { height:38, flexDirection:'row', backgroundColor:'#EBEAE1', borderRadius:20, padding:3, marginTop:16, marginBottom:16 },
-  profileTabActive: { flex:1, borderRadius:18, backgroundColor:colors.white, alignItems:'center', justifyContent:'center', elevation:1 },
-  profileTab: { flex:1, borderRadius:18, alignItems:'center', justifyContent:'center' },
-  profileTabActiveText: { color:colors.green, fontSize:13, fontFamily:fonts.extrabold },
-  profileTabText: { color:'#77786F', fontSize:13, fontFamily:fonts.bold },
-  profileStats: { flexDirection:'row', alignItems:'center', justifyContent:'space-around', backgroundColor:colors.white, borderRadius:16, paddingVertical:12, marginBottom:22, borderWidth:1, borderColor:colors.border },
-  profileStat: { alignItems:'center', gap:3 },
-  profileStatValue: { color:colors.green, fontSize:16, fontFamily:fonts.bold },
-  profileStatLabel: { color:'#77786F', fontSize:9, fontFamily:fonts.medium },
-  statDivider: { width:1, height:28, backgroundColor:colors.border },
-  profileWelcome: { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, marginTop:16, padding:14, backgroundColor:colors.greenLight, borderRadius:16 },
-  profileWelcomeEmoji: { fontSize:23 },
-  profileWelcomeText: { color:colors.green, fontSize:14, fontFamily:fonts.bold },
-  logoutButton: { minHeight:54, flexDirection:'row', alignItems:'center', justifyContent:'center', gap:9, backgroundColor:colors.green, borderRadius:16, borderBottomWidth:5, borderBottomColor:'#08761F', marginTop:16 },
-  logoutEmoji: { fontSize:22 },
-  logoutText: { color:colors.white, fontSize:18, fontFamily:fonts.extrabold },
-  achievementRow: { minHeight:64, flexDirection:'row', alignItems:'center', gap:10, borderBottomWidth:1, borderBottomColor:'#E6E4D9' },
-  achievementIcon: { width:38, height:38, borderRadius:12, backgroundColor:colors.greenLight, alignItems:'center', justifyContent:'center' },
-  achievementSymbol: { color:colors.green, fontSize:20, fontFamily:fonts.bold },
-  achievementInfo: { flex:1, gap:3 },
-  achievementTitle: { color:'#22241E', fontSize:10, fontFamily:fonts.bold },
-  achievementDetail: { color:'#77786F', fontSize:9, fontFamily:fonts.regular },
-  achievementTime: { color:'#999A91', fontSize:8, fontFamily:fonts.regular },
 })

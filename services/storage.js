@@ -1089,7 +1089,8 @@ export const atualizarStatusAlunoMissao = async (missaoId, alunoId, novoStatus) 
 // (era assim numa versão antiga do schema) — agora "pets" tem turma_id,
 // então busca as duas em paralelo e junta no mesmo formato que
 // listarTurmas() já usa pro professor, pra manter as duas pontas iguais.
-export async function buscarTurmaDoAluno(turmaId) {
+// opcoes.lancarErro = true: relança a falha de consulta em vez de devolver null (que também significa "sem turma").
+export async function buscarTurmaDoAluno(turmaId, opcoes = {}) {
   if (!turmaId) return null // aluno ainda sem turma atribuída
 
   try {
@@ -1116,6 +1117,7 @@ export async function buscarTurmaDoAluno(turmaId) {
     }
   } catch (error) {
     console.error('Erro ao buscar turma do aluno:', error.message)
+    if (opcoes.lancarErro) throw error
     return null
   }
 }
@@ -1132,7 +1134,9 @@ export async function buscarTurmaDoAluno(turmaId) {
 // implementei isso pra não fingir um comportamento que o banco não
 // sustenta. Se quiserem esse conceito de volta, é mudança de schema, não
 // só de código — falar com o Matheus antes.
-export async function listarMissoesDoAluno(alunoId) {
+// opcoes.lancarErro = true: em vez de esconder a falha devolvendo [], relança o erro (com .codigo de
+// erroNuvem) para a tela distinguir "falhou" de "não há tarefas". Sem a opção, o comportamento é o de sempre.
+export async function listarMissoesDoAluno(alunoId, opcoes = {}) {
   try {
     if (!(await temTokenAluno())) return []   // atalho local "loja": não há aluno no servidor
     // Tarefas ativas da turma do ALUNO DO TOKEN + o progresso dele (o parâmetro alunoId é ignorado).
@@ -1146,9 +1150,15 @@ export async function listarMissoesDoAluno(alunoId) {
       icone: m.icone,
       status: m.status || 'pendente', // sem linha em alunos_missoes ainda = pendente
       atualizadoEm: m.atualizado_em || null,
+      // Campos que o RPC já devolvia e a lista descartava (usados pela trilha e pelo calendário).
+      etapas: Array.isArray(m.etapas) ? m.etapas.map(e => ({ titulo: String(e?.titulo ?? ''), xp: Number(e?.xp) || 0 })) : [],
+      etapaAtual: Number(m.etapa_atual) || 0,
+      xpAluno: Number(m.xp_aluno) || 0,
+      moedas: Number(m.moedas) || 0,
     }))
   } catch (error) {
     console.error('Erro ao listar missões do aluno:', error.message)
+    if (opcoes.lancarErro) throw error
     return []
   }
 }
@@ -1195,17 +1205,20 @@ export async function consultarXP(_alunoId) {
   }
 }
 
-export async function listarConquistasDoAluno(alunoId) {
+// opcoes.lancarErro = true: relança a falha em vez de devolver [] (ver listarMissoesDoAluno).
+export async function listarConquistasDoAluno(alunoId, opcoes = {}) {
   try {
     if (!(await temTokenAluno())) return []
     return (await rpcAluno('aluno_minhas_conquistas')) || []   // as do ALUNO DO TOKEN (o parâmetro é ignorado)
   } catch (error) {
     console.error('Erro ao listar conquistas do aluno:', error.message)
+    if (opcoes.lancarErro) throw error
     return []
   }
 }
 
-export async function consultarProgressoGeral(alunoId) {
+// opcoes.lancarErro = true: relança a falha em vez de devolver o objeto zerado (ver listarMissoesDoAluno).
+export async function consultarProgressoGeral(alunoId, opcoes = {}) {
   const vazio = { xp: 0, nome: '', turmaId: null, missoesAprovadas: 0, conquistas: 0 }
   try {
     if (!(await temTokenAluno())) return vazio   // atalho local "loja": sem perfil no servidor
@@ -1219,7 +1232,7 @@ export async function consultarProgressoGeral(alunoId) {
     }
   } catch (error) {
     console.error('Erro ao consultar progresso geral do aluno:', error.message)
+    if (opcoes.lancarErro) throw error
     return vazio
   }
 }
-
