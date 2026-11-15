@@ -167,7 +167,7 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
 
   const cardW = Math.max(120, (pager.w - 28 - 10) / 2)
 
-  const saldoBase = aluno?.xp ?? 1000
+  const saldoBase = aluno?.moedas ?? 0
   const totalGasto = useMemo(
     () => produtos
       .filter(p => comprados.includes(p.id))

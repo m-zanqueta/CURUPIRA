@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Component } from 'react'
-import { View, ActivityIndicator, Image, Text, StyleSheet, Animated } from 'react-native'
+import { View, ActivityIndicator, Image, Text, StyleSheet, Animated, AppState } from 'react-native'
 import {
   useFonts,
   Montserrat_400Regular,
@@ -45,7 +45,7 @@ const tema = {
   },
 }
 import { colors } from './theme'
-import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp, aoSessaoInvalida, temTokenAluno, restaurarSessaoStaff, restaurarPerfilAluno } from './services/storage'
+import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp, aoSessaoInvalida, temTokenAluno, restaurarSessaoStaff, restaurarPerfilAluno, registrarAcessoDiarioAluno } from './services/storage'
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
@@ -103,6 +103,13 @@ function AppInterno() {
   const [progressoAluno,setProgressoAluno]= useState(null)
   const fadeAnim = useRef(new Animated.Value(1)).current
   const transicaoRef = useRef(0)
+
+  useEffect(() => {
+    const listener = AppState.addEventListener('change', estado => {
+      if (estado === 'active') registrarAcessoDiarioAluno()
+    })
+    return () => listener.remove()
+  }, [])
 
   const [fontsLoaded] = useFonts({
     Montserrat_400Regular,

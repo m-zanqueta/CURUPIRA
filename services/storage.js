@@ -109,11 +109,15 @@ export async function listarTarefasAdmin() {
   return lista.map(({ vinculos, ...missao }) => missao)
 }
 
-// Tarefa GLOBAL (etapas + moedas): criar/editar é só do administrador e é validado no servidor (staff_salvar_tarefa_global).
-// O cliente não define dono, xp total, dificuldade nem turma (o servidor fixa xp=0: o XP vem das etapas, uma única vez).
+// Trilha global: cada tarefa entrega moedas ao concluir e a trilha dá bônus após aprovação.
+// Nenhuma dessas recompensas altera o XP do aluno ou do PET.
 export async function salvarTarefaAdmin(tarefa) {
-  const etapas = (tarefa.etapas || []).map(etapa => ({ titulo: String(etapa.titulo || '').trim(), xp: Number(etapa.xp) }))
-  return rpcStaff('staff_salvar_tarefa_global', {
+  const etapas = (tarefa.etapas || []).map(etapa => ({
+    titulo: String(etapa.titulo || '').trim(),
+    descricao: String(etapa.descricao || '').trim(),
+    moedas: Number(etapa.moedas) || 0,
+  }))
+  const resposta = await rpcStaff('staff_salvar_tarefa_global', {
     p_missao_id: tarefa.id ?? null,
     p_nome: String(tarefa.nome || '').trim(),
     p_descricao: String(tarefa.descricao || '').trim(),
@@ -122,6 +126,12 @@ export async function salvarTarefaAdmin(tarefa) {
     p_icone: tarefa.icone ?? null,
     p_ativa: tarefa.ativa ?? true,
   })
+  // Detecta migrations antigas que aceitam a RPC, mas ignoram o valor de moedas por tarefa.
+  const etapasSalvas = Array.isArray(resposta?.etapas) ? resposta.etapas : null
+  if (!etapasSalvas || etapasSalvas.length !== etapas.length || etapasSalvas.some((etapa, i) => Number(etapa?.moedas) !== etapas[i].moedas)) {
+    throw new Error('O banco não salvou as moedas por tarefa. Execute a migration 20261118_recompensas_por_tarefa_e_emoji_trilha.sql no Supabase e tente novamente.')
+  }
+  return resposta
 }
 
 // ── Init ─────────────────────────────────────────────────
@@ -494,6 +504,7 @@ export async function buscarAluno(email, senha) {
     if (!error) {
       if (!data) return null // e-mail ou senha incorretos
       await salvarTokenAluno(data.token)
+      await registrarAcessoDiarioAluno()
       return data.aluno
     }
     // Só "função inexistente" (migration não aplicada) autoriza o modo legado. Qualquer outro erro
@@ -681,6 +692,16 @@ export async function temTokenAluno() {
   return !!(await obterTokenAluno())
 }
 
+export async function registrarAcessoDiarioAluno() {
+  const token = await obterTokenAluno()
+  if (!token) return
+  // Melhor esforço: se a migration ainda não estiver aplicada, não invalida o login do aluno.
+  try {
+    const { error } = await supabase.rpc('aluno_registrar_acesso_diario', { p_token: token })
+    if (error && !funcaoAusente(error)) console.warn('Não foi possível registrar o acesso diário do aluno:', error.code)
+  } catch (error) { console.warn('Não foi possível registrar o acesso diário do aluno:', error?.message) }
+}
+
 // Códigos de erro (e.codigo) que o app distingue:
 //   erros de regra do servidor (CODIGOS_NUVEM), 'sessao_invalida' (token ausente/expirado/revogado),
 //   'muitas_tentativas' (HTTP 429), 'rede' (sem resposta / erro transitório do gateway),
@@ -815,6 +836,62 @@ async function rpcStaff(nome, args = {}) {
   return resposta.data
 }
 
+async function chamarEvidencias(body, opcao = {}) {
+  const token = opcao.aluno ? await obterTokenAluno() : await obterTokenStaff()
+  if (!token) throw new Error('Sua sessão expirou. Entre novamente.')
+  let resposta
+  try { resposta = await supabase.functions.invoke('evidencias-tarefas', { body: { ...body, token } }) }
+  catch { throw new Error('Não foi possível conectar ao envio da tarefa. Tente novamente.') }
+  if (resposta.error || !resposta.data?.ok) {
+    let codigo = resposta.data?.erro
+    try { const payload = await resposta.error?.context?.json?.(); codigo ||= payload?.erro } catch {}
+    const mensagens = {
+      sessao_invalida: 'Sua sessão expirou. Entre novamente.', sem_permissao: 'Você não tem permissão para acessar este envio.',
+      etapa_indisponivel: 'Esta tarefa já foi enviada ou não está liberada.', arquivo_grande: 'A foto precisa ter no máximo 1 MB.',
+      tipo_nao_suportado: 'Envie uma foto JPG, PNG ou WEBP.', tipo_divergente: 'O formato da imagem não pôde ser confirmado.',
+      falha_no_servidor: 'Não foi possível concluir a operação. Tente novamente.',
+    }
+    throw new Error(mensagens[codigo] || 'Não foi possível concluir a operação. Tente novamente.')
+  }
+  return resposta.data
+}
+
+export async function enviarFotoEtapaTarefa(missaoId, etapaOrdem, imagem) {
+  if (!imagem?.uri) throw new Error('Escolha uma foto antes de enviar.')
+  const resposta = await fetch(imagem.uri)
+  if (!resposta.ok) throw new Error('Não foi possível abrir a foto selecionada.')
+  const blob = await resposta.blob()
+  if (blob.size > 1024 * 1024) throw new Error('A foto precisa ter no máximo 1 MB. Escolha uma imagem menor.')
+  const token = await obterTokenAluno()
+  if (!token) throw new Error('Sua sessão expirou. Entre novamente.')
+  const form = new FormData()
+  form.append('token', token)
+  form.append('missao_id', String(missaoId))
+  form.append('etapa_ordem', String(etapaOrdem))
+  form.append('arquivo', blob, imagem.fileName || 'tarefa.jpg')
+  const respostaFuncao = await supabase.functions.invoke('evidencias-tarefas', { body: form })
+  if (respostaFuncao.error || !respostaFuncao.data?.ok) {
+    let codigo = respostaFuncao.data?.erro
+    try { const payload = await respostaFuncao.error?.context?.json?.(); codigo ||= payload?.erro } catch {}
+    const mensagens = { sessao_invalida: 'Sua sessão expirou. Entre novamente.', etapa_indisponivel: 'Esta tarefa já foi enviada ou não está liberada.', arquivo_grande: 'A foto precisa ter no máximo 1 MB.', tipo_nao_suportado: 'Envie uma foto JPG, PNG ou WEBP.', tipo_divergente: 'O formato da imagem não pôde ser confirmado.' }
+    throw new Error(mensagens[codigo] || 'Não foi possível enviar a foto. Tente novamente.')
+  }
+  return respostaFuncao.data
+}
+
+export async function listarEnviosEtapasStaff(missaoId) {
+  return (await rpcStaff('staff_listar_envios_tarefas', { p_missao_id: missaoId })) || []
+}
+
+export async function obterUrlEnvioEtapaStaff(caminho) {
+  const resultado = await chamarEvidencias({ operacao: 'visualizar', caminho })
+  return resultado.url
+}
+
+export async function corrigirEnvioEtapaStaff(envioId, aprovado) {
+  return chamarEvidencias({ operacao: 'corrigir', envio_id: envioId, aprovado })
+}
+
 // Login único de professor / coordenador / administrador. A senha é conferida no servidor (bcrypt) e o
 // papel devolvido vem do banco. Retorna o usuário ({id, nome, email, tipo}) ou null (credenciais incorretas).
 export async function loginStaff(email, senha) {
@@ -855,7 +932,11 @@ export async function alterarMinhaSenhaStaff(senhaAtual, senhaNova) {
 // Retorna null se o token não vale mais; lança 'rede' etc. quando não dá para saber.
 export async function restaurarPerfilAluno() {
   if (!(await temTokenAluno())) return null
-  try { return await rpcAluno('obter_meu_perfil') }
+  try {
+    const perfil = await rpcAluno('obter_meu_perfil')
+    await registrarAcessoDiarioAluno()
+    return perfil
+  }
   catch (e) { if (e?.codigo === 'sessao_invalida') return null; throw e }
 }
 
@@ -1151,7 +1232,12 @@ export async function listarMissoesDoAluno(alunoId, opcoes = {}) {
       status: m.status || 'pendente', // sem linha em alunos_missoes ainda = pendente
       atualizadoEm: m.atualizado_em || null,
       // Campos que o RPC já devolvia e a lista descartava (usados pela trilha e pelo calendário).
-      etapas: Array.isArray(m.etapas) ? m.etapas.map(e => ({ titulo: String(e?.titulo ?? ''), xp: Number(e?.xp) || 0 })) : [],
+      etapas: Array.isArray(m.etapas) ? m.etapas.map((e, index) => ({
+        titulo: String(e?.titulo ?? ''),
+        descricao: String(e?.descricao ?? ''),
+        moedas: Number(e?.moedas) || 0,
+        statusEnvio: (Array.isArray(m.etapas_status) ? m.etapas_status.find(s => Number(s?.etapa_ordem) === index + 1)?.status : null) || null,
+      })) : [],
       etapaAtual: Number(m.etapa_atual) || 0,
       xpAluno: Number(m.xp_aluno) || 0,
       moedas: Number(m.moedas) || 0,
@@ -1179,7 +1265,7 @@ export async function buscarProgressoMissao(alunoId, missaoId) {
 }
 
 // "Iniciar" = o ALUNO (token dele) registra a missão como pendente. Nunca aprova.
-// Aluno avança UMA etapa da própria tarefa (o servidor credita o XP da etapa uma única vez e valida turma/PET/ordem).
+// Aluno avança UMA tarefa da trilha; o servidor valida turma/PET/ordem e não credita XP.
 export async function avancarEtapaTarefa(missaoId) {
   return rpcAluno('aluno_avancar_etapa', { p_missao_id: missaoId })
 }

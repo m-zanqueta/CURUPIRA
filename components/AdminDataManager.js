@@ -53,6 +53,11 @@ function ehBooleano(chave, original) {
   return typeof original === 'boolean' || /^(ativo|ativa|is_)/i.test(chave)
 }
 
+function campoSomenteLeitura(tabela, chave) {
+  return chave === 'id' || (tabela === 'professores' && chave === 'tipo') ||
+    (tabela === 'alunos' && ['turmaId', 'xp'].includes(chave))
+}
+
 function converterValor(chave, valor, original) {
   const limpo = String(valor ?? '').trim()
   if (!limpo) return null
@@ -174,6 +179,13 @@ export default function AdminDataManager({ visible, onClose, usuario, onAdminAtu
       setErro('Escolha Chapéu, Colar ou Cenário para o tipo do item.')
       return
     }
+    if (aba === 'alunos' && Object.prototype.hasOwnProperty.call(rascunho, 'moedas')) {
+      const moedas = Number(rascunho.moedas)
+      if (!Number.isSafeInteger(moedas) || moedas < 0) {
+        setErro('Moedas deve ser um número inteiro igual ou maior que zero.')
+        return
+      }
+    }
     if (aba === 'professores' || aba === 'coordenadores' || aba === 'administrador') {
       const email = String(rascunho.email || '').trim()
       if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
@@ -189,7 +201,7 @@ export default function AdminDataManager({ visible, onClose, usuario, onAdminAtu
     const alteracoes = {}
     try {
       Object.keys(selecionado).forEach(chave => {
-        if (chave === 'id') return
+        if (campoSomenteLeitura(aba, chave)) return
         if (chave === 'senha' && !String(rascunho.senha || '').trim()) return
         const novo = converterValor(chave, rascunho[chave], selecionado[chave])
         const anterior = selecionado[chave]
@@ -290,11 +302,11 @@ export default function AdminDataManager({ visible, onClose, usuario, onAdminAtu
                   const obrigatorio = (CAMPOS_OBRIGATORIOS[aba] || []).includes(chave)
                   return (
                     <View key={chave} style={styles.field}>
-                      <Text style={styles.label}>{rotuloCampo(chave)}{obrigatorio && chave !== 'senha' ? ' *' : ''}{chave === 'id' || (aba === 'professores' && chave === 'tipo') ? ' · não editável' : ''}</Text>
+                      <Text style={styles.label}>{rotuloCampo(chave)}{obrigatorio && chave !== 'senha' ? ' *' : ''}{campoSomenteLeitura(aba, chave) ? ' · não editável' : ''}</Text>
                       {booleano ? (
                         <View style={styles.booleanOptions}>
                           {[['true', 'Sim'], ['false', 'Não']].map(([valor, texto]) => (
-                            <TouchableOpacity key={valor} disabled={chave === 'id' || salvando} onPress={() => setRascunho(prev => ({ ...prev, [chave]: valor }))} style={[styles.booleanOption, rascunho[chave] === valor && styles.booleanOptionActive]}>
+                            <TouchableOpacity key={valor} disabled={campoSomenteLeitura(aba, chave) || salvando} onPress={() => setRascunho(prev => ({ ...prev, [chave]: valor }))} style={[styles.booleanOption, rascunho[chave] === valor && styles.booleanOptionActive]}>
                               <Text style={[styles.booleanText, rascunho[chave] === valor && styles.booleanTextActive]}>{texto}</Text>
                             </TouchableOpacity>
                           ))}
@@ -316,14 +328,14 @@ export default function AdminDataManager({ visible, onClose, usuario, onAdminAtu
                         </View>
                       ) : (
                         <TextInput
-                          style={[styles.input, (chave === 'id' || salvando) && styles.inputDisabled, (chave === 'descricao' || chave === 'icone') && styles.multilineInput]}
+                          style={[styles.input, (campoSomenteLeitura(aba, chave) || salvando) && styles.inputDisabled, (chave === 'descricao' || chave === 'icone') && styles.multilineInput]}
                           value={rascunho[chave] ?? ''}
                           onChangeText={valor => {
                             setRascunho(prev => ({ ...prev, [chave]: valor }))
                             setErrosCampos(prev => ({ ...prev, [chave]: '' }))
                           }}
-                          editable={chave !== 'id' && !(aba === 'professores' && chave === 'tipo') && !salvando}
-                          selectTextOnFocus={chave !== 'id' && !(aba === 'professores' && chave === 'tipo')}
+                          editable={!campoSomenteLeitura(aba, chave) && !salvando}
+                          selectTextOnFocus={!campoSomenteLeitura(aba, chave)}
                           multiline={chave === 'descricao' || chave === 'icone' || (original !== null && typeof original === 'object')}
                           keyboardType={chave === 'email' ? 'email-address' : ehNumero(chave, original) ? 'numeric' : 'default'}
                           autoCapitalize={chave === 'email' || chave === 'icone' ? 'none' : 'sentences'}

@@ -5,12 +5,19 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts } from '../theme';
-import { listarAlunos, atualizarAluno, listarTurmas, listarProfessoresParaTurma, listarPetsParaTurma, salvarTurma, removerTurmaStorage, renomearTurmaStorage, atribuirProfessorTurmaStorage, atribuirPetTurmaStorage, listarMissoes, listarIconesMissoes, listarStatusMissoes, salvarMissao, atualizarMissao, definirTurmasMissao, atribuirTarefaGlobal, definirAtivaMissaoTurma, removerMissaoDaTurma as removerMissaoDaTurmaStorage, atualizarStatusAlunoMissao, removerMissaoStorage } from '../services/storage';
+import { listarAlunos, atualizarAluno, listarTurmas, listarProfessoresParaTurma, listarPetsParaTurma, salvarTurma, removerTurmaStorage, renomearTurmaStorage, atribuirProfessorTurmaStorage, atribuirPetTurmaStorage, listarMissoes, listarIconesMissoes, listarStatusMissoes, salvarMissao, atualizarMissao, definirTurmasMissao, atribuirTarefaGlobal, definirAtivaMissaoTurma, removerMissaoDaTurma as removerMissaoDaTurmaStorage, atualizarStatusAlunoMissao, removerMissaoStorage, listarEnviosEtapasStaff, obterUrlEnvioEtapaStaff, corrigirEnvioEtapaStaff } from '../services/storage';
 import { CORES, MEDALS, RARIDADE_CONFIG, CRITERIOS } from './dashboardConfig';
 import DashboardSidebar from './DashboardSidebar';
 import CadastrarProfessor from './CadastrarProfessor';
 
 const { width } = Dimensions.get('window');
+
+function IconeMissao({ valor, tamanho = 28 }) {
+  const eImagem = typeof valor === 'string' && /^https?:\/\//i.test(valor)
+  return eImagem
+    ? <Image source={{ uri: valor }} style={{ width: tamanho, height: tamanho }} resizeMode="contain" />
+    : <Text style={{ fontSize: tamanho, lineHeight: tamanho + 4 }}>{valor || '🌱'}</Text>
+}
 
 
 export default function DashboardScreen({ professor, onLogout }) {
@@ -23,6 +30,13 @@ export default function DashboardScreen({ professor, onLogout }) {
   const [carregandoPets, setCarregandoPets] = useState(false)
   const [missions, setMissions]       = useState([])
   const [tarefaSelecionada, setTarefaSelecionada] = useState(null)
+  const [enviosEtapas, setEnviosEtapas] = useState([])
+  const [carregandoEnvios, setCarregandoEnvios] = useState(false)
+  const [erroEnvios, setErroEnvios] = useState('')
+  const [envioEmCorrecao, setEnvioEmCorrecao] = useState(null)
+  const [fotoEnvioUrl, setFotoEnvioUrl] = useState('')
+  const [carregandoFotoEnvio, setCarregandoFotoEnvio] = useState(false)
+  const [corrigindoEnvio, setCorrigindoEnvio] = useState(false)
   const [tarefaParaAtribuir, setTarefaParaAtribuir] = useState(null)
   const [modalEscolherTurmaTarefa, setModalEscolherTurmaTarefa] = useState(false)
   const [alunos, setAlunos]           = useState([])
@@ -145,6 +159,41 @@ export default function DashboardScreen({ professor, onLogout }) {
     else { setMissions([]); setTurmas([]); setAlunos([]) }
     return () => { ativo = false }
   }, [professor?.id, isCoordenador, activeNav])
+
+  useEffect(() => {
+    let ativo = true
+    if (!tarefaSelecionada?.id || isCoordenador) { setEnviosEtapas([]); return () => { ativo = false } }
+    setCarregandoEnvios(true); setErroEnvios('')
+    listarEnviosEtapasStaff(tarefaSelecionada.id)
+      .then(lista => { if (ativo) setEnviosEtapas(lista || []) })
+      .catch(error => { if (ativo) setErroEnvios(error?.message || 'Não foi possível carregar os envios.') })
+      .finally(() => { if (ativo) setCarregandoEnvios(false) })
+    return () => { ativo = false }
+  }, [tarefaSelecionada?.id, isCoordenador])
+
+  async function abrirCorrecaoEnvio(envio) {
+    setErroEnvios(''); setEnvioEmCorrecao(envio); setFotoEnvioUrl(''); setCarregandoFotoEnvio(true)
+    try { setFotoEnvioUrl(await obterUrlEnvioEtapaStaff(envio.evidencia_path)) }
+    catch (error) { setErroEnvios(error?.message || 'Não foi possível abrir a foto.') }
+    finally { setCarregandoFotoEnvio(false) }
+  }
+
+  async function corrigirEnvio(aprovado) {
+    if (!envioEmCorrecao || corrigindoEnvio) return
+    setCorrigindoEnvio(true); setErroEnvios('')
+    try {
+      await corrigirEnvioEtapaStaff(envioEmCorrecao.id, aprovado)
+      setEnviosEtapas(atual => atual.filter(item => item.id !== envioEmCorrecao.id))
+      setEnvioEmCorrecao(null); setFotoEnvioUrl('')
+      try {
+        const status = await listarStatusMissoes()
+        setStatusMissao(Object.fromEntries(status.map(item => [`${item.missao_id}_${item.aluno_id}`, item.status])))
+        setEtapasAluno(Object.fromEntries(status.map(item => [`${item.missao_id}_${item.aluno_id}`, Number(item.etapa_atual) || 0])))
+        setAlunos(await listarAlunos())
+      } catch { /* a decisão foi salva; os dados recarregam na próxima navegação */ }
+    } catch (error) { setErroEnvios(error?.message || 'Não foi possível salvar a correção.') }
+    finally { setCorrigindoEnvio(false) }
+  }
 
   const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })
 
@@ -309,9 +358,9 @@ export default function DashboardScreen({ professor, onLogout }) {
     const ativaNestaTurma = missaoAtivaNaTurma(missao, turma)
     setConfirmacaoMissao({
       titulo: 'Remover tarefa desta turma?',
-      mensagem: `Ao remover “${missao.name}” de “${turma.nome}”, todos os alunos dessa turma que concluíram a tarefa perderão o XP recebido por ela. O progresso será apagado e ninguém poderá enviar essa tarefa nessa turma. As outras turmas não serão alteradas.${ativaNestaTurma ? ' Se quiser mantê-la vinculada, mas impedir novos envios sem retirar XP, escolha “Desativar e manter XP”.' : ''}`,
-      textoConfirmar: 'Remover e estornar XP',
-      textoAlternativo: ativaNestaTurma ? 'Desativar e manter XP' : undefined,
+      mensagem: `Ao remover “${missao.name}” de “${turma.nome}”, o progresso dos alunos será apagado e as moedas da trilha já concedidas serão estornadas. XP de versões anteriores da trilha também será revertido. Ninguém poderá enviá-la nessa turma; as outras turmas não serão alteradas.${ativaNestaTurma ? ' Se quiser apenas impedir novos envios e preservar as recompensas, escolha “Desativar e manter recompensas”.' : ''}`,
+      textoConfirmar: 'Remover e estornar recompensas',
+      textoAlternativo: ativaNestaTurma ? 'Desativar e manter recompensas' : undefined,
       perigoso: true,
       onConfirmar: () => executarRemocaoMissaoTurma(missao, turma),
       onAlternativo: ativaNestaTurma ? () => salvarAtivacaoMissaoTurma(missao, turma, false) : undefined,
@@ -347,8 +396,8 @@ export default function DashboardScreen({ professor, onLogout }) {
       titulo: ativa ? 'Ativar tarefa nesta turma?' : 'Desativar tarefa nesta turma?',
       mensagem: ativa
         ? `“${missao.name}” ficará disponível novamente para os alunos de “${turma.nome}”.`
-        : `Em “${turma.nome}”, os alunos que já concluíram “${missao.name}” manterão o XP. Quem ainda não concluiu não poderá enviá-la enquanto estiver desativada. A tarefa continuará vinculada à turma e poderá ser reativada depois.`,
-      textoConfirmar: ativa ? 'Ativar tarefa' : 'Desativar e manter XP',
+        : `Em “${turma.nome}”, os alunos mantêm as moedas já recebidas. Quem ainda não concluiu não poderá enviar a trilha enquanto estiver desativada. Ela continuará vinculada e poderá ser reativada depois.`,
+      textoConfirmar: ativa ? 'Ativar tarefa' : 'Desativar e manter recompensas',
       onConfirmar: () => salvarAtivacaoMissaoTurma(missao, turma, ativa),
     })
   }
@@ -658,7 +707,7 @@ export default function DashboardScreen({ professor, onLogout }) {
     const turmaAluno = turmas.find(item => String(item.id) === String(aluno?.turmaId))
     const ativaNestaTurma = missao && turmaAluno && missaoAtivaNaTurma(missao, turmaAluno)
     if (!ativaNestaTurma && (proximo !== 'pendente' || atual === 'aprovado')) {
-      Alert.alert('Tarefa desativada', 'Nesta turma não é possível enviar, aprovar ou alterar o progresso da tarefa. O XP aprovado permanece como está.');
+      Alert.alert('Trilha desativada', 'Nesta turma não é possível enviar, aprovar ou alterar o progresso. As moedas já recebidas permanecem com os alunos.');
       return
     }
     try {
@@ -926,8 +975,8 @@ export default function DashboardScreen({ professor, onLogout }) {
           <View style={s.panel}>
             <Text style={s.panelTitle}>{tarefa.name}</Text>
             {!!tarefa.descricao && <Text style={[s.missionMeta, { marginTop: 6 }]}>{tarefa.descricao}</Text>}
-            <Text style={[s.missionMeta, { marginTop: 8 }]}>{etapas.length} etapas · {etapas.reduce((total, etapa) => total + (Number(etapa.xp) || 0), 0)} XP · {tarefa.moedas || 0} moedas ao concluir</Text>
-            <Text style={[s.formLabel, { marginTop: 16, marginBottom: 8 }]}>Trilha da tarefa</Text>
+            <Text style={[s.missionMeta, { marginTop: 8 }]}>{etapas.length} tarefas · {etapas.reduce((soma, etapa) => soma + (Number(etapa.moedas) || 0), 0)} moedas possíveis nas tarefas · bônus final de {tarefa.moedas || 0}</Text>
+            <Text style={[s.formLabel, { marginTop: 16, marginBottom: 8 }]}>Tarefas da trilha</Text>
             {etapas.length ? etapas.map((etapa, index) => {
               const concluidos = participantes.filter(aluno => etapaAtualDoAluno(tarefa, aluno) > index).length
               return <View key={`${index}-${etapa.titulo}`} style={{ flexDirection: 'row', gap: 10, paddingVertical: 9 }}>
@@ -937,13 +986,14 @@ export default function DashboardScreen({ professor, onLogout }) {
                 </View>
                 <View style={{ flex: 1, paddingBottom: 8, borderBottomWidth: index < etapas.length - 1 ? 1 : 0, borderColor: colors.border }}>
                   <Text style={s.missionName}>{etapa.titulo}</Text>
-                  <Text style={s.missionMeta}>{Number(etapa.xp) || 0} XP · {concluidos}/{participantes.length} alunos concluíram</Text>
+                  {!!etapa.descricao && <Text style={s.missionMeta}>{etapa.descricao}</Text>}
+                  <Text style={s.missionMeta}>+{Number(etapa.moedas) || 0} moedas · {concluidos}/{participantes.length} alunos concluíram</Text>
                 </View>
               </View>
             }) : <Text style={s.missionMeta}>Esta tarefa ainda não tem etapas cadastradas.</Text>}
           </View>
           <View style={s.panel}>
-            <Text style={s.panelTitle}>Progresso dos alunos</Text>
+          <Text style={s.panelTitle}>Progresso dos alunos</Text>
             {!participantes.length ? <Text style={[s.missionMeta, { marginTop: 8 }]}>Nenhum aluno nas turmas vinculadas.</Text> : participantes.map(aluno => {
               const atual = etapaAtualDoAluno(tarefa, aluno)
               const percentual = etapas.length ? Math.round(atual / etapas.length * 100) : (getStatusAluno(tarefa.id, aluno.id) === 'aprovado' ? 100 : 0)
@@ -956,6 +1006,20 @@ export default function DashboardScreen({ professor, onLogout }) {
               </View>
             })}
           </View>
+          {!isCoordenador && <View style={s.panel}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <Text style={s.panelTitle}>📷 Envios para corrigir · {enviosEtapas.length}</Text>
+              <TouchableOpacity disabled={carregandoEnvios} onPress={async () => { setCarregandoEnvios(true); setErroEnvios(''); try { setEnviosEtapas(await listarEnviosEtapasStaff(tarefa.id)) } catch (error) { setErroEnvios(error?.message || 'Não foi possível atualizar os envios.') } finally { setCarregandoEnvios(false) } }}><Text style={{ color: colors.green, fontFamily: fonts.bold }}>Atualizar</Text></TouchableOpacity>
+            </View>
+            {!!erroEnvios && <Text style={[s.missionMeta, { color: '#b42318', marginTop: 8 }]}>{erroEnvios}</Text>}
+            {carregandoEnvios ? <Text style={[s.missionMeta, { marginTop: 8 }]}>Carregando envios…</Text>
+              : enviosEtapas.length === 0 ? <Text style={[s.missionMeta, { marginTop: 8 }]}>Nenhuma foto aguardando correção nesta tarefa.</Text>
+                : enviosEtapas.map(envio => <TouchableOpacity key={envio.id} onPress={() => abrirCorrecaoEnvio(envio)} activeOpacity={0.82} style={{ marginTop: 10, padding: 12, borderRadius: 14, backgroundColor: colors.cream, borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={s.missionName}>{envio.turma_nome} · {envio.aluno_nome}</Text>
+                  <Text style={s.missionMeta}>Tarefa {envio.etapa_ordem}: {envio.etapa_titulo} · enviado {new Date(envio.enviada_em).toLocaleDateString('pt-BR')}</Text>
+                  <Text style={[s.missionMeta, { color: colors.green, fontFamily: fonts.bold, marginTop: 5 }]}>Abrir foto e corrigir ›</Text>
+                </TouchableOpacity>)}
+          </View>}
         </View>
       )
     }
@@ -968,18 +1032,17 @@ export default function DashboardScreen({ professor, onLogout }) {
           const etapas = m.etapas || []
           const participantes = alunosDaMissao(m)
           const concluidos = participantes.filter(aluno => getStatusAluno(m.id, aluno.id) === 'aprovado').length
-          const totalXP = etapas.reduce((total, etapa) => total + (Number(etapa.xp) || 0), 0) || Number(m.xp) || 0
           return <TouchableOpacity key={m.id} activeOpacity={0.85} onPress={() => setTarefaSelecionada(m)} style={[s.panel, m.active && { borderColor: colors.green, borderWidth: 2 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={[s.missionIcon, { backgroundColor: m.color }]}>
-                {!!m.icon && <Image source={{ uri: m.icon }} style={{ width: 30, height: 30 }} resizeMode="contain" />}
+                <IconeMissao valor={m.icon} tamanho={30} />
               </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Text style={s.missionName}>{m.name}</Text>
                   {m.active && <View style={s.activePill}><Text style={s.activePillText}>ativa</Text></View>}
                 </View>
-                <Text style={s.missionMeta}>{(m.turmaIds || []).length} turma(s) · {participantes.length} alunos · {etapas.length} etapas · {totalXP} XP</Text>
+                <Text style={s.missionMeta}>{(m.turmaIds || []).length} turma(s) · {participantes.length} alunos · {etapas.length} tarefas · +{m.moedas || 0} bônus</Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
                   {(m.turmaIds || []).map(id => {
                     const t = turmas.find(item => String(item.id) === String(id))
@@ -1099,7 +1162,7 @@ export default function DashboardScreen({ professor, onLogout }) {
           {missions.slice(0, 4).map(m => (
             <View key={m.id} style={[s.missionRow, m.active && { backgroundColor: colors.greenLight, borderRadius: 8, paddingHorizontal: 8 }]}>
               <View style={[s.missionIcon, { backgroundColor: m.color }]}>
-                <Image source={{ uri: m.icon }} style={{ width: 26, height: 26 }} resizeMode="contain" />
+                <IconeMissao valor={m.icon} tamanho={26} />
               </View>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -1108,7 +1171,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                 </View>
                 <Text style={s.missionMeta}>{m.turma} · {qtdAlunosMissao(m)} alunos</Text>
               </View>
-              <View style={s.xpBadge}><Text style={s.xpBadgeText}>+{m.xp} XP</Text></View>
+              <View style={s.xpBadge}><Text style={s.xpBadgeText}>+{m.moedas || 0} bônus</Text></View>
             </View>
           ))}
         </View>
@@ -1560,7 +1623,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                   </ScrollView>
                 ) : abaDetalhesTurma === 'tarefas' ? (
                   <ScrollView style={{ maxHeight: 440 }}>
-                    <Text style={[s.missionMeta, { marginBottom: 8 }]}>A ativação é independente por turma. Desativar mantém o XP já ganho; remover apaga o progresso e estorna o XP dos alunos desta turma.</Text>
+                    <Text style={[s.missionMeta, { marginBottom: 8 }]}>A ativação é independente por turma. Desativar preserva as moedas já ganhas; remover apaga o progresso e estorna as moedas desta trilha.</Text>
                     <Text style={s.formLabel}>Mostrar tarefas</Text>
                     <View style={[s.turmaPickerWrap, { marginBottom: 8 }]}>
                       {[
@@ -1591,11 +1654,11 @@ export default function DashboardScreen({ professor, onLogout }) {
                       return (
                         <View key={m.id} style={[s.missionRow, { paddingVertical: 9, flexWrap: 'wrap' }]}>
                           <View style={[s.missionIcon, { backgroundColor: m.color, width: 34, height: 34 }]}>
-                            <Image source={{ uri: m.icon }} style={{ width: 26, height: 26 }} resizeMode="contain" />
+                            <IconeMissao valor={m.icon} tamanho={26} />
                           </View>
                           <View style={{ flex: 1, minWidth: 130 }}>
                             <Text style={s.missionName}>{m.name}</Text>
-                            <Text style={s.missionMeta}>+{m.xp} XP · {ativaNestaTurma ? 'Disponível aos alunos' : 'Desativada nesta turma'}</Text>
+                    <Text style={s.missionMeta}>{m.etapas?.reduce((total, etapa) => total + (Number(etapa.moedas) || 0), 0) || 0} moedas nas tarefas + {m.moedas || 0} de bônus · {ativaNestaTurma ? 'Disponível' : 'Desativada'}</Text>
                           </View>
                       {isCoordenador && <>
                         <TouchableOpacity disabled={missaoEmAcao} onPress={() => solicitarAlteracaoAtivaMissaoTurma(m, turmaAtribuir)} style={[s.btnToggle, { marginTop: 0, paddingVertical: 6, backgroundColor: ativaNestaTurma ? colors.yellowLight : colors.greenLight }]}>
@@ -1642,7 +1705,7 @@ export default function DashboardScreen({ professor, onLogout }) {
                       const aprovados = turmaAlunos.filter(aluno => getStatusAluno(missao.id, aluno.id) === 'aprovado').length
                       const entregues = turmaAlunos.filter(aluno => getStatusAluno(missao.id, aluno.id) === 'entregue').length
                       return <View key={missao.id} style={[s.missionRow, { paddingVertical: 8 }]}>
-                        <View style={[s.missionIcon, { backgroundColor: missao.color, width: 32, height: 32 }]}><Image source={{ uri: missao.icon }} style={{ width: 24, height: 24 }} resizeMode="contain" /></View>
+                        <View style={[s.missionIcon, { backgroundColor: missao.color, width: 32, height: 32 }]}><IconeMissao valor={missao.icon} tamanho={24} /></View>
                         <View style={{ flex: 1 }}>
                           <Text style={s.missionName}>{missao.name}</Text>
                           <Text style={s.missionMeta}>{aprovados} aprovados · {entregues} entregues · {turmaAlunos.length} alunos</Text>
@@ -1768,11 +1831,11 @@ export default function DashboardScreen({ professor, onLogout }) {
               {missions.filter(m => turmaAtribuir && String(m.professorId) === String(turmaAtribuir.professorId) && !turmaTemMissao(turmaAtribuir, m.id)).map(m => (
                 <View key={m.id} style={[s.missionRow, { paddingVertical: 10, alignItems: 'center' }]}>
                   <View style={[s.missionIcon, { backgroundColor: m.color }]}>
-                    <Image source={{ uri: m.icon }} style={{ width: 26, height: 26 }} resizeMode="contain" />
+                    <IconeMissao valor={m.icon} tamanho={26} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={s.missionName}>{m.name}</Text>
-                    <Text style={s.missionMeta}>+{m.xp} XP · vinculada a {(m.turmaIds || []).length} turma(s)</Text>
+                    <Text style={s.missionMeta}>{m.etapas?.length || 0} tarefas · +{m.moedas || 0} bônus final · vinculada a {(m.turmaIds || []).length} turma(s)</Text>
                   </View>
                   <TouchableOpacity disabled={missaoEmAcao} style={[s.btnToggle, { backgroundColor: colors.greenLight, marginTop: 0, paddingHorizontal: 12 }]} onPress={() => atribuirMissao(m.id)}>
                     <Text style={[s.btnToggleText, { color: colors.green }]}>+ Atribuir</Text>
@@ -1785,6 +1848,24 @@ export default function DashboardScreen({ professor, onLogout }) {
             <TouchableOpacity style={[s.btnConfirm, { marginTop: 8 }]} onPress={() => setModalAtribuir(false)}>
               <Text style={s.btnConfirmText}>Concluído</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Modal de correção de foto enviada por etapa ── */}
+      <Modal visible={!!envioEmCorrecao} transparent animationType="slide" onRequestClose={() => { if (!corrigindoEnvio) { setEnvioEmCorrecao(null); setFotoEnvioUrl('') } }}>
+        <View style={s.modalOverlay}>
+          <View style={[s.modalBox, { maxHeight: '90%' }]}>
+            <Text style={s.modalTitle}>Corrigir tarefa</Text>
+            {!!envioEmCorrecao && <Text style={[s.missionMeta, { marginBottom: 10 }]}>{envioEmCorrecao.turma_nome} · {envioEmCorrecao.aluno_nome}{'\n'}{envioEmCorrecao.etapa_titulo}</Text>}
+            {carregandoFotoEnvio ? <Text style={s.missionMeta}>Abrindo foto segura…</Text> : fotoEnvioUrl ? <Image source={{ uri: fotoEnvioUrl }} resizeMode="contain" style={{ width: '100%', height: 320, borderRadius: 12, backgroundColor: '#171914' }} /> : <Text style={[s.missionMeta, { color: '#b42318' }]}>{erroEnvios || 'A foto não está disponível.'}</Text>}
+            {!!erroEnvios && <Text style={[s.missionMeta, { color: '#b42318', marginTop: 8 }]}>{erroEnvios}</Text>}
+            <Text style={[s.missionMeta, { marginTop: 10 }]}>Aprovar libera a próxima tarefa e credita {envioEmCorrecao?.moedas || 0} moedas. Recusar permite enviar outra foto.</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
+              <TouchableOpacity disabled={corrigindoEnvio} onPress={() => corrigirEnvio(false)} style={{ flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff0ee', borderRadius: 12, borderWidth: 1, borderColor: '#e9b1aa' }}><Text style={{ color: '#a32117', fontFamily: fonts.bold }}>{corrigindoEnvio ? 'Salvando…' : 'Recusar ↻'}</Text></TouchableOpacity>
+              <TouchableOpacity disabled={corrigindoEnvio} onPress={() => corrigirEnvio(true)} style={{ flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.green, borderRadius: 12 }}><Text style={{ color: '#fff', fontFamily: fonts.bold }}>{corrigindoEnvio ? 'Salvando…' : 'Aprovar ✓'}</Text></TouchableOpacity>
+            </View>
+            <TouchableOpacity disabled={corrigindoEnvio} style={[s.btnConfirm, { marginTop: 8 }]} onPress={() => { setEnvioEmCorrecao(null); setFotoEnvioUrl('') }}><Text style={s.btnConfirmText}>Fechar</Text></TouchableOpacity>
           </View>
         </View>
       </Modal>

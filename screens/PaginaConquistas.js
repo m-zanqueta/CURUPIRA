@@ -5,17 +5,7 @@ import { colors, fonts } from '../theme'
 import { listarConquistasDoAluno } from '../services/storage'
 import { mensagemDeErroAluno, analisarData } from './useDadosAluno'
 
-// Página "Conquistas" do aluno (página 3 do paginador do PetScreen).
-//
-// DEPENDE DO ZANQ. Hoje a RPC aluno_minhas_conquistas devolve as linhas da tabela `conquistas`
-// do próprio aluno, mas o esquema dessa tabela (nomes das colunas) e o catálogo de conquistas
-// ainda não estão definidos em nenhuma migration do repositório. Por isso esta página:
-//   • mostra APENAS as conquistas que o backend devolveu (nada de lista fixa, nada de "bloqueadas",
-//     porque sem catálogo real não há como saber quais existem);
-//   • lê título/descrição/ícone/data de forma tolerante (vários nomes de coluna possíveis, ver
-//     `normalizarConquista`); o que não existir simplesmente não aparece;
-//   • quando não há nenhuma, mostra um estado vazio honesto.
-// Quando o Zanq fechar o esquema, só `normalizarConquista` precisa ser ajustada.
+// Página de conquistas: lista o catálogo global do banco e sinaliza quais medalhas este aluno desbloqueou.
 //
 // Props:
 //   width    largura da página
@@ -55,6 +45,7 @@ export function normalizarConquista(linha, indice) {
     icone: /^https?:\/\//i.test(icone) ? '' : icone,
     iconeUrl: /^https?:\/\//i.test(icone) ? icone : '',
     data,
+    desbloqueada: l.desbloqueada === true || l.desbloqueada === 'true',
     cor: CORES[indice % CORES.length],
   }
 }
@@ -149,22 +140,22 @@ export default function PaginaConquistas({ width, petImage, alunoId, ativa }) {
         <ScrollView contentContainerStyle={p.courseContent} showsVerticalScrollIndicator={false}>
           <View style={p.achievementBanner}>
             <MiniPet uri={petImage} emoji="🏅" style={p.bannerPet} />
-            <Text style={p.bannerText}>Sua coleção</Text>
-            <Text style={p.bannerCount}>{lista.length}</Text>
+            <Text style={p.bannerText}>Suas conquistas</Text>
+            <Text style={p.bannerCount}>{lista.filter(x => x.desbloqueada).length}/{lista.length}</Text>
           </View>
           {lista.map(item => (
-            <View key={item.id} style={p.badgeCard}>
-              <View style={[p.badgeArt, { backgroundColor: item.cor }]}>
+            <View key={item.id} style={[p.badgeCard, !item.desbloqueada && p.badgeLocked]}>
+              <View style={[p.badgeArt, { backgroundColor: item.desbloqueada ? item.cor : '#E6E6E1' }]}>
                 {item.iconeUrl
                   ? <Image source={{ uri: item.iconeUrl }} style={p.badgeImg} resizeMode="contain" />
-                  : <Text style={p.badgeEmoji}>{item.icone || '🏅'}</Text>}
+                  : <Text style={[p.badgeEmoji, !item.desbloqueada && p.emojiLocked]}>{item.icone || '🏅'}</Text>}
               </View>
               <View style={p.badgeInfo}>
                 <Text style={p.badgeTitle}>{item.titulo}</Text>
                 {item.descricao ? <Text style={p.badgeDescription}>{item.descricao}</Text> : null}
-                <Text style={p.badgeStatus}>CONQUISTADA!{item.data ? ` · ${dataCurta(item.data)}` : ''}</Text>
+                <Text style={[p.badgeStatus, !item.desbloqueada && p.badgeStatusLocked]}>{item.desbloqueada ? `CONQUISTADA!${item.data ? ` · ${dataCurta(item.data)}` : ''}` : 'AINDA NÃO CONQUISTADA'}</Text>
               </View>
-              <Text style={p.badgeCheck}>✓</Text>
+              {item.desbloqueada ? <Text style={p.badgeCheck}>✓</Text> : <Text style={p.badgeLock}>🔒</Text>}
             </View>
           ))}
         </ScrollView>
@@ -184,14 +175,18 @@ const p = StyleSheet.create({
   bannerText: { flex: 1, color: colors.white, fontSize: 18, fontFamily: fonts.extrabold },
   bannerCount: { color: colors.yellow, fontSize: 20, fontFamily: fonts.extrabold },
   badgeCard: { minHeight: 102, flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: colors.white, padding: 12, borderRadius: 18, borderWidth: 1.5, borderColor: colors.border, borderBottomWidth: 5, borderBottomColor: '#D7D2BE' },
+  badgeLocked: { backgroundColor: '#F7F7F3', opacity: 0.8 },
   badgeArt: { width: 72, height: 72, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(0,0,0,0.06)' },
   badgeImg: { width: 52, height: 52 },
   badgeEmoji: { fontSize: 44 },
+  emojiLocked: { opacity: 0.48 },
   badgeInfo: { flex: 1, gap: 4 },
   badgeTitle: { color: '#20221D', fontSize: 16, fontFamily: fonts.extrabold },
   badgeDescription: { color: '#74766D', fontSize: 12, fontFamily: fonts.semibold },
   badgeStatus: { color: colors.green, fontSize: 10, fontFamily: fonts.bold, letterSpacing: 0.3 },
+  badgeStatusLocked: { color: '#7A7B75' },
   badgeCheck: { color: colors.green, fontSize: 22, fontFamily: fonts.extrabold },
+  badgeLock: { fontSize: 18 },
   centro: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, paddingBottom: 80, gap: 10 },
   centroEmoji: { fontSize: 44 },
   vazioPet: { width: 90, height: 90, fontSize: 56, textAlign: 'center' },
