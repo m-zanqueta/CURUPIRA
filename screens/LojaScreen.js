@@ -122,7 +122,7 @@ function ModalConfirmarCompra({ item, saldo, processando, erro, onCancelar, onCo
   )
 }
 
-export default function LojaScreen({ onLogout, aluno, turma }) {
+export default function LojaScreen({ onLogout, aluno, turma, onConquistasAtualizadas }) {
   const [cat,          setCat]          = useState('todos')
   const [comprados,    setComprados]    = useState([])
   const [produtos,     setProdutos]     = useState([])
@@ -167,7 +167,7 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
 
   const cardW = Math.max(120, (pager.w - 28 - 10) / 2)
 
-  const saldoBase = aluno?.xp ?? 1000
+  const saldoBase = aluno?.moedas ?? 0
   const totalGasto = useMemo(
     () => produtos
       .filter(p => comprados.includes(p.id))
@@ -200,6 +200,7 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
     
     try {
       const r = await comprarItem(aluno.id, p.id)
+      onConquistasAtualizadas?.()
       if (r?.saldo != null) {
         setSaldoServidor(r.saldo)
         setComprados(prev => (prev.some(id => String(id) === String(p.id)) ? prev : [...prev, p.id]))

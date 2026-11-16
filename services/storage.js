@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { supabase } from './supabase'
+import { supabase, supabaseUrl, supabaseAnonKey } from './supabase'
 
 const TABELAS_ADMIN = new Set(['professores', 'coordenadores', 'alunos', 'pets', 'acessorios'])  // lista fechada TAMBÉM no servidor (admin_*)
 const CHAVE_SESSAO_APP = 'curupira_sessao_app'
@@ -109,19 +109,43 @@ export async function listarTarefasAdmin() {
   return lista.map(({ vinculos, ...missao }) => missao)
 }
 
-// Tarefa GLOBAL (etapas + moedas): criar/editar é só do administrador e é validado no servidor (staff_salvar_tarefa_global).
-// O cliente não define dono, xp total, dificuldade nem turma (o servidor fixa xp=0: o XP vem das etapas, uma única vez).
+// Trilha global: cada tarefa entrega moedas ao concluir e a trilha dá bônus após aprovação.
+// Nenhuma dessas recompensas altera o XP do aluno ou do PET.
 export async function salvarTarefaAdmin(tarefa) {
-  const etapas = (tarefa.etapas || []).map(etapa => ({ titulo: String(etapa.titulo || '').trim(), xp: Number(etapa.xp) }))
-  return rpcStaff('staff_salvar_tarefa_global', {
+  const iconeAnterior = tarefa.icone ?? null
+  const imagemEnviada = tarefa.imagemInsignia ? await enviarImagemAdmin(tarefa.imagemInsignia, 'icones-missoes') : null
+  const etapas = (tarefa.etapas || []).map(etapa => ({
+    titulo: String(etapa.titulo || '').trim(),
+    descricao: String(etapa.descricao || '').trim(),
+    moedas: Number(etapa.moedas) || 0,
+  }))
+  let resposta
+  try { resposta = await rpcStaff('staff_salvar_tarefa_global', {
     p_missao_id: tarefa.id ?? null,
     p_nome: String(tarefa.nome || '').trim(),
     p_descricao: String(tarefa.descricao || '').trim(),
     p_etapas: etapas,
     p_moedas: Number(tarefa.moedas) || 0,
-    p_icone: tarefa.icone ?? null,
+    p_icone: imagemEnviada?.url || tarefa.icone || null,
     p_ativa: tarefa.ativa ?? true,
-  })
+  }) } catch (error) {
+    if (imagemEnviada) await descartarImagemEnviada('icones-missoes', imagemEnviada.path)
+    throw error
+  }
+  // Detecta migrations antigas que aceitam a RPC, mas ignoram o valor de moedas por tarefa.
+  const etapasSalvas = Array.isArray(resposta?.etapas) ? resposta.etapas : null
+  if (!etapasSalvas || etapasSalvas.length !== etapas.length || etapasSalvas.some((etapa, i) => Number(etapa?.moedas) !== etapas[i].moedas)) {
+    throw new Error('O banco não salvou as moedas por tarefa. Execute a migration 20261118_recompensas_por_tarefa_e_emoji_trilha.sql no Supabase e tente novamente.')
+  }
+  if (imagemEnviada && /^https?:\/\//i.test(iconeAnterior || '')) {
+    const marcador = '/storage/v1/object/public/pets-images/'
+    const posicao = iconeAnterior.indexOf(marcador)
+    if (posicao >= 0) {
+      const caminhoAntigo = decodeURIComponent(iconeAnterior.slice(posicao + marcador.length).split(/[?#]/)[0])
+      if (caminhoAntigo.startsWith('icones-missoes/')) await descartarImagemEnviada('icones-missoes', caminhoAntigo)
+    }
+  }
+  return resposta
 }
 
 // ── Init ─────────────────────────────────────────────────
@@ -681,6 +705,99 @@ export async function temTokenAluno() {
   return !!(await obterTokenAluno())
 }
 
+export async function registrarAcessoDiarioAluno() {
+  const token = await obterTokenAluno()
+  if (!token) return
+  // Melhor esforço: se a migration ainda não estiver aplicada, não invalida o login do aluno.
+  try {
+    const { error } = await supabase.rpc('aluno_registrar_acesso_diario', { p_token: token })
+    if (error && !funcaoAusente(error)) console.warn('Não foi possível registrar o acesso diário do aluno:', error.code)
+  } catch (error) { console.warn('Não foi possível registrar o acesso diário do aluno:', error?.message) }
+}
+
+export async function fazerCarinhoDiarioNoPet() {
+  return rpcAluno('aluno_fazer_carinho_pet')
+}
+
+export async function consultarCalendarioCarinho(ano, mes) {
+  return rpcAluno('aluno_calendario_carinho', { p_ano: ano, p_mes: mes })
+}
+
+async function invocarPerfilAluno(body, aluno = false) {
+  const token = aluno ? await obterTokenAluno() : body?.token || null
+  const payload = body instanceof FormData ? body : { ...body, token }
+  if (body instanceof FormData && token) body.append('token', token)
+  let resposta
+  try { resposta = await supabase.functions.invoke('perfil-aluno', { body: payload }) }
+  catch { throw new Error('Não foi possível conectar ao perfil. Tente novamente.') }
+  if (resposta.error || !resposta.data?.ok) {
+    let codigo = resposta.data?.erro
+    try { const corpo = await resposta.error?.context?.json?.(); codigo ||= corpo?.erro } catch {}
+    const mensagens = {
+      sessao_invalida: 'Sua sessão expirou. Entre novamente.',
+      arquivo_grande: 'A imagem precisa ter no máximo 1 MB.',
+      tipo_nao_suportado: 'Use uma imagem JPG, PNG ou WEBP.',
+      tipo_divergente: 'O formato da imagem não pôde ser confirmado.',
+      falha_no_servidor: 'Não foi possível atualizar a foto. Tente novamente.',
+    }
+    throw new Error(mensagens[codigo] || 'Não foi possível atualizar o perfil. Tente novamente.')
+  }
+  return resposta.data
+}
+
+export async function carregarAvatarAluno() {
+  const token = await obterTokenAluno()
+  if (!token) return null
+  return invocarPerfilAluno({ operacao: 'visualizar', token }).then(r => r.url || null)
+}
+
+export async function enviarAvatarAluno(imagem) {
+  if (!imagem?.uri) throw new Error('Escolha uma imagem para o perfil.')
+  const resposta = await fetch(imagem.uri)
+  if (!resposta.ok) throw new Error('Não foi possível abrir a imagem escolhida.')
+  const blob = await resposta.blob()
+  if (blob.size > 1024 * 1024) throw new Error('A imagem precisa ter no máximo 1 MB.')
+  const token = await obterTokenAluno()
+  if (!token) throw new Error('Sua sessão expirou. Entre novamente.')
+  const form = new FormData()
+  form.append('token', token)
+  form.append('arquivo', blob, imagem.fileName || 'perfil.jpg')
+  let respostaApi
+  try {
+    // Envia FormData direto: o fetch do navegador define o boundary multipart.
+    // Não usar functions.invoke aqui, pois alguns ambientes Expo serializam FormData como JSON.
+    respostaApi = await fetch(`${supabaseUrl}/functions/v1/perfil-aluno`, {
+      method: 'POST',
+      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` },
+      body: form,
+    })
+  } catch {
+    throw new Error('Não foi possível enviar a foto. Verifique sua conexão e tente novamente.')
+  }
+  let dados = null
+  try { dados = await respostaApi.json() } catch {}
+  if (!respostaApi.ok || !dados?.ok) {
+    const mensagens = {
+      sessao_invalida: 'Sua sessão expirou. Entre novamente.',
+      arquivo_grande: 'A imagem precisa ter no máximo 1 MB.',
+      tipo_nao_suportado: 'Use uma imagem JPG, PNG ou WEBP.',
+      tipo_divergente: 'O formato da imagem não pôde ser confirmado.',
+      pedido_invalido: 'Não foi possível ler a foto escolhida. Escolha outra imagem e tente novamente.',
+    }
+    throw new Error(mensagens[dados?.erro] || 'Não foi possível atualizar a foto. Tente novamente.')
+  }
+  return dados.url
+}
+
+export async function listarTrilhasConcluidasAluno() {
+  if (!(await temTokenAluno())) return []
+  return (await rpcAluno('aluno_vitrine_listar')) || []
+}
+
+export async function salvarVitrineTrilhasAluno(ids) {
+  return rpcAluno('aluno_vitrine_salvar', { p_missoes_ids: (ids || []).map(String) })
+}
+
 // Códigos de erro (e.codigo) que o app distingue:
 //   erros de regra do servidor (CODIGOS_NUVEM), 'sessao_invalida' (token ausente/expirado/revogado),
 //   'muitas_tentativas' (HTTP 429), 'rede' (sem resposta / erro transitório do gateway),
@@ -815,6 +932,62 @@ async function rpcStaff(nome, args = {}) {
   return resposta.data
 }
 
+async function chamarEvidencias(body, opcao = {}) {
+  const token = opcao.aluno ? await obterTokenAluno() : await obterTokenStaff()
+  if (!token) throw new Error('Sua sessão expirou. Entre novamente.')
+  let resposta
+  try { resposta = await supabase.functions.invoke('evidencias-tarefas', { body: { ...body, token } }) }
+  catch { throw new Error('Não foi possível conectar ao envio da tarefa. Tente novamente.') }
+  if (resposta.error || !resposta.data?.ok) {
+    let codigo = resposta.data?.erro
+    try { const payload = await resposta.error?.context?.json?.(); codigo ||= payload?.erro } catch {}
+    const mensagens = {
+      sessao_invalida: 'Sua sessão expirou. Entre novamente.', sem_permissao: 'Você não tem permissão para acessar este envio.',
+      etapa_indisponivel: 'Esta tarefa já foi enviada ou não está liberada.', arquivo_grande: 'A foto precisa ter no máximo 1 MB.',
+      tipo_nao_suportado: 'Envie uma foto JPG, PNG ou WEBP.', tipo_divergente: 'O formato da imagem não pôde ser confirmado.',
+      falha_no_servidor: 'Não foi possível concluir a operação. Tente novamente.',
+    }
+    throw new Error(mensagens[codigo] || 'Não foi possível concluir a operação. Tente novamente.')
+  }
+  return resposta.data
+}
+
+export async function enviarFotoEtapaTarefa(missaoId, etapaOrdem, imagem) {
+  if (!imagem?.uri) throw new Error('Escolha uma foto antes de enviar.')
+  const resposta = await fetch(imagem.uri)
+  if (!resposta.ok) throw new Error('Não foi possível abrir a foto selecionada.')
+  const blob = await resposta.blob()
+  if (blob.size > 1024 * 1024) throw new Error('A foto precisa ter no máximo 1 MB. Escolha uma imagem menor.')
+  const token = await obterTokenAluno()
+  if (!token) throw new Error('Sua sessão expirou. Entre novamente.')
+  const form = new FormData()
+  form.append('token', token)
+  form.append('missao_id', String(missaoId))
+  form.append('etapa_ordem', String(etapaOrdem))
+  form.append('arquivo', blob, imagem.fileName || 'tarefa.jpg')
+  const respostaFuncao = await supabase.functions.invoke('evidencias-tarefas', { body: form })
+  if (respostaFuncao.error || !respostaFuncao.data?.ok) {
+    let codigo = respostaFuncao.data?.erro
+    try { const payload = await respostaFuncao.error?.context?.json?.(); codigo ||= payload?.erro } catch {}
+    const mensagens = { sessao_invalida: 'Sua sessão expirou. Entre novamente.', etapa_indisponivel: 'Esta tarefa já foi enviada ou não está liberada.', arquivo_grande: 'A foto precisa ter no máximo 1 MB.', tipo_nao_suportado: 'Envie uma foto JPG, PNG ou WEBP.', tipo_divergente: 'O formato da imagem não pôde ser confirmado.' }
+    throw new Error(mensagens[codigo] || 'Não foi possível enviar a foto. Tente novamente.')
+  }
+  return respostaFuncao.data
+}
+
+export async function listarEnviosEtapasStaff(missaoId) {
+  return (await rpcStaff('staff_listar_envios_tarefas', { p_missao_id: missaoId })) || []
+}
+
+export async function obterUrlEnvioEtapaStaff(caminho) {
+  const resultado = await chamarEvidencias({ operacao: 'visualizar', caminho })
+  return resultado.url
+}
+
+export async function corrigirEnvioEtapaStaff(envioId, aprovado) {
+  return chamarEvidencias({ operacao: 'corrigir', envio_id: envioId, aprovado })
+}
+
 // Login único de professor / coordenador / administrador. A senha é conferida no servidor (bcrypt) e o
 // papel devolvido vem do banco. Retorna o usuário ({id, nome, email, tipo}) ou null (credenciais incorretas).
 export async function loginStaff(email, senha) {
@@ -855,7 +1028,10 @@ export async function alterarMinhaSenhaStaff(senhaAtual, senhaNova) {
 // Retorna null se o token não vale mais; lança 'rede' etc. quando não dá para saber.
 export async function restaurarPerfilAluno() {
   if (!(await temTokenAluno())) return null
-  try { return await rpcAluno('obter_meu_perfil') }
+  try {
+    const perfil = await rpcAluno('obter_meu_perfil')
+    return perfil
+  }
   catch (e) { if (e?.codigo === 'sessao_invalida') return null; throw e }
 }
 
@@ -1089,7 +1265,8 @@ export const atualizarStatusAlunoMissao = async (missaoId, alunoId, novoStatus) 
 // (era assim numa versão antiga do schema) — agora "pets" tem turma_id,
 // então busca as duas em paralelo e junta no mesmo formato que
 // listarTurmas() já usa pro professor, pra manter as duas pontas iguais.
-export async function buscarTurmaDoAluno(turmaId) {
+// opcoes.lancarErro = true: relança a falha de consulta em vez de devolver null (que também significa "sem turma").
+export async function buscarTurmaDoAluno(turmaId, opcoes = {}) {
   if (!turmaId) return null // aluno ainda sem turma atribuída
 
   try {
@@ -1116,6 +1293,7 @@ export async function buscarTurmaDoAluno(turmaId) {
     }
   } catch (error) {
     console.error('Erro ao buscar turma do aluno:', error.message)
+    if (opcoes.lancarErro) throw error
     return null
   }
 }
@@ -1132,7 +1310,9 @@ export async function buscarTurmaDoAluno(turmaId) {
 // implementei isso pra não fingir um comportamento que o banco não
 // sustenta. Se quiserem esse conceito de volta, é mudança de schema, não
 // só de código — falar com o Matheus antes.
-export async function listarMissoesDoAluno(alunoId) {
+// opcoes.lancarErro = true: em vez de esconder a falha devolvendo [], relança o erro (com .codigo de
+// erroNuvem) para a tela distinguir "falhou" de "não há tarefas". Sem a opção, o comportamento é o de sempre.
+export async function listarMissoesDoAluno(alunoId, opcoes = {}) {
   try {
     if (!(await temTokenAluno())) return []   // atalho local "loja": não há aluno no servidor
     // Tarefas ativas da turma do ALUNO DO TOKEN + o progresso dele (o parâmetro alunoId é ignorado).
@@ -1146,9 +1326,20 @@ export async function listarMissoesDoAluno(alunoId) {
       icone: m.icone,
       status: m.status || 'pendente', // sem linha em alunos_missoes ainda = pendente
       atualizadoEm: m.atualizado_em || null,
+      // Campos que o RPC já devolvia e a lista descartava (usados pela trilha e pelo calendário).
+      etapas: Array.isArray(m.etapas) ? m.etapas.map((e, index) => ({
+        titulo: String(e?.titulo ?? ''),
+        descricao: String(e?.descricao ?? ''),
+        moedas: Number(e?.moedas) || 0,
+        statusEnvio: (Array.isArray(m.etapas_status) ? m.etapas_status.find(s => Number(s?.etapa_ordem) === index + 1)?.status : null) || null,
+      })) : [],
+      etapaAtual: Number(m.etapa_atual) || 0,
+      xpAluno: Number(m.xp_aluno) || 0,
+      moedas: Number(m.moedas) || 0,
     }))
   } catch (error) {
     console.error('Erro ao listar missões do aluno:', error.message)
+    if (opcoes.lancarErro) throw error
     return []
   }
 }
@@ -1169,7 +1360,7 @@ export async function buscarProgressoMissao(alunoId, missaoId) {
 }
 
 // "Iniciar" = o ALUNO (token dele) registra a missão como pendente. Nunca aprova.
-// Aluno avança UMA etapa da própria tarefa (o servidor credita o XP da etapa uma única vez e valida turma/PET/ordem).
+// Aluno avança UMA tarefa da trilha; o servidor valida turma/PET/ordem e não credita XP.
 export async function avancarEtapaTarefa(missaoId) {
   return rpcAluno('aluno_avancar_etapa', { p_missao_id: missaoId })
 }
@@ -1195,17 +1386,30 @@ export async function consultarXP(_alunoId) {
   }
 }
 
-export async function listarConquistasDoAluno(alunoId) {
+// opcoes.lancarErro = true: relança a falha em vez de devolver [] (ver listarMissoesDoAluno).
+export async function listarConquistasDoAluno(alunoId, opcoes = {}) {
   try {
     if (!(await temTokenAluno())) return []
     return (await rpcAluno('aluno_minhas_conquistas')) || []   // as do ALUNO DO TOKEN (o parâmetro é ignorado)
   } catch (error) {
     console.error('Erro ao listar conquistas do aluno:', error.message)
+    if (opcoes.lancarErro) throw error
     return []
   }
 }
 
-export async function consultarProgressoGeral(alunoId) {
+export async function listarNotificacoesConquistasAluno() {
+  if (!(await temTokenAluno())) return []
+  return (await rpcAluno('aluno_notificacoes_conquistas')) || []
+}
+
+export async function marcarNotificacaoConquistaVista(id) {
+  if (id == null || !(await temTokenAluno())) return
+  await rpcAluno('aluno_marcar_notificacao_conquista', { p_notificacao_id: id })
+}
+
+// opcoes.lancarErro = true: relança a falha em vez de devolver o objeto zerado (ver listarMissoesDoAluno).
+export async function consultarProgressoGeral(alunoId, opcoes = {}) {
   const vazio = { xp: 0, nome: '', turmaId: null, missoesAprovadas: 0, conquistas: 0 }
   try {
     if (!(await temTokenAluno())) return vazio   // atalho local "loja": sem perfil no servidor
@@ -1219,7 +1423,7 @@ export async function consultarProgressoGeral(alunoId) {
     }
   } catch (error) {
     console.error('Erro ao consultar progresso geral do aluno:', error.message)
+    if (opcoes.lancarErro) throw error
     return vazio
   }
 }
-

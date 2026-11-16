@@ -16,7 +16,8 @@ Conferência feita com `has_table_privilege` / `pg_policies` / `relrowsecurity` 
 | `missoes` | — | — | leitura: `staff_listar_missoes` (prof.: as suas + ligadas às suas turmas), `aluno_minhas_missoes` (ativas da própria turma). Escrita: `staff_salvar_missao`, `staff_salvar_tarefa_global`, `staff_excluir_missao` |
 | `missoes_turmas` | — | — | leitura: embutida em `staff_listar_missoes` (vínculos). Escrita: `staff_definir_turmas_missao`, `staff_atribuir_tarefa_global`, `staff_definir_ativa_missao_turma`, `staff_remover_missao_da_turma` |
 | `alunos_missoes` | — | — | leitura: `staff_listar_status_missoes` (prof.: alunos das suas turmas), `aluno_minhas_missoes` (o próprio). Escrita: `aluno_definir_status_missao`, `aluno_avancar_etapa`, `staff_definir_status_missao` |
-| `conquistas` | — | — | leitura: `aluno_minhas_conquistas`, `aluno_meu_progresso_geral` (contagem; só as do token). Escrita: gatilhos do banco |
+| `conquistas` | — | — | leitura: `aluno_minhas_conquistas` (catálogo global + estado próprio), `aluno_meu_progresso_geral` (contagem própria). Escrita: gatilhos do banco |
+| `regras_conquistas`, `alunos_conquistas_acessos` | — | — | catálogo e frequência são privados; leitura/escrita apenas por RPCs e gatilhos internos |
 | `alunos` | — (nem por coluna) | — | `cadastrar_aluno`, `entrar_na_turma`, `obter_meu_perfil`, `staff_listar_alunos`, `staff_atualizar_aluno`, `staff_remover_aluno_da_turma`, `admin_*` |
 | `professores` | — | — | `admin_listar/inserir/atualizar/excluir/definir_senha`, `staff_listar_professores` (id/nome/e-mail) |
 | `alunos_missoes_etapas` | — | — | `aluno_avancar_etapa` |
@@ -59,6 +60,7 @@ Após a migration 28 e **antes** do fechamento, as leituras diretas antigas aind
 | `staff_listar_missoes` | professor / coord. / admin | professor: tarefas dele + as ligadas às suas turmas (com vínculos); coord./admin: todas |
 | `staff_listar_status_missoes` | professor / coord. / admin | professor: só alunos das suas turmas; sem nome/e-mail de aluno |
 | `aluno_minha_turma`, `aluno_minhas_missoes`, `aluno_meu_progresso_geral`, `aluno_minhas_conquistas` | **aluno** (token de aluno) | o aluno vem do token; **não existe parâmetro de id**. Token de staff é recusado (PT401) e vice-versa |
+| `aluno_registrar_acesso_diario` | **aluno** (token de aluno) | registra no máximo um acesso por dia e verifica conquistas globais; nenhum ID é aceito do cliente |
 | **Storage (migration 20261029)** | | |
 | `storage_autorizar_operacao` | **só `service_role`** (a Edge Function). NÃO executável por anon/authenticated/PUBLIC | exige sessão de staff com papel **admin** (PT401/PT403), operação/pasta válidas (PT422), limite 60/15 min (PT429) e, na remoção, objeto não referenciado (PT409) |
 

@@ -153,7 +153,7 @@ export default function AdminDashboardScreen({ usuario, onLogout, onAdminAtualiz
           <AdminAction icon="🐾" title="Adicionar PET" description="Cadastre uma imagem PET disponível para uma turma." onPress={() => abrirFormulario('pet')} />
           <AdminAction icon="👥" title="Adicionar colaborador" description="Crie um acesso de professor ou coordenador." onPress={() => abrirFormulario('colaborador')} />
           <AdminAction icon="🧑‍🎓" title="Adicionar aluno" description="Crie o acesso do aluno; ele poderá entrar na turma pelo código do professor." onPress={() => abrirFormulario('aluno')} />
-          <AdminAction icon="🧭" title="Gerenciar tarefas" description="Crie e edite tarefas, etapas e XP de cada etapa." onPress={() => setTarefasVisivel(true)} />
+          <AdminAction icon="🧭" title="Gerenciar tarefas" description="Crie e edite tarefas e etapas." onPress={() => setTarefasVisivel(true)} />
           <AdminAction icon="🛍️" title="Adicionar item à loja" description="Cadastre acessórios com imagem e preço em moedas." onPress={() => abrirFormulario('acessorio')} />
           <AdminAction icon="📝" title="Alterar dados" description="Consulte, edite e exclua professores, coordenadores, alunos, PETs e itens da loja." onPress={() => setAlterarDadosVisivel(true)} />
         </View>
