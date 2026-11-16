@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'
+import * as ImagePicker from 'expo-image-picker'
 import { listarIconesMissoes, listarTarefasAdmin, salvarTarefaAdmin, removerMissaoStorage } from '../services/storage'
 import { colors, fonts } from '../theme'
 
@@ -10,6 +11,7 @@ export default function AdminTarefasManager({ visible, onClose }) {
   const [icones, setIcones] = useState([])
   const [form, setForm] = useState(VAZIA)
   const [editando, setEditando] = useState(false)
+  const [imagemInsignia, setImagemInsignia] = useState(null)
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
   const [salvando, setSalvando] = useState(false)
@@ -26,7 +28,7 @@ export default function AdminTarefasManager({ visible, onClose }) {
     finally { setCarregando(false) }
   }
 
-  useEffect(() => { if (visible) { setForm(VAZIA); setEditando(false); setConfirmandoExclusao(false); carregar() } }, [visible])
+  useEffect(() => { if (visible) { setForm(VAZIA); setImagemInsignia(null); setEditando(false); setConfirmandoExclusao(false); carregar() } }, [visible])
 
   function editar(tarefa) {
     setForm({
@@ -41,6 +43,7 @@ export default function AdminTarefasManager({ visible, onClose }) {
         : [{ titulo: '', descricao: '', moedas: '0' }],
     })
     setErro('')
+    setImagemInsignia(null)
     setConfirmandoExclusao(false)
     setEditando(true)
   }
@@ -50,19 +53,34 @@ export default function AdminTarefasManager({ visible, onClose }) {
     const etapasValidas = form.etapas.every(e => e.titulo.trim() && e.descricao.trim() && String(e.moedas ?? '').trim() !== '' && Number.isSafeInteger(Number(e.moedas)) && Number(e.moedas) >= 0 && Number(e.moedas) <= 100000)
     if (!form.nome.trim()) return setErro('Preencha o título da trilha.')
     if (!form.descricao.trim()) return setErro('Preencha a descrição da trilha.')
-    if (!form.icone) return setErro('Escolha um emoji ou uma imagem para a trilha.')
+    if (!form.icone && !imagemInsignia) return setErro('Escolha um emoji ou uma imagem para a trilha.')
     if (String(form.moedas).trim() === '' || !Number.isSafeInteger(moedas) || moedas < 0 || moedas > 100000) return setErro('Informe um bônus inteiro entre 0 e 100.000 moedas.')
     if (!form.etapas.length || !etapasValidas) return setErro('Preencha título, descrição e moedas inteiras entre 0 e 100.000 para cada tarefa.')
     setSalvando(true)
     setErro('')
     try {
-      await salvarTarefaAdmin({ ...form, moedas })
+      await salvarTarefaAdmin({ ...form, imagemInsignia, moedas })
       setForm(VAZIA)
+      setImagemInsignia(null)
       setEditando(false)
       setConfirmandoExclusao(false)
       await carregar()
     } catch (e) { setErro(e?.message || 'Não foi possível salvar. Verifique as políticas do Supabase.') }
     finally { setSalvando(false) }
+  }
+
+  async function escolherImagemInsignia() {
+    try {
+      const permissao = await ImagePicker.requestMediaLibraryPermissionsAsync()
+      if (!permissao.granted) return setErro('Permita o acesso à galeria para escolher a imagem.')
+      const resultado = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, quality: 0.85 })
+      if (resultado.canceled) return
+      const imagem = resultado.assets?.[0]
+      if (!imagem) return
+      if (imagem.fileSize && imagem.fileSize > 2 * 1024 * 1024) return setErro('A imagem da insígnia precisa ter no máximo 2 MB.')
+      setImagemInsignia(imagem)
+      setErro('')
+    } catch (e) { setErro(e?.message || 'Não foi possível abrir a galeria de imagens.') }
   }
 
   async function excluirTarefa() {
@@ -87,12 +105,21 @@ export default function AdminTarefasManager({ visible, onClose }) {
         <TouchableOpacity onPress={onClose}><Text style={s.close}>×</Text></TouchableOpacity>
       </View>
       {editando ? <ScrollView contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
-        <TouchableOpacity onPress={() => { setEditando(false); setForm(VAZIA); setErro(''); setConfirmandoExclusao(false) }}><Text style={s.back}>‹ Voltar à lista</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => { setEditando(false); setForm(VAZIA); setImagemInsignia(null); setErro(''); setConfirmandoExclusao(false) }}><Text style={s.back}>‹ Voltar à lista</Text></TouchableOpacity>
         <Text style={s.label}>Título da trilha *</Text><TextInput value={form.nome} onChangeText={nome => setForm(v => ({ ...v, nome }))} style={s.input} placeholder="Ex.: Horta Caseira" />
         <Text style={s.label}>Descrição da trilha *</Text><TextInput value={form.descricao} onChangeText={descricao => setForm(v => ({ ...v, descricao }))} style={[s.input, { minHeight: 68 }]} multiline placeholder="Conte do que se trata esta trilha" />
-        <Text style={s.label}>Emoji da trilha *</Text>
+        <Text style={s.label}>Emoji da trilha</Text>
         <View style={s.choices}>{EMOJIS_TRILHA.map(emoji => <TouchableOpacity key={emoji} onPress={() => setForm(v => ({ ...v, icone: emoji }))} style={[s.emojiChoice, form.icone === emoji && s.choiceActive]}><Text style={s.emojiText}>{emoji}</Text></TouchableOpacity>)}</View>
         {!!icones.length && <><Text style={s.label}>Ou escolha uma imagem cadastrada</Text><View style={s.choices}>{icones.map(item => <TouchableOpacity key={item.id} onPress={() => setForm(v => ({ ...v, icone: item.icone }))} style={[s.choice, form.icone === item.icone && s.choiceActive]}><Text style={s.choiceText}>{item.nome}</Text></TouchableOpacity>)}</View></>}
+        <Text style={s.label}>Imagem da insígnia (opcional)</Text>
+        <TouchableOpacity style={s.imagePicker} onPress={escolherImagemInsignia}>
+          {(imagemInsignia?.uri || /^https?:\/\//i.test(form.icone || ''))
+            ? <Image source={{ uri: imagemInsignia?.uri || form.icone }} style={s.badgePreview} resizeMode="contain" />
+            : <Text style={s.imagePickerText}>＋ Escolher imagem</Text>}
+          {!!imagemInsignia && <Text style={s.choiceText}>Imagem nova selecionada · toque para trocar</Text>}
+        </TouchableOpacity>
+        {!!imagemInsignia && <TouchableOpacity onPress={() => setImagemInsignia(null)}><Text style={s.remove}>Remover imagem nova</Text></TouchableOpacity>}
+        <Text style={s.muted}>A imagem será usada como insígnia e pode ser adicionada também ao editar trilhas antigas. PNG, JPEG, WEBP ou GIF até 2 MB.</Text>
         <Text style={s.label}>Bônus ao concluir a trilha (moedas) *</Text><Text style={s.muted}>Recebido após a coordenação aprovar a trilha.</Text><TextInput value={form.moedas} onChangeText={moedas => setForm(v => ({ ...v, moedas }))} style={s.input} keyboardType="number-pad" />
         <Text style={s.label}>Tarefas da trilha</Text>
         {form.etapas.map((etapa, index) => <View key={index} style={s.stage}>
@@ -131,7 +158,7 @@ export default function AdminTarefasManager({ visible, onClose }) {
         {!!erro && <Text style={s.error}>{erro}</Text>}
         <TouchableOpacity style={s.primary} onPress={salvar} disabled={salvando || confirmandoExclusao}>{salvando ? <ActivityIndicator color="#fff" /> : <Text style={s.primaryText}>{form.id ? 'Salvar tarefa' : 'Criar tarefa'}</Text>}</TouchableOpacity>
       </ScrollView> : <>
-        <TouchableOpacity style={s.primary} onPress={() => { setForm({ ...VAZIA }); setEditando(true); setErro('') }}><Text style={s.primaryText}>+ Nova tarefa</Text></TouchableOpacity>
+        <TouchableOpacity style={s.primary} onPress={() => { setForm({ ...VAZIA }); setImagemInsignia(null); setEditando(true); setErro('') }}><Text style={s.primaryText}>+ Nova tarefa</Text></TouchableOpacity>
         {carregando ? <ActivityIndicator style={{ margin: 24 }} color={colors.green} /> : <ScrollView style={s.list}>
           {tarefas.map(t => <TouchableOpacity key={t.id} style={s.task} onPress={() => editar(t)}>
             <View style={s.taskHeading}>
@@ -161,6 +188,7 @@ const s = StyleSheet.create({
   coinRow: { flexDirection: 'row', alignItems: 'center', gap: 8 }, coinInput: { flex: 1, textAlign: 'center' }, coinStep: { width: 42, height: 42, borderRadius: 12, backgroundColor: colors.greenLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border }, coinStepText: { color: colors.green, fontSize: 22, fontFamily: fonts.bold },
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, choice: { borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18 }, choiceActive: { borderColor: colors.green, backgroundColor: colors.greenLight }, choiceText: { color: colors.dark, fontFamily: fonts.regular },
   emojiChoice: { width: 44, height: 44, borderWidth: 1, borderColor: colors.border, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white }, emojiText: { fontSize: 25 },
+  imagePicker: { minHeight: 94, padding: 10, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.green, backgroundColor: colors.cream, alignItems: 'center', justifyContent: 'center', gap: 6 }, imagePickerText: { color: colors.green, fontFamily: fonts.semibold }, badgePreview: { width: 72, height: 72 },
   stage: { padding: 10, backgroundColor: '#f8f6df', borderRadius: 12, marginTop: 8, gap: 6 }, stageTitle: { fontFamily: fonts.semibold, color: colors.dark }, muted: { color: colors.muted, fontFamily: fonts.regular, marginTop: 5 }, error: { color: '#c0392b', fontFamily: fonts.semibold, marginTop: 10 },
   primary: { marginTop: 12, minHeight: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.green, padding: 11, borderRadius: 10 }, primaryText: { color: '#fff', fontFamily: fonts.bold }, secondary: { marginTop: 8, alignItems: 'center', padding: 10 }, secondaryText: { color: colors.green, fontFamily: fonts.semibold },
   deleteButton: { marginTop: 18, minHeight: 42, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e3a5a5', borderRadius: 10, padding: 10 }, deleteText: { color: '#bd2727', fontFamily: fonts.bold },

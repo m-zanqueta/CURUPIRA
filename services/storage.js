@@ -112,24 +112,38 @@ export async function listarTarefasAdmin() {
 // Trilha global: cada tarefa entrega moedas ao concluir e a trilha dá bônus após aprovação.
 // Nenhuma dessas recompensas altera o XP do aluno ou do PET.
 export async function salvarTarefaAdmin(tarefa) {
+  const iconeAnterior = tarefa.icone ?? null
+  const imagemEnviada = tarefa.imagemInsignia ? await enviarImagemAdmin(tarefa.imagemInsignia, 'icones-missoes') : null
   const etapas = (tarefa.etapas || []).map(etapa => ({
     titulo: String(etapa.titulo || '').trim(),
     descricao: String(etapa.descricao || '').trim(),
     moedas: Number(etapa.moedas) || 0,
   }))
-  const resposta = await rpcStaff('staff_salvar_tarefa_global', {
+  let resposta
+  try { resposta = await rpcStaff('staff_salvar_tarefa_global', {
     p_missao_id: tarefa.id ?? null,
     p_nome: String(tarefa.nome || '').trim(),
     p_descricao: String(tarefa.descricao || '').trim(),
     p_etapas: etapas,
     p_moedas: Number(tarefa.moedas) || 0,
-    p_icone: tarefa.icone ?? null,
+    p_icone: imagemEnviada?.url || tarefa.icone || null,
     p_ativa: tarefa.ativa ?? true,
-  })
+  }) } catch (error) {
+    if (imagemEnviada) await descartarImagemEnviada('icones-missoes', imagemEnviada.path)
+    throw error
+  }
   // Detecta migrations antigas que aceitam a RPC, mas ignoram o valor de moedas por tarefa.
   const etapasSalvas = Array.isArray(resposta?.etapas) ? resposta.etapas : null
   if (!etapasSalvas || etapasSalvas.length !== etapas.length || etapasSalvas.some((etapa, i) => Number(etapa?.moedas) !== etapas[i].moedas)) {
     throw new Error('O banco não salvou as moedas por tarefa. Execute a migration 20261118_recompensas_por_tarefa_e_emoji_trilha.sql no Supabase e tente novamente.')
+  }
+  if (imagemEnviada && /^https?:\/\//i.test(iconeAnterior || '')) {
+    const marcador = '/storage/v1/object/public/pets-images/'
+    const posicao = iconeAnterior.indexOf(marcador)
+    if (posicao >= 0) {
+      const caminhoAntigo = decodeURIComponent(iconeAnterior.slice(posicao + marcador.length).split(/[?#]/)[0])
+      if (caminhoAntigo.startsWith('icones-missoes/')) await descartarImagemEnviada('icones-missoes', caminhoAntigo)
+    }
   }
   return resposta
 }
@@ -504,7 +518,6 @@ export async function buscarAluno(email, senha) {
     if (!error) {
       if (!data) return null // e-mail ou senha incorretos
       await salvarTokenAluno(data.token)
-      await registrarAcessoDiarioAluno()
       return data.aluno
     }
     // Só "função inexistente" (migration não aplicada) autoriza o modo legado. Qualquer outro erro
@@ -700,6 +713,14 @@ export async function registrarAcessoDiarioAluno() {
     const { error } = await supabase.rpc('aluno_registrar_acesso_diario', { p_token: token })
     if (error && !funcaoAusente(error)) console.warn('Não foi possível registrar o acesso diário do aluno:', error.code)
   } catch (error) { console.warn('Não foi possível registrar o acesso diário do aluno:', error?.message) }
+}
+
+export async function fazerCarinhoDiarioNoPet() {
+  return rpcAluno('aluno_fazer_carinho_pet')
+}
+
+export async function consultarCalendarioCarinho(ano, mes) {
+  return rpcAluno('aluno_calendario_carinho', { p_ano: ano, p_mes: mes })
 }
 
 // Códigos de erro (e.codigo) que o app distingue:
@@ -934,7 +955,6 @@ export async function restaurarPerfilAluno() {
   if (!(await temTokenAluno())) return null
   try {
     const perfil = await rpcAluno('obter_meu_perfil')
-    await registrarAcessoDiarioAluno()
     return perfil
   }
   catch (e) { if (e?.codigo === 'sessao_invalida') return null; throw e }
@@ -1301,6 +1321,16 @@ export async function listarConquistasDoAluno(alunoId, opcoes = {}) {
     if (opcoes.lancarErro) throw error
     return []
   }
+}
+
+export async function listarNotificacoesConquistasAluno() {
+  if (!(await temTokenAluno())) return []
+  return (await rpcAluno('aluno_notificacoes_conquistas')) || []
+}
+
+export async function marcarNotificacaoConquistaVista(id) {
+  if (id == null || !(await temTokenAluno())) return
+  await rpcAluno('aluno_marcar_notificacao_conquista', { p_notificacao_id: id })
 }
 
 // opcoes.lancarErro = true: relança a falha em vez de devolver o objeto zerado (ver listarMissoesDoAluno).

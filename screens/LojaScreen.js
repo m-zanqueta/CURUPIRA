@@ -122,7 +122,7 @@ function ModalConfirmarCompra({ item, saldo, processando, erro, onCancelar, onCo
   )
 }
 
-export default function LojaScreen({ onLogout, aluno, turma }) {
+export default function LojaScreen({ onLogout, aluno, turma, onConquistasAtualizadas }) {
   const [cat,          setCat]          = useState('todos')
   const [comprados,    setComprados]    = useState([])
   const [produtos,     setProdutos]     = useState([])
@@ -200,6 +200,7 @@ export default function LojaScreen({ onLogout, aluno, turma }) {
     
     try {
       const r = await comprarItem(aluno.id, p.id)
+      onConquistasAtualizadas?.()
       if (r?.saldo != null) {
         setSaldoServidor(r.saldo)
         setComprados(prev => (prev.some(id => String(id) === String(p.id)) ? prev : [...prev, p.id]))

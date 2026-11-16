@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { View, StyleSheet, TouchableOpacity, ScrollView, Image, Platform } from 'react-native'
 import { Text, ActivityIndicator } from 'react-native-paper'
 import { colors, fonts } from '../theme'
 import { mensagemDeErroAluno, analisarData } from './useDadosAluno'
+import { consultarCalendarioCarinho } from '../services/storage'
 
 // Página "Calendário" do aluno (página 0 do paginador do PetScreen).
 //
@@ -73,14 +74,27 @@ function dataLonga(d) {
 }
 function maiuscula(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : t }
 
-export default function PaginaCalendario({ width, petImage, missoes = [], estado, erro, onRecarregar }) {
+export default function PaginaCalendario({ width, petImage, alunoId, atualizacaoCarinho = 0, missoes = [], estado, erro, onRecarregar }) {
   const hoje = new Date()
   const [mesAtual, setMesAtual] = useState({ ano: hoje.getFullYear(), mes: hoje.getMonth() })
   const [diaSelecionado, setDiaSelecionado] = useState(chaveDoDia(hoje))
+  const [calendarioCarinho, setCalendarioCarinho] = useState(null)
+  const [erroCarinho, setErroCarinho] = useState(false)
+
+  useEffect(() => {
+    let ativo = true
+    if (!alunoId || alunoId === 'loja') return () => { ativo = false }
+    consultarCalendarioCarinho(mesAtual.ano, mesAtual.mes + 1)
+      .then(dados => { if (ativo) { setCalendarioCarinho(dados); setErroCarinho(false) } })
+      .catch(e => { console.warn('Não foi possível carregar o calendário de carinhos:', e?.codigo || e?.message); if (ativo) setErroCarinho(true) })
+    return () => { ativo = false }
+  }, [alunoId, mesAtual.ano, mesAtual.mes, atualizacaoCarinho])
 
   const porDia = useMemo(() => agruparPorDia(missoes), [missoes])
   const grade = useMemo(() => gradeDoMes(mesAtual.ano, mesAtual.mes), [mesAtual])
   const chaveHoje = chaveDoDia(hoje)
+  const chaveHojeServidor = calendarioCarinho?.hoje || chaveHoje
+  const diasComCarinho = useMemo(() => new Set((calendarioCarinho?.dias || []).map(d => d.dia)), [calendarioCarinho])
 
   const nomeMes = maiuscula(new Date(mesAtual.ano, mesAtual.mes, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }))
   const noMes = grade.filter(d => d.getMonth() === mesAtual.mes)
@@ -114,7 +128,7 @@ export default function PaginaCalendario({ width, petImage, missoes = [], estado
         <View style={p.calendarHeroRow}>
           <View style={p.calendarHeroText}>
             <Text style={p.calendarTitle}>📅 Calendário</Text>
-            <Text style={p.calendarSubTitle}>Suas atividades por dia</Text>
+            <Text style={p.calendarSubTitle}>Carinho + tarefas</Text>
           </View>
           <MiniPet uri={petImage} emoji="🌿" style={p.calendarPet} />
         </View>
@@ -132,29 +146,16 @@ export default function PaginaCalendario({ width, petImage, missoes = [], estado
         </View>
       </View>
 
-      {carregando ? (
-        <View style={p.centro}>
-          <ActivityIndicator color={colors.green} />
-          <Text style={p.centroTexto}>Carregando suas atividades…</Text>
-        </View>
-      ) : falhou ? (
-        <View style={p.centro}>
-          <Text style={p.centroEmoji}>😕</Text>
-          <Text style={p.centroTitulo}>Não foi possível carregar</Text>
-          <Text style={p.centroTexto}>{mensagemDeErroAluno(erro)}</Text>
-          <TouchableOpacity onPress={onRecarregar} activeOpacity={0.85} style={p.botao} accessibilityRole="button">
-            <Text style={p.botaoTxt}>Tentar de novo</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <ScrollView contentContainerStyle={p.calendarContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={p.calendarContent} showsVerticalScrollIndicator={false}>
           <View style={p.calendarCard}>
             {grade.map((data, i) => {
               const k = chaveDoDia(data)
               const mesmoMes = data.getMonth() === mesAtual.mes
               const selecionado = k === diaSelecionado
-              const ehHoje = k === chaveHoje
+              const ehHoje = k === chaveHojeServidor
               const qtd = porDia[k]?.length || 0
+              const feito = diasComCarinho.has(k)
+              const faltou = !!calendarioCarinho?.inicio && k >= calendarioCarinho.inicio && k < chaveHojeServidor && !feito
               return (
                 <TouchableOpacity
                   key={`${k}-${i}`}
@@ -165,23 +166,32 @@ export default function PaginaCalendario({ width, petImage, missoes = [], estado
                     if (!mesmoMes) setMesAtual({ ano: data.getFullYear(), mes: data.getMonth() })
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel={`${data.getDate()} de ${data.toLocaleDateString('pt-BR', { month: 'long' })}${qtd ? `, ${qtd} atividade${qtd > 1 ? 's' : ''}` : ''}`}
+                  accessibilityLabel={`${data.getDate()} de ${data.toLocaleDateString('pt-BR', { month: 'long' })}${feito ? ', carinho feito, mais 5 XP' : faltou ? ', dia sem carinho' : ''}${qtd ? `, ${qtd} atividade${qtd > 1 ? 's' : ''}` : ''}`}
                 >
-                  <View style={[p.dayCircle, ehHoje && !selecionado && p.todayRing, selecionado && p.selectedDay]}>
+                  <View style={[p.dayCircle, feito && !selecionado && p.dayLogged, faltou && !selecionado && p.dayMissed, ehHoje && !selecionado && p.todayRing, selecionado && p.selectedDay]}>
                     <Text style={[p.dayText, !mesmoMes && p.mutedDay, selecionado && p.selectedDayText]}>{data.getDate()}</Text>
                   </View>
-                  {qtd > 0 ? <View style={[p.dayMark, selecionado && p.dayMarkSelected]} /> : <View style={p.dayMarkSpace} />}
+                  {feito ? <Text style={[p.attendanceMark, selecionado && p.attendanceMarkSelected]}>✓</Text> : faltou ? <Text style={p.missedMark}>•</Text> : qtd > 0 ? <View style={[p.dayMark, selecionado && p.dayMarkSelected]} /> : <View style={p.dayMarkSpace} />}
                 </TouchableOpacity>
               )
             })}
           </View>
 
           <View style={p.calendarToday}>
-            <Text style={p.calendarTodayEmoji}>🌿</Text>
+            <Text style={p.calendarTodayEmoji}>🐾</Text>
             <Text style={p.calendarTodayText} numberOfLines={1}>{maiuscula(dataLonga(dataSelecionada))}</Text>
           </View>
 
-          {doDia.length > 0 ? doDia.map(({ missao, data }) => (
+          {(() => {
+            const selecionadoFeito = diasComCarinho.has(diaSelecionado)
+            const selecionadoHoje = diaSelecionado === chaveHojeServidor
+            const selecionadoPassou = !!calendarioCarinho?.inicio && diaSelecionado >= calendarioCarinho.inicio && diaSelecionado < chaveHojeServidor
+            const status = selecionadoFeito ? ['🌟', 'Carinho feito! +5 XP'] : selecionadoHoje ? ['🐾', 'Segure o PET hoje · +5 XP'] : selecionadoPassou ? ['💚', 'Amanhã tem mais!'] : ['✨', 'Um dia novo vem aí!']
+            return <View style={[p.attendanceCard, selecionadoFeito && p.attendanceCardDone]}><Text style={p.attendanceEmoji}>{status[0]}</Text><Text style={p.attendanceText}>{erroCarinho ? 'Não deu para carregar os carinhos.' : status[1]}</Text></View>
+          })()}
+          <View style={p.attendanceLegend}><Text style={p.legendDone}>✓ Carinho feito</Text><Text style={p.legendMissed}>• Dia sem carinho</Text><Text style={p.legendReward}>+5 XP por dia</Text></View>
+
+          {carregando ? <View style={p.vazioDia}><ActivityIndicator color={colors.green} /><Text style={p.vazioDiaTxt}>Carregando tarefas…</Text></View> : falhou ? <View style={p.vazioDia}><Text style={p.vazioDiaTxt}>{mensagemDeErroAluno(erro)}</Text><TouchableOpacity onPress={onRecarregar} accessibilityRole="button"><Text style={p.linkTxt}>Tentar de novo</Text></TouchableOpacity></View> : doDia.length > 0 ? doDia.map(({ missao, data }) => (
             <View key={missao.id} style={p.calendarEvent}>
               <View style={p.calendarEventIcon}><Text style={p.calendarEventEmoji}>{/^https?:\/\//i.test(missao.icone || '') ? '🌱' : (missao.icone || '🌱')}</Text></View>
               <View style={p.calendarEventInfo}>
@@ -209,14 +219,13 @@ export default function PaginaCalendario({ width, petImage, missoes = [], estado
           )}
 
           <View style={p.nota}>
-            <Text style={p.notaTitulo}>Sobre as datas</Text>
+            <Text style={p.notaTitulo}>Seu carinho conta!</Text>
             <Text style={p.notaTxt}>
-              O dia mostrado é o da última atualização da tarefa (quando você começou, avançou uma etapa ou entregou). Não é prazo de entrega nem, necessariamente, o dia em que você terminou.
-              {semData > 0 ? ` ${semData} ${semData === 1 ? 'tarefa ainda não foi iniciada e por isso não aparece' : 'tarefas ainda não foram iniciadas e por isso não aparecem'} no calendário.` : ''}
+              Segure o PET todo dia para ganhar +5 XP. As tarefas mostram o último dia em que você mexeu nelas.
+              {semData > 0 ? ` ${semData} ${semData === 1 ? 'tarefa ainda não começou.' : 'tarefas ainda não começaram.'}` : ''}
             </Text>
           </View>
-        </ScrollView>
-      )}
+      </ScrollView>
     </View>
   )
 }
@@ -238,6 +247,8 @@ const p = StyleSheet.create({
   calendarCard: { flexDirection: 'row', flexWrap: 'wrap', backgroundColor: colors.white, borderRadius: 20, paddingVertical: 12, paddingHorizontal: 4, borderWidth: 1, borderColor: colors.border },
   dayCell: { width: '14.28%', height: 42, alignItems: 'center', justifyContent: 'center', gap: 3 },
   dayCircle: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  dayLogged: { backgroundColor: colors.greenLight },
+  dayMissed: { backgroundColor: '#FFF0EC' },
   todayRing: { borderWidth: 2, borderColor: colors.green },
   selectedDay: { backgroundColor: colors.green },
   dayText: { color: '#4B4B43', fontSize: 13, fontFamily: fonts.bold },
@@ -246,9 +257,20 @@ const p = StyleSheet.create({
   dayMark: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.yellow, position: 'absolute', bottom: 1 },
   dayMarkSelected: { backgroundColor: colors.white },
   dayMarkSpace: { width: 5, height: 5, position: 'absolute', bottom: 1 },
+  attendanceMark: { position: 'absolute', bottom: -2, color: colors.green, fontSize: 9, lineHeight: 10, fontFamily: fonts.extrabold },
+  attendanceMarkSelected: { color: colors.white },
+  missedMark: { position: 'absolute', bottom: -3, color: '#C65A47', fontSize: 12, lineHeight: 12, fontFamily: fonts.extrabold },
   calendarToday: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 18, marginBottom: 4, backgroundColor: colors.purple, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, borderBottomWidth: 4, borderBottomColor: '#4D0D75' },
   calendarTodayEmoji: { fontSize: 22 },
   calendarTodayText: { flex: 1, color: colors.white, fontSize: 15, fontFamily: fonts.extrabold },
+  attendanceCard: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 16, backgroundColor: colors.yellowLight, borderWidth: 1.5, borderColor: '#EBDDA0' },
+  attendanceCardDone: { backgroundColor: colors.greenLight, borderColor: colors.green },
+  attendanceEmoji: { fontSize: 26 },
+  attendanceText: { flexShrink: 1, color: colors.dark, fontSize: 16, fontFamily: fonts.extrabold, textAlign: 'center' },
+  attendanceLegend: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', gap: 5, marginTop: 8, marginBottom: 6 },
+  legendDone: { color: colors.green, fontSize: 11, fontFamily: fonts.bold },
+  legendMissed: { color: '#A54A3C', fontSize: 11, fontFamily: fonts.bold },
+  legendReward: { color: '#856500', fontSize: 11, fontFamily: fonts.bold },
   calendarEvent: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.white, borderRadius: 16, padding: 11, marginTop: 8, borderWidth: 1.5, borderColor: colors.border, borderBottomWidth: 4, borderBottomColor: '#D8D4C1' },
   calendarEventIcon: { width: 54, height: 54, borderRadius: 16, backgroundColor: colors.greenLight, alignItems: 'center', justifyContent: 'center' },
   calendarEventEmoji: { fontSize: 32 },

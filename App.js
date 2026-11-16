@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Component } from 'react'
+import { useState, useEffect, useRef, useCallback, Component } from 'react'
 import { View, ActivityIndicator, Image, Text, StyleSheet, Animated, AppState } from 'react-native'
 import {
   useFonts,
@@ -45,7 +45,7 @@ const tema = {
   },
 }
 import { colors } from './theme'
-import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp, aoSessaoInvalida, temTokenAluno, restaurarSessaoStaff, restaurarPerfilAluno, registrarAcessoDiarioAluno } from './services/storage'
+import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp, aoSessaoInvalida, temTokenAluno, restaurarSessaoStaff, restaurarPerfilAluno, listarNotificacoesConquistasAluno, marcarNotificacaoConquistaVista } from './services/storage'
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
@@ -56,6 +56,7 @@ import AdminDashboardScreen from './screens/AdminDashboardScreen'
 import PetScreen from './screens/PetScreen'
 import LojaScreen from './screens/LojaScreen'
 import ErroScreen from './screens/ErroScreen'
+import ConquistaToast from './components/ConquistaToast'
 
 // Todo destino que o app sabe navegar. navegarCom() usa isso pra decidir
 // se o destino pedido é válido ou se deve cair na tela de erro (404).
@@ -101,15 +102,45 @@ function AppInterno() {
   const [aluno,         setAluno]         = useState(null)
   const [turmaAluno,    setTurmaAluno]    = useState(null)
   const [progressoAluno,setProgressoAluno]= useState(null)
+  const [notificacoesConquistas, setNotificacoesConquistas] = useState([])
+  const idsNotificacoes = useRef(new Set())
+  const verificarConquistasRef = useRef(null)
   const fadeAnim = useRef(new Animated.Value(1)).current
   const transicaoRef = useRef(0)
 
+  verificarConquistasRef.current = async () => {
+    if (!aluno?.id || aluno.id === 'loja') return
+    try {
+      const pendentes = await listarNotificacoesConquistasAluno()
+      setNotificacoesConquistas(atual => {
+        const novas = pendentes.filter(n => !idsNotificacoes.current.has(String(n.id)))
+        novas.forEach(n => idsNotificacoes.current.add(String(n.id)))
+        return [...atual, ...novas]
+      })
+    } catch (e) { console.warn('Não foi possível verificar conquistas:', e?.codigo || e?.message) }
+  }
+
+  const dispensarConquista = useCallback(async id => {
+    setNotificacoesConquistas(atual => atual.filter(n => String(n.id) !== String(id)))
+    try { await marcarNotificacaoConquistaVista(id) }
+    catch (e) { console.warn('Falha ao confirmar notificação de conquista:', e?.codigo || e?.message) }
+  }, [])
+
   useEffect(() => {
     const listener = AppState.addEventListener('change', estado => {
-      if (estado === 'active') registrarAcessoDiarioAluno()
+      if (estado === 'active') verificarConquistasRef.current?.()
     })
     return () => listener.remove()
   }, [])
+
+  useEffect(() => {
+    setNotificacoesConquistas([])
+    idsNotificacoes.current.clear()
+    if (!aluno?.id || aluno.id === 'loja' || !['pet', 'loja'].includes(tela)) return
+    verificarConquistasRef.current?.()
+    const timer = setInterval(() => verificarConquistasRef.current?.(), 15000)
+    return () => clearInterval(timer)
+  }, [aluno?.id, tela])
 
   const [fontsLoaded] = useFonts({
     Montserrat_400Regular,
@@ -410,6 +441,7 @@ function AppInterno() {
             progresso={progressoAluno}
             onLogout={sairAluno}
             onLoja={() => navegarCom('loja')}
+            onConquistasAtualizadas={() => verificarConquistasRef.current?.()}
           />
         )}
 
@@ -418,6 +450,7 @@ function AppInterno() {
             aluno={aluno}
             turma={turmaAluno}
             onLogout={() => aluno?.email === 'loja@gmail.com' ? sair() : navegarCom('pet')}
+            onConquistasAtualizadas={() => verificarConquistasRef.current?.()}
           />
         )}
 
@@ -425,6 +458,10 @@ function AppInterno() {
           <ErroScreen
             onVoltar={() => navegarCom(professor ? 'loginProfessor' : 'login')}
           />
+        )}
+
+        {['pet', 'loja'].includes(tela) && aluno?.id !== 'loja' && (
+          <ConquistaToast notificacao={notificacoesConquistas[0]} onDispensar={dispensarConquista} />
         )}
 
       </SafeAreaProvider>

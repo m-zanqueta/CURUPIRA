@@ -122,7 +122,8 @@ BEGIN
   INSERT INTO public.alunos_missoes_etapas (aluno_id,missao_id,etapa_ordem,turma_id,pet_id,xp,moedas,status,evidencia_path,enviada_em,corrigida_em)
   VALUES (v_aluno,p_missao_id,p_etapa_ordem,v_turma,v_pet,0,0,'enviado',p_caminho,now(),NULL)
   ON CONFLICT (aluno_id,missao_id,etapa_ordem) DO UPDATE
-    SET xp=0,moedas=0,status='enviado',evidencia_path=EXCLUDED.evidencia_path,enviada_em=now(),corrigida_em=NULL
+    SET xp=0,moedas=0,status='enviado',evidencia_path=EXCLUDED.evidencia_path,
+        enviada_em=COALESCE(alunos_missoes_etapas.enviada_em,EXCLUDED.enviada_em),corrigida_em=NULL
     WHERE alunos_missoes_etapas.status='recusado'
   RETURNING id INTO v_id;
   IF v_id IS NULL THEN RAISE EXCEPTION 'envio_duplicado' USING ERRCODE='PT409'; END IF;

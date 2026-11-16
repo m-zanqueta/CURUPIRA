@@ -8,7 +8,7 @@ import {
   Text, ActivityIndicator, Surface, ProgressBar, Chip,
 } from 'react-native-paper'
 import { colors, fonts } from '../theme'
-import { listarItensComprados, listarAcessoriosLoja, listarEquipados, atualizarEquipado } from '../services/storage'
+import { listarItensComprados, listarAcessoriosLoja, listarEquipados, atualizarEquipado, fazerCarinhoDiarioNoPet, consultarCalendarioCarinho } from '../services/storage'
 import IconeUI from '../components/IconeUI'
 import TextoContorno from '../components/TextoContorno'
 import PaginaCalendario from './PaginaCalendario'
@@ -284,12 +284,21 @@ function ModalItens({ visible, titulo, itens, selecionado, cor, carregando, onSe
   )
 }
 
-export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja }) {
+export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, onConquistasAtualizadas }) {
   // A tela do PET ocupa a página central; há duas páginas vazias de cada lado.
   const [pagina, setPagina] = useState(2)
   const paginaRef = useRef(2)
   // Dados reais das páginas laterais (tarefas, progresso). Consultas só rodam ao chegar na página.
   const dados = useDadosAluno({ aluno, turma, progresso, pagina })
+  const [carinhoFeitoHoje, setCarinhoFeitoHoje] = useState(null)
+  const [carinhoSegurando, setCarinhoSegurando] = useState(false)
+  const [carinhoPronto, setCarinhoPronto] = useState(false)
+  const [carinhoEnviando, setCarinhoEnviando] = useState(false)
+  const [avisoCarinho, setAvisoCarinho] = useState('')
+  const [atualizacaoCarinho, setAtualizacaoCarinho] = useState(0)
+  const carinhoBarra = useRef(new Animated.Value(0)).current
+  const carinhoLongRef = useRef(false)
+  const carinhoTrava = useRef(false)
   const deslocamentoPaginas = useRef(new Animated.Value(-2 * W)).current
   const gestoHorizontal = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => false,
@@ -335,6 +344,45 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja })
 
   const alunoId = aluno?.id
   const petId   = turma?.petId
+
+  useEffect(() => {
+    let ativo = true
+    setCarinhoFeitoHoje(null)
+    if (!alunoId || alunoId === 'loja') return () => { ativo = false }
+    const agora = new Date()
+    consultarCalendarioCarinho(agora.getFullYear(), agora.getMonth() + 1)
+      .then(status => { if (ativo) setCarinhoFeitoHoje(!!status?.feito_hoje) })
+      .catch(e => console.warn('Não foi possível consultar o carinho diário:', e?.codigo || e?.message))
+    return () => { ativo = false }
+  }, [alunoId])
+
+  useEffect(() => {
+    if (!alunoId || alunoId === 'loja') return
+    let timer
+    let ativo = true
+    const agendarNovoDia = () => {
+      const agora = new Date()
+      const amanha = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + 1, 0, 0, 2)
+      timer = setTimeout(async () => {
+        if (!ativo) return
+        setCarinhoFeitoHoje(null)
+        const hoje = new Date()
+        try {
+          const status = await consultarCalendarioCarinho(hoje.getFullYear(), hoje.getMonth() + 1)
+          if (ativo) setCarinhoFeitoHoje(!!status?.feito_hoje)
+        } catch {}
+        if (ativo) agendarNovoDia()
+      }, Math.max(1000, amanha.getTime() - agora.getTime()))
+    }
+    agendarNovoDia()
+    return () => { ativo = false; clearTimeout(timer) }
+  }, [alunoId])
+
+  useEffect(() => {
+    if (!avisoCarinho) return
+    const timer = setTimeout(() => setAvisoCarinho(''), 4000)
+    return () => clearTimeout(timer)
+  }, [avisoCarinho])
 
   useEffect(() => {
     if (!alunoId) { setComprados([]); return }
@@ -383,7 +431,7 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja })
     setar(item)
     // Se o servidor recusar/falhar, volta ao item anterior: a tela nunca mostra
     // algo equipado que não foi salvo.
-    if (alunoId) atualizarEquipado(alunoId, petId, slot, item?.id ?? null).catch(e => {
+    if (alunoId) atualizarEquipado(alunoId, petId, slot, item?.id ?? null).then(() => onConquistasAtualizadas?.()).catch(e => {
       console.error('Erro ao salvar acessório equipado:', e?.codigo || e?.message)
       setar(anterior)
     })
@@ -448,6 +496,63 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja })
     })))
   }
 
+  async function concluirCarinhoDiario() {
+    if (carinhoTrava.current || carinhoFeitoHoje === true || !alunoId || alunoId === 'loja') return
+    carinhoTrava.current = true
+    setCarinhoEnviando(true)
+    setAvisoCarinho('')
+    try {
+      const resultado = await fazerCarinhoDiarioNoPet()
+      setCarinhoFeitoHoje(!!resultado?.feito_hoje)
+      setAtualizacaoCarinho(v => v + 1)
+      if (resultado?.concedido) {
+        setAvisoCarinho('Muito bem! +5 XP 🌟')
+        aoTocar()
+        try { await dados.aposProgresso?.() } catch (e) { console.warn('XP concedido; falha ao atualizar a tela:', e?.codigo || e?.message) }
+        onConquistasAtualizadas?.()
+      } else setAvisoCarinho('Carinho de hoje já foi! Volte amanhã 🐾')
+    } catch (e) {
+      console.warn('Não foi possível salvar o carinho diário:', e?.codigo || e?.message)
+      setAvisoCarinho(e?.codigo === 'sessao_invalida' ? 'Entre de novo para dar carinho.' : 'Ops! Tente de novo.')
+    } finally {
+      carinhoTrava.current = false
+      setCarinhoEnviando(false)
+      setCarinhoSegurando(false)
+      setCarinhoPronto(false)
+      carinhoBarra.setValue(0)
+    }
+  }
+
+  function iniciarCarinho() {
+    carinhoLongRef.current = false
+    setCarinhoPronto(false)
+    if (carinhoFeitoHoje === true || carinhoTrava.current) return
+    setCarinhoSegurando(true)
+    carinhoBarra.setValue(0)
+    Animated.timing(carinhoBarra, { toValue: 1, duration: 900, useNativeDriver: false }).start()
+  }
+
+  function marcarCarinhoPronto() {
+    if (carinhoFeitoHoje === true || carinhoTrava.current) return
+    carinhoLongRef.current = true
+    setCarinhoPronto(true)
+  }
+
+  function soltarCarinho() {
+    carinhoBarra.stopAnimation()
+    setCarinhoSegurando(false)
+    if (carinhoLongRef.current && carinhoFeitoHoje !== true) concluirCarinhoDiario()
+    else {
+      setCarinhoPronto(false)
+      carinhoBarra.setValue(0)
+    }
+  }
+
+  function tocarPet() {
+    if (carinhoLongRef.current) { carinhoLongRef.current = false; return }
+    aoTocar()
+  }
+
   const rotate      = balancoA.interpolate({ inputRange:[-15,15], outputRange:['-10deg','10deg'] })
   const chapeuStyle = { position:'absolute', width:PET_SIZE*cfg.chapeu.w, height:PET_SIZE*cfg.chapeu.w*0.6, top:PET_SIZE*cfg.chapeu.top, left:PET_SIZE*cfg.chapeu.left, zIndex:10 }
   const colarStyle  = { position:'absolute', width:PET_SIZE*cfg.colar.w,  height:PET_SIZE*cfg.colar.w*0.7,  top:PET_SIZE*cfg.colar.top,  left:PET_SIZE*cfg.colar.left,  zIndex:10 }
@@ -456,8 +561,8 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja })
     <View style={s.telaExterna} {...gestoHorizontal.panHandlers}>
     <View style={s.root}>
       <Animated.View style={[s.trilhaPaginas, { width:W*5, transform:[{ translateX:deslocamentoPaginas }] }]}>
-      <PaginaCalendario width={W} petImage={turma?.pet} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} />
-      <PaginaTrilha width={W} petImage={turma?.pet} alunoId={aluno?.id} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} onAtualizado={dados.aposProgresso} />
+      <PaginaCalendario width={W} petImage={turma?.pet} alunoId={aluno?.id} atualizacaoCarinho={atualizacaoCarinho} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} />
+      <PaginaTrilha width={W} petImage={turma?.pet} alunoId={aluno?.id} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} onAtualizado={async () => { await dados.aposProgresso?.(); onConquistasAtualizadas?.() }} />
       <View style={[s.paginaConteudo, { width:W }]}>
       <StatusBar barStyle={pagina === 1 || pagina === 3 ? 'dark-content' : 'light-content'} />
 
@@ -508,7 +613,7 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja })
             opacity: entradaA,
             transform:[{ scale: entradaA.interpolate({ inputRange:[0,1], outputRange:[0.3,1] }) }]
           }]}>
-            <TouchableOpacity activeOpacity={1} onPress={aoTocar}>
+            <TouchableOpacity activeOpacity={1} delayLongPress={900} onPressIn={iniciarCarinho} onLongPress={marcarCarinhoPronto} onPressOut={soltarCarinho} onPress={tocarPet}>
               <Animated.View style={{
                 transform:[{ scale:escalaA },{ rotate },{ translateY:puloA }],
                 width:PET_SIZE, height:PET_SIZE, position:'relative',
@@ -556,6 +661,14 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja })
             </View>
           )}
         </View>
+
+        {carinhoFeitoHoje !== true && <View style={s.carinhoCard}>
+          <Text style={s.carinhoTexto}>
+            {carinhoEnviando ? 'Carinho valendo...' : carinhoPronto ? 'Solte para ganhar +5 XP!' : carinhoSegurando ? 'Continue... quase lá!' : 'Segure o PET para ganhar +5 XP hoje'}
+          </Text>
+          {carinhoSegurando && <View style={s.carinhoTrilho}><Animated.View style={[s.carinhoFill, { width: carinhoBarra.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} /></View>}
+          {!!avisoCarinho && <Text style={s.carinhoAviso}>{avisoCarinho}</Text>}
+        </View>}
 
         {/* Barra de ações */}
         <View style={s.acoes}>
@@ -659,6 +772,12 @@ const s = StyleSheet.create({
   xpBadge:          { position:'absolute', left:-6, top:-7, width:42, height:42, borderRadius:21, backgroundColor:'#8E5CF0', borderWidth:3.5, borderColor:'#1B1030', alignItems:'center', justifyContent:'center' },
   xpBadgeTxt:       { fontSize:20 },
   xpProx:           { alignItems:'center', marginTop:8 },
+  carinhoCard:      { marginHorizontal:18, marginBottom:4, minHeight:42, paddingHorizontal:12, paddingVertical:7, borderRadius:14, backgroundColor:'#FFF7D6', borderWidth:2, borderColor:'#E2B915', alignItems:'center', justifyContent:'center' },
+  carinhoCardFeito: { backgroundColor:'#E6F7EA', borderColor:colors.green },
+  carinhoTexto:     { color:'#26331F', fontSize:14, textAlign:'center', fontFamily:fonts.extrabold },
+  carinhoAviso:     { marginTop:2, color:colors.green, fontSize:13, fontFamily:fonts.bold, textAlign:'center' },
+  carinhoTrilho:    { height:8, width:'100%', borderRadius:5, overflow:'hidden', marginTop:6, backgroundColor:'#E4DCA9' },
+  carinhoFill:      { height:'100%', backgroundColor:colors.green, borderRadius:5 },
   btnCosmWrap:      { alignItems:'center', gap:5 },
   btnCosmSombra:    { borderRadius:14, shadowColor:'#000', shadowOffset:{width:0,height:4}, shadowOpacity:0.6, shadowRadius:6, elevation:8 },
   btnCosmBorda:     { width:68, height:72, borderRadius:14, borderWidth:3, alignItems:'center', justifyContent:'center', position:'relative', overflow:'hidden' },
