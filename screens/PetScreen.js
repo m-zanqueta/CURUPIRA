@@ -287,6 +287,7 @@ function ModalItens({ visible, titulo, itens, selecionado, cor, carregando, onSe
 export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, onConquistasAtualizadas }) {
   // A tela do PET ocupa a página central; há duas páginas vazias de cada lado.
   const [pagina, setPagina] = useState(2)
+  const [filtroConquistas, setFiltroConquistas] = useState('pendentes')
   const paginaRef = useRef(2)
   // Dados reais das páginas laterais (tarefas, progresso). Consultas só rodam ao chegar na página.
   const dados = useDadosAluno({ aluno, turma, progresso, pagina })
@@ -300,6 +301,12 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
   const carinhoLongRef = useRef(false)
   const carinhoTrava = useRef(false)
   const deslocamentoPaginas = useRef(new Animated.Value(-2 * W)).current
+  function abrirConquistasFeitas() {
+    setFiltroConquistas('feitas')
+    paginaRef.current = 3
+    setPagina(3)
+    Animated.spring(deslocamentoPaginas, { toValue: -3 * W, speed: 16, bounciness: 3, useNativeDriver: true }).start()
+  }
   const gestoHorizontal = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => false,
     onMoveShouldSetPanResponder: (_, gesto) =>
@@ -699,8 +706,8 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
         carregando={carregando} onSel={selecionarCenario} onFechar={() => setModal(null)}
       />
       </View>
-      <PaginaConquistas width={W} petImage={turma?.pet} alunoId={aluno?.id} ativa={pagina === 3} />
-      <PaginaPerfil width={W} aluno={aluno} turma={turma} estagioPet={estagio.label} progresso={dados.progresso} erroProgresso={dados.erroProgresso} onAtualizar={dados.recarregarProgresso} onSair={onLogout} />
+      <PaginaConquistas width={W} petImage={turma?.pet} alunoId={aluno?.id} ativa={pagina === 3} filtro={filtroConquistas} onFiltroChange={setFiltroConquistas} />
+      <PaginaPerfil width={W} aluno={aluno} turma={turma} ativa={pagina === 4} progresso={dados.progresso} erroProgresso={dados.erroProgresso} onAtualizar={dados.recarregarProgresso} onVerConquistas={abrirConquistasFeitas} onSair={onLogout} />
       </Animated.View>
       <View pointerEvents="none" style={s.pageDots}>
         {[0, 1, 2, 3, 4].map(indice => (

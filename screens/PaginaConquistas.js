@@ -54,7 +54,7 @@ function dataCurta(d) {
   return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' }).replace('.', '')
 }
 
-export default function PaginaConquistas({ width, petImage, alunoId, ativa }) {
+export default function PaginaConquistas({ width, petImage, alunoId, ativa, filtro = 'pendentes', onFiltroChange }) {
   const [lista, setLista] = useState([])
   const [estado, setEstado] = useState('ocioso') // 'ocioso' | 'carregando' | 'pronto' | 'erro'
   const [erro, setErro] = useState(null)
@@ -108,12 +108,28 @@ export default function PaginaConquistas({ width, petImage, alunoId, ativa }) {
   }, [ativa, alunoId, carregar])
 
   const carregando = estado === 'ocioso' || estado === 'carregando'
+  const feitas = lista.filter(item => item.desbloqueada)
+  const porFazer = lista.filter(item => !item.desbloqueada)
+  const visiveis = filtro === 'feitas' ? feitas : porFazer
 
   return (
     <View style={[p.page, { width }]}>
       <View style={p.simpleHeader}>
         <Text style={p.headerEyebrow}>MEDALHAS DA AVENTURA</Text>
         <Text style={p.simpleTitle}>Conquistas</Text>
+      </View>
+
+      <View style={p.filters}>
+        <TouchableOpacity onPress={() => onFiltroChange?.('pendentes')} style={[p.filterButton, filtro === 'pendentes' && p.filterButtonActive]} accessibilityRole="button" accessibilityState={{ selected: filtro === 'pendentes' }}>
+          <Text style={[p.filterEmoji, filtro === 'pendentes' && p.filterTextActive]}>🧭</Text>
+          <Text style={[p.filterText, filtro === 'pendentes' && p.filterTextActive]}>Por conquistar</Text>
+          <Text style={[p.filterCount, filtro === 'pendentes' && p.filterTextActive]}>{porFazer.length}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => onFiltroChange?.('feitas')} style={[p.filterButton, filtro === 'feitas' && p.filterButtonWon]} accessibilityRole="button" accessibilityState={{ selected: filtro === 'feitas' }}>
+          <Text style={p.filterEmoji}>🏆</Text>
+          <Text style={[p.filterText, filtro === 'feitas' && p.filterTextActive]}>Conquistadas</Text>
+          <Text style={[p.filterCount, filtro === 'feitas' && p.filterTextActive]}>{feitas.length}</Text>
+        </TouchableOpacity>
       </View>
 
       {carregando && lista.length === 0 ? (
@@ -133,17 +149,18 @@ export default function PaginaConquistas({ width, petImage, alunoId, ativa }) {
       ) : lista.length === 0 ? (
         <View style={p.centro}>
           <MiniPet uri={petImage} emoji="🏅" style={p.vazioPet} />
-          <Text style={p.centroTitulo}>Nenhuma conquista ainda</Text>
-          <Text style={p.centroTexto}>Complete tarefas com o seu PET. As conquistas que você ganhar aparecem aqui.</Text>
+          <Text style={p.centroTitulo}>Sua aventura começa agora!</Text>
+          <Text style={p.centroTexto}>Complete desafios para ganhar suas primeiras conquistas.</Text>
         </View>
       ) : (
         <ScrollView contentContainerStyle={p.courseContent} showsVerticalScrollIndicator={false}>
           <View style={p.achievementBanner}>
             <MiniPet uri={petImage} emoji="🏅" style={p.bannerPet} />
-            <Text style={p.bannerText}>Suas conquistas</Text>
-            <Text style={p.bannerCount}>{lista.filter(x => x.desbloqueada).length}/{lista.length}</Text>
+            <Text style={p.bannerText}>{filtro === 'feitas' ? 'Você conquistou!' : 'Novos desafios!'}</Text>
+            <Text style={p.bannerCount}>{feitas.length}/{lista.length}</Text>
           </View>
-          {lista.map(item => (
+          {!visiveis.length ? <View style={p.emptyFilter}><Text style={p.emptyEmoji}>{filtro === 'feitas' ? '🌱' : '🎉'}</Text><Text style={p.centroTitulo}>{filtro === 'feitas' ? 'Ainda sem conquistas' : 'Tudo conquistado!'}</Text><Text style={p.centroTexto}>{filtro === 'feitas' ? 'Complete um desafio e sua medalha aparece aqui.' : 'Parabéns! Você já ganhou todas as medalhas.'}</Text></View> : null}
+          {visiveis.map(item => (
             <View key={item.id} style={[p.badgeCard, !item.desbloqueada && p.badgeLocked]}>
               <View style={[p.badgeArt, { backgroundColor: item.desbloqueada ? item.cor : '#E6E6E1' }]}>
                 {item.iconeUrl
@@ -169,6 +186,14 @@ const p = StyleSheet.create({
   simpleHeader: { backgroundColor: colors.white, paddingTop: Platform.OS === 'android' ? 34 : 48, paddingBottom: 14, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: colors.border },
   headerEyebrow: { color: colors.green, fontSize: 9, fontFamily: fonts.bold, letterSpacing: 1.4 },
   simpleTitle: { color: '#171914', fontSize: 23, fontFamily: fonts.extrabold, marginTop: 3 },
+  filters: { flexDirection: 'row', gap: 9, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 5, backgroundColor: colors.cream },
+  filterButton: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 7, backgroundColor: colors.white, borderRadius: 16, borderWidth: 2, borderColor: colors.border, borderBottomWidth: 4 },
+  filterButtonActive: { backgroundColor: '#FFF0B3', borderColor: '#E2B800', borderBottomColor: '#B98D00' },
+  filterButtonWon: { backgroundColor: '#E7D8F4', borderColor: colors.purple, borderBottomColor: '#4D0D75' },
+  filterEmoji: { fontSize: 17 },
+  filterText: { color: '#4E5049', fontSize: 11, fontFamily: fonts.extrabold, flexShrink: 1 },
+  filterTextActive: { color: '#3C2D00' },
+  filterCount: { color: '#77786F', fontSize: 11, fontFamily: fonts.extrabold },
   courseContent: { padding: 18, paddingBottom: 78, gap: 14 },
   achievementBanner: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.purple, borderRadius: 18, paddingHorizontal: 14, borderBottomWidth: 5, borderBottomColor: '#4D0D75' },
   bannerPet: { width: 58, height: 58, fontSize: 38, textAlign: 'center' },
@@ -187,6 +212,8 @@ const p = StyleSheet.create({
   badgeStatusLocked: { color: '#7A7B75' },
   badgeCheck: { color: colors.green, fontSize: 22, fontFamily: fonts.extrabold },
   badgeLock: { fontSize: 18 },
+  emptyFilter: { minHeight: 210, alignItems: 'center', justifyContent: 'center', padding: 22, gap: 8, backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.border },
+  emptyEmoji: { fontSize: 44 },
   centro: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, paddingBottom: 80, gap: 10 },
   centroEmoji: { fontSize: 44 },
   vazioPet: { width: 90, height: 90, fontSize: 56, textAlign: 'center' },

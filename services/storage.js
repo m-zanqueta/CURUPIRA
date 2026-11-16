@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { supabase } from './supabase'
+import { supabase, supabaseUrl, supabaseAnonKey } from './supabase'
 
 const TABELAS_ADMIN = new Set(['professores', 'coordenadores', 'alunos', 'pets', 'acessorios'])  // lista fechada TAMBÉM no servidor (admin_*)
 const CHAVE_SESSAO_APP = 'curupira_sessao_app'
@@ -721,6 +721,81 @@ export async function fazerCarinhoDiarioNoPet() {
 
 export async function consultarCalendarioCarinho(ano, mes) {
   return rpcAluno('aluno_calendario_carinho', { p_ano: ano, p_mes: mes })
+}
+
+async function invocarPerfilAluno(body, aluno = false) {
+  const token = aluno ? await obterTokenAluno() : body?.token || null
+  const payload = body instanceof FormData ? body : { ...body, token }
+  if (body instanceof FormData && token) body.append('token', token)
+  let resposta
+  try { resposta = await supabase.functions.invoke('perfil-aluno', { body: payload }) }
+  catch { throw new Error('Não foi possível conectar ao perfil. Tente novamente.') }
+  if (resposta.error || !resposta.data?.ok) {
+    let codigo = resposta.data?.erro
+    try { const corpo = await resposta.error?.context?.json?.(); codigo ||= corpo?.erro } catch {}
+    const mensagens = {
+      sessao_invalida: 'Sua sessão expirou. Entre novamente.',
+      arquivo_grande: 'A imagem precisa ter no máximo 1 MB.',
+      tipo_nao_suportado: 'Use uma imagem JPG, PNG ou WEBP.',
+      tipo_divergente: 'O formato da imagem não pôde ser confirmado.',
+      falha_no_servidor: 'Não foi possível atualizar a foto. Tente novamente.',
+    }
+    throw new Error(mensagens[codigo] || 'Não foi possível atualizar o perfil. Tente novamente.')
+  }
+  return resposta.data
+}
+
+export async function carregarAvatarAluno() {
+  const token = await obterTokenAluno()
+  if (!token) return null
+  return invocarPerfilAluno({ operacao: 'visualizar', token }).then(r => r.url || null)
+}
+
+export async function enviarAvatarAluno(imagem) {
+  if (!imagem?.uri) throw new Error('Escolha uma imagem para o perfil.')
+  const resposta = await fetch(imagem.uri)
+  if (!resposta.ok) throw new Error('Não foi possível abrir a imagem escolhida.')
+  const blob = await resposta.blob()
+  if (blob.size > 1024 * 1024) throw new Error('A imagem precisa ter no máximo 1 MB.')
+  const token = await obterTokenAluno()
+  if (!token) throw new Error('Sua sessão expirou. Entre novamente.')
+  const form = new FormData()
+  form.append('token', token)
+  form.append('arquivo', blob, imagem.fileName || 'perfil.jpg')
+  let respostaApi
+  try {
+    // Envia FormData direto: o fetch do navegador define o boundary multipart.
+    // Não usar functions.invoke aqui, pois alguns ambientes Expo serializam FormData como JSON.
+    respostaApi = await fetch(`${supabaseUrl}/functions/v1/perfil-aluno`, {
+      method: 'POST',
+      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` },
+      body: form,
+    })
+  } catch {
+    throw new Error('Não foi possível enviar a foto. Verifique sua conexão e tente novamente.')
+  }
+  let dados = null
+  try { dados = await respostaApi.json() } catch {}
+  if (!respostaApi.ok || !dados?.ok) {
+    const mensagens = {
+      sessao_invalida: 'Sua sessão expirou. Entre novamente.',
+      arquivo_grande: 'A imagem precisa ter no máximo 1 MB.',
+      tipo_nao_suportado: 'Use uma imagem JPG, PNG ou WEBP.',
+      tipo_divergente: 'O formato da imagem não pôde ser confirmado.',
+      pedido_invalido: 'Não foi possível ler a foto escolhida. Escolha outra imagem e tente novamente.',
+    }
+    throw new Error(mensagens[dados?.erro] || 'Não foi possível atualizar a foto. Tente novamente.')
+  }
+  return dados.url
+}
+
+export async function listarTrilhasConcluidasAluno() {
+  if (!(await temTokenAluno())) return []
+  return (await rpcAluno('aluno_vitrine_listar')) || []
+}
+
+export async function salvarVitrineTrilhasAluno(ids) {
+  return rpcAluno('aluno_vitrine_salvar', { p_missoes_ids: (ids || []).map(String) })
 }
 
 // Códigos de erro (e.codigo) que o app distingue:

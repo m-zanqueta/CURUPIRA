@@ -9,3 +9,6 @@ verify_jwt = false
 
 [functions.evidencias-tarefas]
 verify_jwt = false
+
+[functions.perfil-aluno]
+verify_jwt = false
