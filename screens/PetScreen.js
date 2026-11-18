@@ -8,8 +8,8 @@ import {
   Text, ActivityIndicator, Surface, ProgressBar, Chip,
 } from 'react-native-paper'
 import { colors, fonts } from '../theme'
+import { LOGO_CURUPIRA, SLOGAN_CURUPIRA } from '../constants/brand'
 import { listarItensComprados, listarAcessoriosLoja, listarEquipados, atualizarEquipado, fazerCarinhoDiarioNoPet, consultarCalendarioCarinho } from '../services/storage'
-import IconeUI from '../components/IconeUI'
 import TextoContorno from '../components/TextoContorno'
 import PaginaCalendario from './PaginaCalendario'
 import PaginaTrilha from './PaginaTrilha'
@@ -119,7 +119,7 @@ function avisarSemCalibracao(cfg) {
 
 const ESTAGIOS = [
   { label: 'Filhote',              xpMin: 0    },
-  { label: 'Guardião',             xpMin: 500  },
+  { label: 'Jovem',                xpMin: 500  },
   { label: 'Espírito da Floresta', xpMin: 1000 },
 ]
 
@@ -151,9 +151,9 @@ function TelaSemPet({ onLogout }) {
       <StatusBar barStyle="light-content" backgroundColor={colors.green} />
 
       <View style={se.topo}>
-        <Image source={require('../assets/logo.png')} style={se.logo} resizeMode="contain" />
+        <Image source={LOGO_CURUPIRA} style={se.logo} resizeMode="contain" />
         <Text style={se.appNome}>CURUPIRA</Text>
-        <Text style={se.tagline}>Atividades extracurriculares gamificadas</Text>
+        <Text style={se.tagline}>{SLOGAN_CURUPIRA}</Text>
       </View>
 
       <View style={se.card}>
@@ -284,7 +284,7 @@ function ModalItens({ visible, titulo, itens, selecionado, cor, carregando, onSe
   )
 }
 
-export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, onConquistasAtualizadas, abrirConquistasSolicitado = 0 }) {
+export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, onConquistasAtualizadas, destinoTrilha }) {
   // A tela do PET ocupa a página central; há duas páginas vazias de cada lado.
   const [pagina, setPagina] = useState(2)
   const [filtroConquistas, setFiltroConquistas] = useState('pendentes')
@@ -301,13 +301,18 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
   const carinhoLongRef = useRef(false)
   const carinhoTrava = useRef(false)
   const deslocamentoPaginas = useRef(new Animated.Value(-2 * W)).current
+  useEffect(() => {
+    if (!destinoTrilha?.chave) return
+    paginaRef.current = 1
+    setPagina(1)
+    Animated.spring(deslocamentoPaginas, { toValue: -W, speed: 16, bounciness: 3, useNativeDriver: true }).start()
+  }, [destinoTrilha?.chave, deslocamentoPaginas])
   function abrirConquistasFeitas() {
     setFiltroConquistas('feitas')
     paginaRef.current = 3
     setPagina(3)
     Animated.spring(deslocamentoPaginas, { toValue: -3 * W, speed: 16, bounciness: 3, useNativeDriver: true }).start()
   }
-  useEffect(() => { if (abrirConquistasSolicitado) abrirConquistasFeitas() }, [abrirConquistasSolicitado])
   const gestoHorizontal = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => false,
     onMoveShouldSetPanResponder: (_, gesto) =>
@@ -565,12 +570,14 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
   const chapeuStyle = { position:'absolute', width:PET_SIZE*cfg.chapeu.w, height:PET_SIZE*cfg.chapeu.w*0.6, top:PET_SIZE*cfg.chapeu.top, left:PET_SIZE*cfg.chapeu.left, zIndex:10 }
   const colarStyle  = { position:'absolute', width:PET_SIZE*cfg.colar.w,  height:PET_SIZE*cfg.colar.w*0.7,  top:PET_SIZE*cfg.colar.top,  left:PET_SIZE*cfg.colar.left,  zIndex:10 }
 
+  if (!turma?.pet) return <TelaSemPet onLogout={onLogout} />
+
   return (
     <View style={s.telaExterna} {...gestoHorizontal.panHandlers}>
     <View style={s.root}>
       <Animated.View style={[s.trilhaPaginas, { width:W*5, transform:[{ translateX:deslocamentoPaginas }] }]}>
       <PaginaCalendario width={W} petImage={turma?.pet} alunoId={aluno?.id} atualizacaoCarinho={atualizacaoCarinho} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} />
-      <PaginaTrilha width={W} petImage={turma?.pet} alunoId={aluno?.id} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} onAtualizado={async () => { await dados.aposProgresso?.(); onConquistasAtualizadas?.() }} />
+      <PaginaTrilha width={W} petImage={turma?.pet} alunoId={aluno?.id} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} onAtualizado={async () => { await dados.aposProgresso?.(); onConquistasAtualizadas?.() }} destinoMissao={destinoTrilha} ativa={pagina === 1} />
       <View style={[s.paginaConteudo, { width:W }]}>
       <StatusBar barStyle={pagina === 1 || pagina === 3 ? 'dark-content' : 'light-content'} />
 
@@ -587,7 +594,11 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
 
         {/* Header compacto */}
         <View style={s.header}>
-          <View style={{ width:48 }} />
+          <View style={s.xpIndividualBadge} accessibilityLabel={`${Number(dados.progresso?.xp ?? aluno?.xp) || 0} XP pessoal`}>
+            <Text style={s.xpIndividualIcon}>⭐</Text>
+            <Text style={s.xpIndividualText}>{Number(dados.progresso?.xp ?? aluno?.xp) || 0}</Text>
+          </View>
+          <View style={{ width:58 }} />
           <View style={s.headerCenter}>
             <View style={s.placaNome}>
               <Text style={s.placaTurma} numberOfLines={1} adjustsFontSizeToFit>{turma?.nome || 'Meu Pet'}</Text>
@@ -602,7 +613,7 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
               </View>
             </View>
           </View>
-          <View style={{ width:48 }} />
+          <View style={{ width:58 }} />
         </View>
 
         {/* Arena */}
@@ -628,7 +639,7 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
               }}>
                 {/* Pet — URL do Supabase */}
                 <Image
-                  source={{ uri: turma.pet }}
+                  source={{ uri: turma?.pet }}
                   style={{ width:PET_SIZE, height:PET_SIZE, position:'absolute' }}
                   resizeMode="contain"
                 />
@@ -662,7 +673,7 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
               </TextoContorno>
             </View>
           </View>
-          <View style={s.xpBadge}><IconeUI nome="xp" size={26} /></View>
+          <View style={s.xpBadge}><Text style={s.xpBadgeTxt}>⭐</Text></View>
           {proxEst && (
             <View style={s.xpProx}>
               <TextoContorno size={12}>{`Faltam ${(proxEst.xpMin - xp).toLocaleString('pt-BR')} para ${proxEst.label}`}</TextoContorno>
@@ -708,7 +719,7 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
       />
       </View>
       <PaginaConquistas width={W} petImage={turma?.pet} alunoId={aluno?.id} ativa={pagina === 3} filtro={filtroConquistas} onFiltroChange={setFiltroConquistas} />
-      <PaginaPerfil width={W} aluno={aluno} turma={turma} ativa={pagina === 4} progresso={dados.progresso} erroProgresso={dados.erroProgresso} onAtualizar={dados.recarregarProgresso} onSair={onLogout} />
+      <PaginaPerfil width={W} aluno={aluno} turma={turma} ativa={pagina === 4} progresso={dados.progresso} erroProgresso={dados.erroProgresso} onAtualizar={dados.recarregarProgresso} onVerConquistas={abrirConquistasFeitas} onSair={onLogout} />
       </Animated.View>
       <View pointerEvents="none" style={s.pageDots}>
         {[0, 1, 2, 3, 4].map(indice => (
@@ -734,7 +745,7 @@ const s = StyleSheet.create({
   fundoOverlay:     { position:'absolute', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.18)' },
 
   // Header
-  header:           { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:14, paddingTop:Platform.OS==='android'?12:4, paddingBottom:8 },
+  header:           { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:14, paddingTop:Platform.OS==='android'?12:4, paddingBottom:8, position:'relative' },
   headerCenter:     { flex:1, alignItems:'center', gap:8, paddingHorizontal:8 },
   placaNome:        { alignItems:'center', maxWidth:'100%', backgroundColor:'#FFF8E1', borderWidth:3, borderColor:'#2E7D32', borderRadius:20, paddingHorizontal:20, paddingVertical:8, elevation:4 },
   placaTurma:       { fontSize:15, fontFamily:fonts.bold, color:'#5D4037', letterSpacing:1 },
@@ -773,6 +784,9 @@ const s = StyleSheet.create({
   gBtnBadge:        { position:'absolute', top:-10, right:-10, width:26, height:26, borderRadius:13, backgroundColor:'#FF3B5C', borderWidth:3, borderColor:'#1B1030', alignItems:'center', justifyContent:'center' },
   gBtnBadgeTxt:     { fontSize:13, color:'#fff', fontFamily:fonts.extrabold },
   xpWrap:           { marginHorizontal:22, marginTop:6, marginBottom:12 },
+  xpIndividualBadge: { position:'absolute', right:14, top:Platform.OS==='android'?20:12, zIndex:5, minWidth:58, minHeight:38, borderRadius:19, paddingHorizontal:9, backgroundColor:'#FFF0A8', borderWidth:2, borderColor:'#A67B00', flexDirection:'row', alignItems:'center', justifyContent:'center', gap:4 },
+  xpIndividualIcon:  { fontSize:16 },
+  xpIndividualText:  { color:'#3F3100', fontSize:13, fontFamily:fonts.extrabold },
   xpTrack:          { height:30, borderRadius:15, backgroundColor:'#1B1030', borderWidth:3.5, borderColor:'#1B1030', overflow:'hidden', justifyContent:'center', marginLeft:14 },
   xpFill:           { position:'absolute', left:0, top:0, bottom:0, borderRadius:12, backgroundColor:'#7CE82B', borderBottomWidth:4, borderBottomColor:'#3C9A00', overflow:'hidden' },
   xpGloss:          { position:'absolute', top:0, left:0, right:0, height:'45%', backgroundColor:'rgba(255,255,255,0.4)' },

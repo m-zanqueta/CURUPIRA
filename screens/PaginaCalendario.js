@@ -7,15 +7,8 @@ import { consultarCalendarioCarinho } from '../services/storage'
 
 // Página "Calendário" do aluno (página 0 do paginador do PetScreen).
 //
-// IMPORTANTE (versão 1): o backend ainda NÃO tem prazo, data de início nem data de conclusão
-// nas tarefas. A única data disponível é `atualizado_em` (aqui `atualizadoEm`): o momento da
-// ÚLTIMA ATUALIZAÇÃO do progresso do aluno naquela tarefa (iniciou, avançou etapa, entregou ou foi
-// aprovada). NÃO é prazo e NÃO é, necessariamente, a data de conclusão. A tela diz isso ao aluno.
-// Tarefas que o aluno ainda não mexeu não têm data e não aparecem em nenhum dia.
-//
-// Preparada para a evolução: a função `dataDaAtividade` é o único lugar que decide qual data usar.
-// Se o Zanq disponibilizar uma data própria da tarefa (ex.: `prazo`, vinda de aluno_minhas_missoes
-// e repassada por listarMissoesDoAluno), basta ela devolver { data, tipo: 'prazo' } primeiro.
+// Dias de tarefa usam a data de aprovação de cada etapa. Assim, rejeições e envios
+// ainda aguardando avaliação não aparecem como conclusão no calendário.
 //
 // Props:
 //   width        largura da página
@@ -26,8 +19,6 @@ import { consultarCalendarioCarinho } from '../services/storage'
 //   onRecarregar tenta carregar de novo
 
 const NOMES_DIA = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
-const STATUS_TEXTO = { pendente: 'Em andamento', entregue: 'Entregue, aguardando o professor', aprovado: 'Aprovada' }
-
 function MiniPet({ uri, emoji = '🌿', style }) {
   return uri
     ? <Image source={{ uri }} style={style} resizeMode="contain" />
@@ -39,21 +30,24 @@ export function chaveDoDia(data) {
   return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-${String(data.getDate()).padStart(2, '0')}`
 }
 
-// Única função que escolhe a data de uma tarefa. Hoje: atualizadoEm. Nunca inventa data.
-export function dataDaAtividade(missao) {
-  const d = analisarData(missao?.atualizadoEm)
+// Única função que decide qual data representa uma conclusão aprovada.
+export function dataDaAtividade(etapa) {
+  if (etapa?.statusEnvio !== 'aprovado') return null
+  const d = analisarData(etapa?.corrigidaEm)
   if (!d) return null
-  return { data: d, tipo: 'atualizacao' }
+  return { data: d, tipo: 'conclusao' }
 }
 
 // Agrupa as tarefas por dia local. Devolve { [chaveDoDia]: [{ missao, data }] }.
 export function agruparPorDia(missoes) {
   const mapa = {}
   for (const missao of missoes || []) {
-    const ref = dataDaAtividade(missao)
-    if (!ref) continue
-    const k = chaveDoDia(ref.data)
-    ;(mapa[k] = mapa[k] || []).push({ missao, data: ref.data })
+    for (const etapa of missao.etapas || []) {
+      const ref = dataDaAtividade(etapa)
+      if (!ref) continue
+      const k = chaveDoDia(ref.data)
+      ;(mapa[k] = mapa[k] || []).push({ missao, etapa, data: ref.data })
+    }
   }
   for (const k of Object.keys(mapa)) mapa[k].sort((a, b) => a.data - b.data)
   return mapa
@@ -68,6 +62,16 @@ export function gradeDoMes(ano, mes) {
 
 function horaCurta(d) {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+}
+function selecionarProximaTarefa(missoes) {
+  const ativas = (missoes || []).filter(m => m.status === 'pendente' && (m.etapas || []).length)
+  const precisaRefazer = ativas.find(m => ['recusado', 'enviado'].includes(m.etapas?.[Number(m.etapaAtual) || 0]?.statusEnvio))
+  const emCurso = ativas.filter(m => Number(m.etapaAtual) > 0 && Number(m.etapaAtual) < m.etapas.length)
+    .sort((a, b) => new Date(b.atualizadoEm || 0) - new Date(a.atualizadoEm || 0))[0]
+  const missao = precisaRefazer || emCurso || ativas.find(m => Number(m.etapaAtual) < m.etapas.length)
+  if (!missao) return null
+  const ordem = Math.max(0, Math.min(Number(missao.etapaAtual) || 0, missao.etapas.length - 1))
+  return { missao, etapa: missao.etapas[ordem], aguardando: missao.etapas[ordem]?.statusEnvio === 'enviado' }
 }
 function dataLonga(d) {
   return d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -91,6 +95,7 @@ export default function PaginaCalendario({ width, petImage, alunoId, atualizacao
   }, [alunoId, mesAtual.ano, mesAtual.mes, atualizacaoCarinho])
 
   const porDia = useMemo(() => agruparPorDia(missoes), [missoes])
+  const proximaTarefa = useMemo(() => selecionarProximaTarefa(missoes), [missoes])
   const grade = useMemo(() => gradeDoMes(mesAtual.ano, mesAtual.mes), [mesAtual])
   const chaveHoje = chaveDoDia(hoje)
   const chaveHojeServidor = calendarioCarinho?.hoje || chaveHoje
@@ -99,7 +104,6 @@ export default function PaginaCalendario({ width, petImage, alunoId, atualizacao
   const nomeMes = maiuscula(new Date(mesAtual.ano, mesAtual.mes, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }))
   const noMes = grade.filter(d => d.getMonth() === mesAtual.mes)
   const totalNoMes = noMes.reduce((soma, d) => soma + (porDia[chaveDoDia(d)]?.length || 0), 0)
-  const semData = missoes.filter(m => !dataDaAtividade(m)).length
   const doDia = porDia[diaSelecionado] || []
 
   function mudarMes(delta) {
@@ -128,7 +132,6 @@ export default function PaginaCalendario({ width, petImage, alunoId, atualizacao
         <View style={p.calendarHeroRow}>
           <View style={p.calendarHeroText}>
             <Text style={p.calendarTitle}>📅 Calendário</Text>
-            <Text style={p.calendarSubTitle}>Carinho + tarefas</Text>
           </View>
           <MiniPet uri={petImage} emoji="🌿" style={p.calendarPet} />
         </View>
@@ -166,19 +169,22 @@ export default function PaginaCalendario({ width, petImage, alunoId, atualizacao
                     if (!mesmoMes) setMesAtual({ ano: data.getFullYear(), mes: data.getMonth() })
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel={`${data.getDate()} de ${data.toLocaleDateString('pt-BR', { month: 'long' })}${feito ? ', carinho feito, mais 5 XP' : faltou ? ', dia sem carinho' : ''}${qtd ? `, ${qtd} atividade${qtd > 1 ? 's' : ''}` : ''}`}
+                  accessibilityLabel={`${data.getDate()} de ${data.toLocaleDateString('pt-BR', { month: 'long' })}${feito ? ', carinho diário feito' : faltou ? ', sem carinho' : ''}${qtd ? `, ${qtd} tarefa${qtd > 1 ? 's' : ''} aprovada${qtd > 1 ? 's' : ''}` : ''}`}
                 >
                   <View style={[p.dayCircle, feito && !selecionado && p.dayLogged, faltou && !selecionado && p.dayMissed, ehHoje && !selecionado && p.todayRing, selecionado && p.selectedDay]}>
                     <Text style={[p.dayText, !mesmoMes && p.mutedDay, selecionado && p.selectedDayText]}>{data.getDate()}</Text>
                   </View>
-                  {feito ? <Text style={[p.attendanceMark, selecionado && p.attendanceMarkSelected]}>✓</Text> : faltou ? <Text style={p.missedMark}>•</Text> : qtd > 0 ? <View style={[p.dayMark, selecionado && p.dayMarkSelected]} /> : <View style={p.dayMarkSpace} />}
+                  <View style={p.dayMarks}>
+                    {feito ? <View style={p.careMark} /> : faltou ? <View style={p.missedMark} /> : null}
+                    {qtd > 0 ? <View style={p.taskMark} /> : null}
+                  </View>
                 </TouchableOpacity>
               )
             })}
           </View>
 
           <View style={p.calendarToday}>
-            <Text style={p.calendarTodayEmoji}>🐾</Text>
+            <Text style={p.calendarTodayEmoji}>📍</Text>
             <Text style={p.calendarTodayText} numberOfLines={1}>{maiuscula(dataLonga(dataSelecionada))}</Text>
           </View>
 
@@ -186,19 +192,23 @@ export default function PaginaCalendario({ width, petImage, alunoId, atualizacao
             const selecionadoFeito = diasComCarinho.has(diaSelecionado)
             const selecionadoHoje = diaSelecionado === chaveHojeServidor
             const selecionadoPassou = !!calendarioCarinho?.inicio && diaSelecionado >= calendarioCarinho.inicio && diaSelecionado < chaveHojeServidor
-            const status = selecionadoFeito ? ['🌟', 'Carinho feito! +5 XP'] : selecionadoHoje ? ['🐾', 'Segure o PET hoje · +5 XP'] : selecionadoPassou ? ['💚', 'Amanhã tem mais!'] : ['✨', 'Um dia novo vem aí!']
-            return <View style={[p.attendanceCard, selecionadoFeito && p.attendanceCardDone]}><Text style={p.attendanceEmoji}>{status[0]}</Text><Text style={p.attendanceText}>{erroCarinho ? 'Não deu para carregar os carinhos.' : status[1]}</Text></View>
+            const status = selecionadoFeito ? ['💚', 'Carinho feito!'] : selecionadoHoje ? ['🐾', 'Faça carinho no PET'] : selecionadoPassou ? ['🤍', 'Sem carinho'] : ['✨', 'Dia novo']
+            const tarefasNoDia = (porDia[diaSelecionado] || []).length > 0
+            return <View style={[p.attendanceCard, selecionadoFeito && p.attendanceCardDone]}><Text style={p.attendanceEmoji}>{erroCarinho ? '…' : status[0]}</Text><Text style={p.attendanceText}>{erroCarinho ? 'Não carregou' : status[1]}</Text>{tarefasNoDia && <Text style={p.taskDoneText}>🌱 Cuidado feito</Text>}</View>
           })()}
-          <View style={p.attendanceLegend}><Text style={p.legendDone}>✓ Carinho feito</Text><Text style={p.legendMissed}>• Dia sem carinho</Text><Text style={p.legendReward}>+5 XP por dia</Text></View>
+          <View style={p.attendanceLegend}><Text style={p.legendDone}>💚 Carinho</Text><Text style={p.legendReward}>🌱 Tarefa</Text><Text style={p.legendMissed}>• Sem carinho</Text></View>
 
-          {carregando ? <View style={p.vazioDia}><ActivityIndicator color={colors.green} /><Text style={p.vazioDiaTxt}>Carregando tarefas…</Text></View> : falhou ? <View style={p.vazioDia}><Text style={p.vazioDiaTxt}>{mensagemDeErroAluno(erro)}</Text><TouchableOpacity onPress={onRecarregar} accessibilityRole="button"><Text style={p.linkTxt}>Tentar de novo</Text></TouchableOpacity></View> : doDia.length > 0 ? doDia.map(({ missao, data }) => (
-            <View key={missao.id} style={p.calendarEvent}>
+          {totalNoMes === 0 && proximaTarefa ? <View style={p.nextTaskCard}>
+            <Text style={p.nextTaskEmoji}>🌱</Text>
+            <View style={p.nextTaskCopy}><Text style={p.nextTaskEyebrow}>{proximaTarefa.aguardando ? 'AGUARDANDO O PROFESSOR' : 'PRÓXIMO CUIDADO'}</Text><Text style={p.nextTaskTitle}>{proximaTarefa.etapa?.titulo || proximaTarefa.missao.nome}</Text><Text style={p.nextTaskTrail}>{proximaTarefa.missao.nome}</Text></View>
+          </View> : null}
+
+          {carregando ? <View style={p.vazioDia}><ActivityIndicator color={colors.green} /><Text style={p.vazioDiaTxt}>Carregando…</Text></View> : falhou ? <View style={p.vazioDia}><Text style={p.vazioDiaTxt}>{mensagemDeErroAluno(erro)}</Text><TouchableOpacity onPress={onRecarregar} accessibilityRole="button"><Text style={p.linkTxt}>Tentar de novo</Text></TouchableOpacity></View> : doDia.length > 0 ? doDia.map(({ missao, etapa, data }, indice) => (
+            <View key={`${missao.id}-${etapa.titulo}-${indice}`} style={p.calendarEvent}>
               <View style={p.calendarEventIcon}><Text style={p.calendarEventEmoji}>{/^https?:\/\//i.test(missao.icone || '') ? '🌱' : (missao.icone || '🌱')}</Text></View>
               <View style={p.calendarEventInfo}>
-                <Text style={p.calendarEventTitle}>{missao.nome}</Text>
-                <Text style={p.calendarEventSub}>{STATUS_TEXTO[missao.status] || 'Em andamento'}</Text>
-                {missao.etapas?.length ? <Text style={p.calendarEventSub}>{Math.min(missao.etapaAtual, missao.etapas.length)} de {missao.etapas.length} etapas</Text> : null}
-                <Text style={p.calendarEventSub}>Última atualização às {horaCurta(data)}</Text>
+                <Text style={p.calendarEventTitle}>{etapa.titulo || missao.nome}</Text>
+                <Text style={p.calendarEventSub}>✓ Aprovada · {horaCurta(data)}</Text>
               </View>
             </View>
           )) : (
@@ -207,7 +217,7 @@ export default function PaginaCalendario({ width, petImage, alunoId, atualizacao
                 {missoes.length === 0
                   ? 'Você ainda não tem tarefas. Quando o professor liberar, elas aparecem aqui depois que você começar.'
                   : totalNoMes === 0
-                    ? 'Nenhuma atividade neste mês.'
+                    ? (proximaTarefa ? 'Seu próximo cuidado está destacado acima.' : 'Nenhuma atividade neste mês.')
                     : 'Nenhuma atividade neste dia.'}
               </Text>
               {totalNoMes === 0 && (mesAtual.ano !== hoje.getFullYear() || mesAtual.mes !== hoje.getMonth()) ? (
@@ -218,13 +228,6 @@ export default function PaginaCalendario({ width, petImage, alunoId, atualizacao
             </View>
           )}
 
-          <View style={p.nota}>
-            <Text style={p.notaTitulo}>Seu carinho conta!</Text>
-            <Text style={p.notaTxt}>
-              Segure o PET todo dia para ganhar +5 XP. As tarefas mostram o último dia em que você mexeu nelas.
-              {semData > 0 ? ` ${semData} ${semData === 1 ? 'tarefa ainda não começou.' : 'tarefas ainda não começaram.'}` : ''}
-            </Text>
-          </View>
       </ScrollView>
     </View>
   )
@@ -236,7 +239,6 @@ const p = StyleSheet.create({
   calendarHeroRow: { minHeight: 78, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   calendarHeroText: { flex: 1, gap: 4 },
   calendarTitle: { color: colors.white, fontSize: 22, fontFamily: fonts.extrabold },
-  calendarSubTitle: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontFamily: fonts.semibold },
   calendarPet: { width: 82, height: 82, fontSize: 54, textAlign: 'center' },
   monthRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, paddingHorizontal: 20 },
   monthArrow: { color: colors.white, fontSize: 28, fontFamily: fonts.medium },
@@ -245,7 +247,7 @@ const p = StyleSheet.create({
   weekday: { width: '14.28%', textAlign: 'center', color: 'rgba(255,255,255,0.8)', fontSize: 10, fontFamily: fonts.semibold },
   calendarContent: { padding: 16, paddingBottom: 74 },
   calendarCard: { flexDirection: 'row', flexWrap: 'wrap', backgroundColor: colors.white, borderRadius: 20, paddingVertical: 12, paddingHorizontal: 4, borderWidth: 1, borderColor: colors.border },
-  dayCell: { width: '14.28%', height: 42, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  dayCell: { width: '14.28%', height: 44, alignItems: 'center', justifyContent: 'center', gap: 1 },
   dayCircle: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   dayLogged: { backgroundColor: colors.greenLight },
   dayMissed: { backgroundColor: '#FFF0EC' },
@@ -254,23 +256,24 @@ const p = StyleSheet.create({
   dayText: { color: '#4B4B43', fontSize: 13, fontFamily: fonts.bold },
   mutedDay: { color: '#B8B8AD' },
   selectedDayText: { color: colors.white, fontFamily: fonts.bold },
-  dayMark: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.yellow, position: 'absolute', bottom: 1 },
-  dayMarkSelected: { backgroundColor: colors.white },
-  dayMarkSpace: { width: 5, height: 5, position: 'absolute', bottom: 1 },
-  attendanceMark: { position: 'absolute', bottom: -2, color: colors.green, fontSize: 9, lineHeight: 10, fontFamily: fonts.extrabold },
-  attendanceMarkSelected: { color: colors.white },
-  missedMark: { position: 'absolute', bottom: -3, color: '#C65A47', fontSize: 12, lineHeight: 12, fontFamily: fonts.extrabold },
+  dayMarks: { height: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 },
+  careMark: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.green },
+  taskMark: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#E7AF00' },
+  missedMark: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#C65A47' },
   calendarToday: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 18, marginBottom: 4, backgroundColor: colors.purple, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, borderBottomWidth: 4, borderBottomColor: '#4D0D75' },
   calendarTodayEmoji: { fontSize: 22 },
   calendarTodayText: { flex: 1, color: colors.white, fontSize: 15, fontFamily: fonts.extrabold },
-  attendanceCard: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 8, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 16, backgroundColor: colors.yellowLight, borderWidth: 1.5, borderColor: '#EBDDA0' },
+  attendanceCard: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 16, backgroundColor: colors.yellowLight, borderWidth: 1.5, borderColor: '#EBDDA0', flexWrap: 'wrap' },
   attendanceCardDone: { backgroundColor: colors.greenLight, borderColor: colors.green },
-  attendanceEmoji: { fontSize: 26 },
-  attendanceText: { flexShrink: 1, color: colors.dark, fontSize: 16, fontFamily: fonts.extrabold, textAlign: 'center' },
+  attendanceEmoji: { fontSize: 19 },
+  attendanceText: { flexShrink: 1, color: colors.dark, fontSize: 13, fontFamily: fonts.extrabold, textAlign: 'center' },
+  taskDoneText: { color: colors.green, fontSize: 12, fontFamily: fonts.extrabold },
   attendanceLegend: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', gap: 5, marginTop: 8, marginBottom: 6 },
   legendDone: { color: colors.green, fontSize: 11, fontFamily: fonts.bold },
   legendMissed: { color: '#A54A3C', fontSize: 11, fontFamily: fonts.bold },
   legendReward: { color: '#856500', fontSize: 11, fontFamily: fonts.bold },
+  nextTaskCard: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 9, padding: 12, backgroundColor: '#EAF7E9', borderRadius: 16, borderWidth: 1.5, borderColor: '#A8D5AE' },
+  nextTaskEmoji: { fontSize: 32 }, nextTaskCopy: { flex: 1 }, nextTaskEyebrow: { color: colors.green, fontSize: 10, fontFamily: fonts.extrabold, letterSpacing: 0.5 }, nextTaskTitle: { color: '#20221D', fontSize: 16, fontFamily: fonts.extrabold, marginTop: 2 }, nextTaskTrail: { color: '#64685F', fontSize: 11, fontFamily: fonts.semibold, marginTop: 1 },
   calendarEvent: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.white, borderRadius: 16, padding: 11, marginTop: 8, borderWidth: 1.5, borderColor: colors.border, borderBottomWidth: 4, borderBottomColor: '#D8D4C1' },
   calendarEventIcon: { width: 54, height: 54, borderRadius: 16, backgroundColor: colors.greenLight, alignItems: 'center', justifyContent: 'center' },
   calendarEventEmoji: { fontSize: 32 },
@@ -280,9 +283,6 @@ const p = StyleSheet.create({
   vazioDia: { marginTop: 10, backgroundColor: colors.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border, alignItems: 'center', gap: 8 },
   vazioDiaTxt: { color: '#65665F', fontSize: 12, fontFamily: fonts.medium, lineHeight: 18, textAlign: 'center' },
   linkTxt: { color: colors.green, fontSize: 12, fontFamily: fonts.bold },
-  nota: { marginTop: 16, backgroundColor: colors.yellowLight, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#EBDDA0' },
-  notaTitulo: { color: '#785A00', fontSize: 12, fontFamily: fonts.extrabold },
-  notaTxt: { color: '#59502A', fontSize: 11, fontFamily: fonts.medium, lineHeight: 17, marginTop: 4 },
   centro: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, paddingBottom: 80, gap: 10 },
   centroEmoji: { fontSize: 44 },
   centroTitulo: { color: '#20221D', fontSize: 16, fontFamily: fonts.extrabold, textAlign: 'center' },

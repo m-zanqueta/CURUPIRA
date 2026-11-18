@@ -6,6 +6,7 @@ import {
 import { entrarNaTurma } from '../services/storage'
 import { fonts } from '../theme'
 import { cores } from '../constants/cores'
+import { LOGO_CURUPIRA, SLOGAN_CURUPIRA } from '../constants/brand'
 
 const VERDE = cores.verdePrimario || '#009D25'
 
@@ -52,9 +53,9 @@ export default function EntrarTurma({ aluno, onEntrou, onSemSessao, onVoltarLogi
 
         {/* Topo verde */}
         <View style={s.topo}>
-          <Image source={require('../assets/logo.png')} style={s.logo} resizeMode="contain" />
+          <Image source={LOGO_CURUPIRA} style={s.logo} resizeMode="contain" />
           <Text style={s.appNome}>CURUPIRA</Text>
-          <Text style={s.tagline}>Atividades extracurriculares gamificadas</Text>
+          <Text style={s.tagline}>{SLOGAN_CURUPIRA}</Text>
         </View>
 
         {/* Card branco */}
