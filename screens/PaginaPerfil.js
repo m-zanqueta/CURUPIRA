@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { View, StyleSheet, TouchableOpacity, ScrollView, Image, Platform } from 'react-native'
+import { View, StyleSheet, TouchableOpacity, Pressable, ScrollView, Image, Platform } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import { Text, ActivityIndicator } from 'react-native-paper'
 import { colors, fonts } from '../theme'
@@ -118,10 +118,20 @@ export default function PaginaPerfil({ width, aluno, turma, progresso, erroProgr
           <View style={p.profileTopLine}>
             <Text style={p.profilePageTitle}>Meu perfil</Text>
           </View>
-          <TouchableOpacity onPress={escolherFoto} activeOpacity={0.82} style={p.avatarCircle} accessibilityRole="button" accessibilityLabel="Trocar foto do perfil">
-            {avatarUrl ? <Image source={{ uri: avatarUrl }} style={p.avatarImage} resizeMode="cover" /> : <Text style={p.avatarGlyph}>🧑‍🌾</Text>}
-            {enviandoFoto ? <View style={p.avatarOverlay}><ActivityIndicator color={colors.white} /></View> : <View style={p.cameraBadge}><Text style={p.cameraGlyph}>📷</Text></View>}
-          </TouchableOpacity>
+          <Pressable
+            onPress={escolherFoto}
+            disabled={enviandoFoto}
+            style={({ pressed }) => [p.avatarCircle, pressed && !enviandoFoto && p.avatarPressed]}
+            hitSlop={16}
+            pressRetentionOffset={16}
+            collapsable={false}
+            accessibilityRole="button"
+            accessibilityLabel="Trocar foto do perfil"
+            accessibilityHint="Toque em qualquer parte do círculo para escolher uma foto"
+          >
+            {avatarUrl ? <Image pointerEvents="none" source={{ uri: avatarUrl }} style={p.avatarImage} resizeMode="cover" /> : <Text pointerEvents="none" style={p.avatarGlyph}>🧑‍🌾</Text>}
+            {enviandoFoto ? <View pointerEvents="none" style={p.avatarOverlay}><ActivityIndicator color={colors.white} /></View> : <View pointerEvents="none" style={p.cameraBadge}><Text style={p.cameraGlyph}>📷</Text></View>}
+          </Pressable>
         </View>
 
         <View style={p.profileInfo}>
@@ -190,16 +200,17 @@ export default function PaginaPerfil({ width, aluno, turma, progresso, erroProgr
 const p = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.cream, overflow: 'hidden' },
   profileScroll: { paddingBottom: 78, backgroundColor: colors.cream },
-  profileHero: { height: 174, backgroundColor: colors.green, paddingTop: Platform.OS === 'android' ? 34 : 48, alignItems: 'center' },
+  profileHero: { height: 174, backgroundColor: colors.green, paddingTop: Platform.OS === 'android' ? 34 : 48, alignItems: 'center', zIndex: 2, elevation: 2 },
   profileTopLine: { width: '100%', paddingHorizontal: 22, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   profilePageTitle: { color: colors.white, fontSize: 23, fontFamily: fonts.extrabold },
-  avatarCircle: { position: 'absolute', bottom: -46, width: 104, height: 104, borderRadius: 52, backgroundColor: '#E8EFE9', borderWidth: 5, borderColor: colors.white, alignItems: 'center', justifyContent: 'center', elevation: 5 },
+  avatarCircle: { position: 'absolute', bottom: -46, width: 104, height: 104, borderRadius: 52, backgroundColor: '#E8EFE9', borderWidth: 5, borderColor: colors.white, alignItems: 'center', justifyContent: 'center', elevation: 5, zIndex: 5 },
+  avatarPressed: { opacity: 0.82, transform: [{ scale: 0.97 }] },
   avatarImage: { width: '100%', height: '100%', borderRadius: 52 },
   avatarOverlay: { ...StyleSheet.absoluteFillObject, borderRadius: 52, backgroundColor: '#0008', alignItems: 'center', justifyContent: 'center' },
   cameraBadge: { position: 'absolute', right: -2, bottom: 0, width: 31, height: 31, borderRadius: 16, backgroundColor: colors.yellow, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.white },
   cameraGlyph: { fontSize: 15 },
   avatarGlyph: { color: '#79877B', fontSize: 58, fontFamily: fonts.regular, lineHeight: 66 },
-  profileInfo: { paddingTop: 52, paddingHorizontal: 18 },
+  profileInfo: { paddingTop: 52, paddingHorizontal: 18, zIndex: 1 },
   profileName: { textAlign: 'center', color: '#171914', fontSize: 26, fontFamily: fonts.extrabold, marginBottom: 4 },
   profileTurma: { textAlign: 'center', color: '#77786F', fontSize: 12, fontFamily: fonts.semibold, marginBottom: 14 },
   profileStats: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', backgroundColor: colors.white, borderRadius: 16, paddingVertical: 14, marginTop: 8, marginBottom: 16, borderWidth: 1, borderColor: colors.border },

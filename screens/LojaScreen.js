@@ -8,6 +8,7 @@ import { colors, fonts } from '../theme'
 import { carregarEstadoLoja, comprarItem, listarAcessoriosLoja, obterResultadoMigracao } from '../services/storage'
 import { IconeAcessorio } from '../components/IconeUI'
 import TextoContorno from '../components/TextoContorno'
+import { LOGO_CURUPIRA } from '../constants/brand'
 
 // Texto do aviso de sincronização conforme o estado explícito devolvido por carregarEstadoLoja.
 function avisoDeSincronizacao(e) {
@@ -286,7 +287,7 @@ export default function LojaScreen({ onLogout, aluno, turma, onConquistasAtualiz
         <View style={s.heroPetCircle}>
           {turma?.pet
             ? <Image source={{ uri: turma.pet }} style={{ width: 42, height: 42 }} resizeMode="contain" />
-            : <Image source={require('../assets/logo.png')} style={{ width: 36, height: 36 }} resizeMode="contain" />
+            : <Image source={LOGO_CURUPIRA} style={{ width: 36, height: 36 }} resizeMode="contain" />
           }
         </View>
       </Surface>

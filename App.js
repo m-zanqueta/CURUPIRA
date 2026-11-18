@@ -10,6 +10,7 @@ import {
 } from '@expo-google-fonts/montserrat'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { PaperProvider, MD3DarkTheme } from 'react-native-paper'
+import { LOGO_CURUPIRA, SLOGAN_CURUPIRA } from './constants/brand'
 
 const tema = {
   ...MD3DarkTheme,
@@ -45,7 +46,7 @@ const tema = {
   },
 }
 import { colors } from './theme'
-import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp, aoSessaoInvalida, temTokenAluno, restaurarSessaoStaff, restaurarPerfilAluno, listarNotificacoesConquistasAluno, marcarNotificacaoConquistaVista } from './services/storage'
+import { inicializarProfessores, buscarTurmaDoAluno, consultarProgressoGeral, salvarSessaoApp, obterSessaoApp, limparSessaoApp, aoSessaoInvalida, temTokenAluno, restaurarSessaoStaff, restaurarPerfilAluno, listarNotificacoesConquistasAluno, marcarNotificacaoConquistaVista, listarNotificacoesTarefasAluno, marcarNotificacaoTarefaVista } from './services/storage'
 import Login from './screens/Login'
 import CriarPerfil from './screens/CriarPerfil'
 import LoginProfessor from './screens/LoginProfessor'
@@ -103,6 +104,7 @@ function AppInterno() {
   const [turmaAluno,    setTurmaAluno]    = useState(null)
   const [progressoAluno,setProgressoAluno]= useState(null)
   const [notificacoesConquistas, setNotificacoesConquistas] = useState([])
+  const [destinoNotificacao, setDestinoNotificacao] = useState(null)
   const idsNotificacoes = useRef(new Set())
   const verificarConquistasRef = useRef(null)
   const fadeAnim = useRef(new Animated.Value(1)).current
@@ -111,20 +113,37 @@ function AppInterno() {
   verificarConquistasRef.current = async () => {
     if (!aluno?.id || aluno.id === 'loja') return
     try {
-      const pendentes = await listarNotificacoesConquistasAluno()
+      const [conquistas, tarefas] = await Promise.all([listarNotificacoesConquistasAluno(), listarNotificacoesTarefasAluno()])
+      const pendentes = [
+        ...conquistas.map(n => ({ ...n, tipo: 'conquista', chave: `conquista:${n.id}` })),
+        ...tarefas.map(n => ({ ...n, tipo: 'tarefa', chave: `tarefa:${n.id}` })),
+      ]
       setNotificacoesConquistas(atual => {
-        const novas = pendentes.filter(n => !idsNotificacoes.current.has(String(n.id)))
-        novas.forEach(n => idsNotificacoes.current.add(String(n.id)))
+        const novas = pendentes.filter(n => !idsNotificacoes.current.has(n.chave))
+        novas.forEach(n => idsNotificacoes.current.add(n.chave))
         return [...atual, ...novas]
       })
     } catch (e) { console.warn('Não foi possível verificar conquistas:', e?.codigo || e?.message) }
   }
 
-  const dispensarConquista = useCallback(async id => {
-    setNotificacoesConquistas(atual => atual.filter(n => String(n.id) !== String(id)))
-    try { await marcarNotificacaoConquistaVista(id) }
-    catch (e) { console.warn('Falha ao confirmar notificação de conquista:', e?.codigo || e?.message) }
+  const dispensarConquista = useCallback(async notificacao => {
+    setNotificacoesConquistas(atual => atual.filter(n => n.chave !== notificacao?.chave))
+    if (!notificacao) return
+    try {
+      if (notificacao.tipo === 'tarefa') await marcarNotificacaoTarefaVista(notificacao.id)
+      else await marcarNotificacaoConquistaVista(notificacao.id)
+    } catch (e) { console.warn('Falha ao confirmar notificação:', e?.codigo || e?.message) }
   }, [])
+
+  const abrirNotificacao = useCallback(async notificacao => {
+    await dispensarConquista(notificacao)
+    if (notificacao?.tipo === 'tarefa' && notificacao.missao_id) {
+      setDestinoNotificacao({ missaoId: notificacao.missao_id, chave: notificacao.chave, criadoEm: Date.now() })
+      navegarCom('pet')
+    } else if (notificacao?.tipo === 'conquista') {
+      navegarCom('pet')
+    }
+  }, [dispensarConquista])
 
   useEffect(() => {
     const listener = AppState.addEventListener('change', estado => {
@@ -162,7 +181,12 @@ function AppInterno() {
         // (inclusive o papel) volta do banco. Sem token válido (ou sem conseguir verificar) => tela de login.
         if (['admin', 'professor', 'coordenador'].includes(sessao?.tipo)) {
           let perfil = null
-          try { perfil = await restaurarSessaoStaff() } catch (e) { console.warn('Sessão de staff não verificada:', e?.codigo) }
+          try { perfil = await restaurarSessaoStaff() }
+          catch (e) {
+            console.warn('Sessão de staff não verificada:', e?.codigo)
+            if (ativo) setTela('erro404')
+            return
+          }
           if (!ativo) return
           if (!perfil) {
             await limparSessaoApp()
@@ -187,7 +211,11 @@ function AppInterno() {
               const perfil = await restaurarPerfilAluno()
               if (!perfil) { await limparSessaoApp(); if (ativo) setTela('login'); return }
               alunoSalvo = { ...sessao.usuario, ...perfil }
-            } catch (e) { console.warn('Perfil do aluno não verificado (sem rede?):', e?.codigo) }
+            } catch (e) {
+              console.warn('Perfil do aluno não verificado:', e?.codigo)
+              if (ativo) setTela('erro404')
+              return
+            }
           }
           if (!ativo) return
           setAluno(alunoSalvo)
@@ -196,8 +224,8 @@ function AppInterno() {
             return
           }
           const [turma, progresso] = await Promise.all([
-            buscarTurmaDoAluno(alunoSalvo.turmaId),
-            consultarProgressoGeral(alunoSalvo.id),
+            buscarTurmaDoAluno(alunoSalvo.turmaId, { lancarErro: true }),
+            consultarProgressoGeral(alunoSalvo.id, { lancarErro: true }),
           ])
           if (!ativo) return
           setAluno(alunoSalvo)
@@ -215,7 +243,7 @@ function AppInterno() {
         setTela('login')
       } catch (error) {
         console.error('Não foi possível restaurar a sessão salva:', error)
-        if (ativo) setTela('login')
+        if (ativo) setTela('erro404')
       }
     }
     if (fontsLoaded) init()
@@ -375,9 +403,9 @@ function AppInterno() {
   if (!fontsLoaded || tela === 'splash' || tela === 'splashLogin') {
     return (
       <Animated.View style={[styles.splash, { opacity: fadeAnim }]}>
-        <Image source={require('./assets/logo.png')} style={styles.splashLogo} resizeMode="contain" />
+        <Image source={LOGO_CURUPIRA} style={styles.splashLogo} resizeMode="contain" />
         <Text style={styles.splashNome}>CURUPIRA</Text>
-        <Text style={styles.splashTagline}>Atividades extracurriculares gamificadas</Text>
+        <Text style={styles.splashTagline}>{SLOGAN_CURUPIRA}</Text>
         <ActivityIndicator color={colors.yellow} size="large" style={{ marginTop: 40 }} />
       </Animated.View>
     )
@@ -442,6 +470,7 @@ function AppInterno() {
             onLogout={sairAluno}
             onLoja={() => navegarCom('loja')}
             onConquistasAtualizadas={() => verificarConquistasRef.current?.()}
+            destinoTrilha={destinoNotificacao}
           />
         )}
 
@@ -461,7 +490,7 @@ function AppInterno() {
         )}
 
         {['pet', 'loja'].includes(tela) && aluno?.id !== 'loja' && (
-          <ConquistaToast notificacao={notificacoesConquistas[0]} onDispensar={dispensarConquista} />
+          <ConquistaToast notificacao={notificacoesConquistas[0]} onDispensar={dispensarConquista} onAbrir={abrirNotificacao} />
         )}
 
       </SafeAreaProvider>

@@ -21,18 +21,42 @@ async function rpc(nome: string, args: Record<string, unknown>) {
 }
 
 async function apagar(caminho: string) {
-  const { error } = await admin.storage.from(BUCKET).remove([caminho])
-  if (error) {
-    console.error('Remocao de evidencia falhou', error.name)
-    await admin.from('tarefas_evidencias_lixeira').upsert({ caminho }, { onConflict: 'caminho' }).then(() => {})
+  let ultimoErro: unknown = null
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    try {
+      const { error } = await admin.storage.from(BUCKET).remove([caminho])
+      if (!error) {
+        const { error: deleteError } = await admin.from('tarefas_evidencias_lixeira').delete().eq('caminho', caminho)
+        if (deleteError) console.error('Falha ao remover evidencia da fila de limpeza', deleteError.code || deleteError.name)
+        return
+      }
+      ultimoErro = error
+    } catch (error) {
+      ultimoErro = error
+    }
+    if (tentativa < 2) await new Promise(resolve => setTimeout(resolve, 250 * (tentativa + 1)))
   }
+  console.error('Remocao de evidencia falhou apos retentativas', (ultimoErro as { name?: string })?.name || 'unknown')
+  const { error: filaError } = await admin.from('tarefas_evidencias_lixeira').upsert({ caminho }, { onConflict: 'caminho' })
+  if (filaError) console.error('Falha ao registrar evidencia para limpeza posterior', filaError.code || filaError.name)
 }
 
 async function limparLixeira() {
-  const { data } = await admin.from('tarefas_evidencias_lixeira').select('caminho').order('criado_em').limit(20)
+  const { data, error: filaErro } = await admin.from('tarefas_evidencias_lixeira').select('caminho').order('criado_em').limit(20)
+  if (filaErro) {
+    console.error('Falha ao consultar fila de limpeza de evidencias', filaErro.code || filaErro.name)
+    return
+  }
   for (const item of data || []) {
-    const { error } = await admin.storage.from(BUCKET).remove([item.caminho])
-    if (!error) await admin.from('tarefas_evidencias_lixeira').delete().eq('caminho', item.caminho)
+    try {
+      const { error } = await admin.storage.from(BUCKET).remove([item.caminho])
+      if (!error) {
+        const { error: deleteError } = await admin.from('tarefas_evidencias_lixeira').delete().eq('caminho', item.caminho)
+        if (deleteError) console.error('Falha ao remover evidencia da fila de limpeza', deleteError.code || deleteError.name)
+      } else console.error('Nova tentativa de limpeza de evidencia falhou', error.name)
+    } catch (error) {
+      console.error('Nova tentativa de limpeza de evidencia falhou', (error as { name?: string })?.name || 'unknown')
+    }
   }
 }
 

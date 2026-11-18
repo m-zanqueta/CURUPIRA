@@ -7,6 +7,9 @@ verify_jwt = false
 [functions.convidar-professor]
 verify_jwt = false
 
+[functions.recuperar-senha]
+verify_jwt = false
+
 [functions.evidencias-tarefas]
 verify_jwt = false
 

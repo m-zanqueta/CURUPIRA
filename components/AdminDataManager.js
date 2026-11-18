@@ -109,6 +109,7 @@ export default function AdminDataManager({ visible, onClose, usuario, onAdminAtu
   const [erro, setErro] = useState('')
   const [errosCampos, setErrosCampos] = useState({})
   const [busca, setBusca] = useState('')
+  const [filtroSlot, setFiltroSlot] = useState('todos')
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false)
 
   async function carregar(tabela = aba) {
@@ -135,6 +136,7 @@ export default function AdminDataManager({ visible, onClose, usuario, onAdminAtu
     if (visible) {
       setAba('professores')
       setBusca('')
+      setFiltroSlot('todos')
       setSelecionado(null)
       setConfirmandoExclusao(false)
       setErrosCampos({})
@@ -145,6 +147,7 @@ export default function AdminDataManager({ visible, onClose, usuario, onAdminAtu
   function trocarAba(novaAba) {
     setAba(novaAba)
     setBusca('')
+    setFiltroSlot('todos')
     setSelecionado(null)
     setRascunho({})
     setConfirmandoExclusao(false)
@@ -152,7 +155,10 @@ export default function AdminDataManager({ visible, onClose, usuario, onAdminAtu
     carregar(novaAba)
   }
 
-  const registrosFiltrados = registros.filter(registro =>
+  const registrosDaAba = aba === 'acessorios' && filtroSlot !== 'todos'
+    ? registros.filter(registro => registro.slot === filtroSlot)
+    : registros
+  const registrosFiltrados = registrosDaAba.filter(registro =>
     Object.entries(registro)
       .filter(([chave]) => chave !== 'senha')
       .some(([, valor]) => textoValor(valor).toLowerCase().includes(busca.trim().toLowerCase()))
@@ -382,11 +388,21 @@ export default function AdminDataManager({ visible, onClose, usuario, onAdminAtu
           ) : (
             <>
               <View style={styles.listToolbar}>
-                <Text style={styles.count}>{registros.length} {registros.length === 1 ? 'registro' : 'registros'}</Text>
+                <Text style={styles.count}>{aba === 'acessorios' ? `${registrosFiltrados.length} de ${registros.length} itens` : `${registros.length} ${registros.length === 1 ? 'registro' : 'registros'}`}</Text>
                 <TouchableOpacity onPress={() => carregar()} disabled={carregando}>
                   <Text style={styles.refreshText}>↻ Atualizar lista</Text>
                 </TouchableOpacity>
               </View>
+              {aba === 'acessorios' && <View style={styles.slotFilters}>
+                {[
+                  ['todos', 'Todos'],
+                  ['chapeu', 'Chapéus'],
+                  ['colar', 'Colares'],
+                  ['fundo', 'Cenários'],
+                ].map(([valor, texto]) => <TouchableOpacity key={valor} onPress={() => setFiltroSlot(valor)} style={[styles.slotFilter, filtroSlot === valor && styles.slotFilterActive]} accessibilityRole="button" accessibilityState={{ selected: filtroSlot === valor }}>
+                  <Text style={[styles.slotFilterText, filtroSlot === valor && styles.slotFilterTextActive]}>{texto}</Text>
+                </TouchableOpacity>)}
+              </View>}
               <TextInput
                 style={styles.searchInput}
                 value={busca}
@@ -440,6 +456,11 @@ const styles = StyleSheet.create({
   tabText: { color: colors.muted, fontFamily: fonts.medium, fontSize: 12 },
   tabTextActive: { color: colors.green, fontFamily: fonts.bold },
   listToolbar: { minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 },
+  slotFilters: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 9 },
+  slotFilter: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.cream, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 },
+  slotFilterActive: { borderColor: colors.green, backgroundColor: colors.greenLight },
+  slotFilterText: { color: colors.muted, fontFamily: fonts.medium, fontSize: 11 },
+  slotFilterTextActive: { color: colors.green, fontFamily: fonts.bold },
   searchInput: { borderWidth: 1, borderColor: colors.border, borderRadius: 9, backgroundColor: '#fffef7', color: colors.dark, paddingHorizontal: 11, paddingVertical: 9, fontFamily: fonts.regular, fontSize: 12, marginBottom: 9 },
   count: { color: colors.muted, fontFamily: fonts.medium, fontSize: 12 },
   refreshText: { color: colors.green, fontFamily: fonts.semibold, fontSize: 12 },

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { View, StyleSheet, TouchableOpacity, ScrollView, Image, Platform, Alert } from 'react-native'
+import { View, StyleSheet, TouchableOpacity, ScrollView, Image, Platform } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import { Text, ActivityIndicator } from 'react-native-paper'
 import { colors, fonts } from '../theme'
@@ -11,7 +11,7 @@ import { mensagemDeErroAluno } from './useDadosAluno'
 // Mostra as trilhas reais da turma, suas tarefas e o progresso do aluno.
 //
 // Regras do servidor que esta tela respeita (não as decide):
-//   • cada tarefa credita suas moedas ao concluir; o bônus final entra após aprovação da coordenação;
+//   • cada tarefa credita suas moedas após aprovação do professor; o bônus final entra após aprovação da coordenação;
 //   • entregar (pendente -> entregue) é irreversível; aprovar é só do professor.
 //
 // Props:
@@ -45,22 +45,7 @@ export function rotuloDeStatus(missao) {
   return STATUS_TEXTO[missao.status] || 'Em andamento'
 }
 
-// Confirmação antes de entregar (irreversível). Alert.alert não faz nada no navegador: usa window.confirm lá.
-function confirmar(titulo, texto, rotuloOk) {
-  if (Platform.OS === 'web') {
-    return Promise.resolve(typeof window !== 'undefined' && typeof window.confirm === 'function'
-      ? window.confirm(`${titulo}\n\n${texto}`)
-      : true)
-  }
-  return new Promise(resolve => {
-    Alert.alert(titulo, texto, [
-      { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
-      { text: rotuloOk, onPress: () => resolve(true) },
-    ], { cancelable: true, onDismiss: () => resolve(false) })
-  })
-}
-
-export default function PaginaTrilha({ width, petImage, alunoId, missoes = [], estado, erro, onRecarregar, onAtualizado }) {
+export default function PaginaTrilha({ width, petImage, alunoId, missoes = [], estado, erro, onRecarregar, onAtualizado, destinoMissao }) {
   const [selecionadaId, setSelecionadaId] = useState(null)
   const [etapaSelecionada, setEtapaSelecionada] = useState(null)
   const [fotoEtapa, setFotoEtapa] = useState(null)
@@ -68,11 +53,19 @@ export default function PaginaTrilha({ width, petImage, alunoId, missoes = [], e
   const [aviso, setAviso] = useState(null) // { tipo: 'ok' | 'erro', texto }
   const trava = useRef(false)              // evita dois toques seguidos avançarem duas etapas
   const vivo = useRef(true)                // não mexe no estado depois de a página sair da tela
+  const destinoAplicado = useRef(null)
   useEffect(() => { vivo.current = true; return () => { vivo.current = false } }, [])
 
   const missao = missoes.find(m => String(m.id) === String(selecionadaId)) || null
 
   useEffect(() => { setAviso(null) }, [selecionadaId])
+  useEffect(() => {
+    if (!destinoMissao?.missaoId || destinoAplicado.current === destinoMissao.chave || !missoes.some(m => String(m.id) === String(destinoMissao.missaoId))) return
+    destinoAplicado.current = destinoMissao.chave
+    setSelecionadaId(destinoMissao.missaoId)
+    setEtapaSelecionada(null)
+    setAviso(null)
+  }, [destinoMissao?.chave, destinoMissao?.missaoId, missoes])
 
   async function executar(acao, textoOk, aoConcluir) {
     if (trava.current) return false
@@ -127,11 +120,9 @@ export default function PaginaTrilha({ width, petImage, alunoId, missoes = [], e
     executar(() => enviarFotoEtapaTarefa(missao.id, etapaSelecionada + 1, fotoEtapa), `Foto enviada! O professor vai conferir. Após aprovação: +${moedas} moedas.`, () => { setEtapaSelecionada(null); setFotoEtapa(null) })
   }
 
-  async function entregar() {
+  function entregar() {
     if (!missao) return
-    const ok = await confirmar('Entregar trilha?', 'Depois de entregar, não dá para voltar atrás. A coordenação vai avaliar.', 'Entregar')
-    if (!ok) return
-    executar(() => concluirMissao(alunoId, missao.id), 'Trilha entregue! Agora é com a coordenação.')
+    executar(() => concluirMissao(alunoId, missao.id), 'Trilha enviada! Aguarde a aprovação para receber suas moedas.')
   }
 
   const total = missao ? missao.etapas.length : 0
@@ -214,7 +205,14 @@ export default function PaginaTrilha({ width, petImage, alunoId, missoes = [], e
               })}
             </View> : <Text style={p.centroTexto}>Esta trilha ainda não tem tarefas.</Text>}
             {aviso && <View style={[p.aviso, aviso.tipo === 'erro' ? p.avisoErro : p.avisoOk]}><Text style={[p.avisoTxt, aviso.tipo === 'erro' ? p.avisoTxtErro : p.avisoTxtOk]}>{aviso.texto}</Text></View>}
-            {missao.status === 'pendente' && total > 0 && concluiuTodas && <TouchableOpacity onPress={entregar} disabled={ocupado} style={[p.botaoEntregar, ocupado && p.botaoDesabilitado]}>{ocupado ? <ActivityIndicator color={colors.white} /> : <Text style={p.botaoPrincipalTxt}>Entregar trilha</Text>}</TouchableOpacity>}
+            {missao.status === 'pendente' && total > 0 && concluiuTodas && <View style={p.finalTrilha}>
+              <Text style={p.finalEmoji}>🎉</Text>
+              <Text style={p.finalTitulo}>Trilha finalizada!</Text>
+              <Text style={p.finalTexto}>Envie para a coordenação e ganhe +{Number(missao.moedas) || 0} moedas após a aprovação.</Text>
+              <TouchableOpacity onPress={entregar} disabled={ocupado} activeOpacity={0.85} style={[p.botaoEntregar, ocupado && p.botaoDesabilitado]} accessibilityRole="button">
+                {ocupado ? <ActivityIndicator color={colors.white} /> : <Text style={p.botaoPrincipalTxt}>✨ ENVIAR TRILHA ✨</Text>}
+              </TouchableOpacity>
+            </View>}
             {missao.status === 'entregue' && <Text style={p.rodape}>Trilha entregue! Aguarde a avaliação.</Text>}
             {missao.status === 'aprovado' && <Text style={p.rodape}>Trilha aprovada! +{Number(missao.moedas) || 0} moedas de bônus 🎉</Text>}
           </> : <>
@@ -295,6 +293,10 @@ const p = StyleSheet.create({
   avisoTxtErro: { color: '#a02121' },
   botaoPrincipal: { minHeight: 52, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.green, borderRadius: 16, borderBottomWidth: 5, borderBottomColor: '#08761F', marginTop: 8, paddingHorizontal: 18 },
   botaoEntregar: { minHeight: 52, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.purple, borderRadius: 16, borderBottomWidth: 5, borderBottomColor: '#4D0D75', marginTop: 8, paddingHorizontal: 18 },
+  finalTrilha: { alignItems: 'center', backgroundColor: '#FFF7D5', borderColor: colors.yellow, borderWidth: 2, borderRadius: 20, padding: 16, marginTop: 14, marginBottom: 14, gap: 6 },
+  finalEmoji: { fontSize: 38 },
+  finalTitulo: { color: '#245C2D', fontSize: 20, fontFamily: fonts.extrabold, textAlign: 'center' },
+  finalTexto: { color: '#47452E', fontSize: 14, lineHeight: 20, fontFamily: fonts.semibold, textAlign: 'center' },
   botaoDesabilitado: { opacity: 0.6 },
   botaoPrincipalTxt: { color: colors.white, fontSize: 16, fontFamily: fonts.extrabold },
   rodape: { textAlign: 'center', color: '#59645A', fontSize: 12, fontFamily: fonts.semibold, marginTop: 14 },

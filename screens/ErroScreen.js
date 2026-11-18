@@ -1,6 +1,7 @@
 import { View, StyleSheet, Image } from 'react-native'
 import { Text, Button, Surface } from 'react-native-paper'
 import { colors, fonts } from '../theme'
+import { LOGO_CURUPIRA } from '../constants/brand'
 
 // Tela de erro genérica do Curupira (Semana 42 — Washington).
 //
@@ -25,7 +26,7 @@ export default function ErroScreen({
     <View style={s.root}>
       <View style={s.bg} />
       <Surface style={s.card} elevation={3}>
-        <Image source={require('../assets/logo.png')} style={s.logo} resizeMode="contain" />
+        <Image source={LOGO_CURUPIRA} style={s.logo} resizeMode="contain" />
 
         <Text style={s.codigo}>404</Text>
         <Text variant="titleLarge" style={s.titulo}>{titulo}</Text>

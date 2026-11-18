@@ -222,6 +222,30 @@ export async function convidarProfessorPorEmail({ nome, email }) {
   return resposta.data
 }
 
+async function chamarRecuperacaoSenha(body) {
+  let resposta
+  try { resposta = await supabase.functions.invoke('recuperar-senha', { body }) }
+  catch {
+    throw Object.assign(new Error('Não foi possível conectar ao serviço de recuperação. Tente novamente.'), { codigo: 'rede' })
+  }
+  if (resposta.error || !resposta.data?.ok) {
+    let dados = resposta.data
+    if (!dados?.erro) {
+      try { dados = await resposta.error?.context?.json?.() } catch {}
+    }
+    throw Object.assign(new Error(dados?.erro || 'Não foi possível concluir a recuperação. Tente novamente.'), { codigo: dados?.codigo || 'falha' })
+  }
+  return resposta.data
+}
+
+export async function solicitarRecuperacaoSenha(email, papel) {
+  return chamarRecuperacaoSenha({ operacao: 'enviar', email: String(email || '').trim().toLowerCase(), papel })
+}
+
+export async function confirmarRecuperacaoSenha(email, papel, codigo, senha) {
+  return chamarRecuperacaoSenha({ operacao: 'confirmar', email: String(email || '').trim().toLowerCase(), papel, codigo: String(codigo || '').trim(), senha })
+}
+
 // ── Imagens (pets-images) — TODA escrita/remoção passa pela Edge Function "imagens-admin" ─────────────────
 // O app NÃO grava nem apaga no Storage com a chave anon (sem fallback: se a função falhar, a operação falha com a mensagem do servidor).
 // O servidor valida token + papel admin + tipo REAL do arquivo + tamanho e GERA o nome do objeto; o app só recebe o caminho e a URL pública.
@@ -844,8 +868,9 @@ async function rpcAluno(nome, args = {}) {
   const { data, error } = await supabase.rpc(nome, { p_token: token, ...args })
   if (error) {
     const e = erroNuvem(error)
-    // migration_ausente com token: a migration foi desfeita no banco; o token não vale mais.
-    if (e.codigo === 'sessao_invalida' || e.codigo === 'migration_ausente') {
+    // Só a resposta PT401 invalida a sessão. Uma RPC ausente (404/PGRST202)
+    // significa que o banco ainda não recebeu essa migration; não encerre o login.
+    if (e.codigo === 'sessao_invalida') {
       await AsyncStorage.removeItem(CHAVE_TOKEN_ALUNO).catch(() => {})
       ouvinteSessaoInvalida?.()
     }
@@ -1400,12 +1425,41 @@ export async function listarConquistasDoAluno(alunoId, opcoes = {}) {
 
 export async function listarNotificacoesConquistasAluno() {
   if (!(await temTokenAluno())) return []
-  return (await rpcAluno('aluno_notificacoes_conquistas')) || []
+  return (await rpcAlunoNotificacaoOpcional('aluno_notificacoes_conquistas')) || []
 }
 
 export async function marcarNotificacaoConquistaVista(id) {
   if (id == null || !(await temTokenAluno())) return
-  await rpcAluno('aluno_marcar_notificacao_conquista', { p_notificacao_id: id })
+  await rpcAlunoNotificacaoOpcional('aluno_marcar_notificacao_conquista', { p_notificacao_id: id })
+}
+
+export async function listarNotificacoesTarefasAluno() {
+  if (!(await temTokenAluno())) return []
+  return (await rpcAlunoNotificacaoOpcional('aluno_notificacoes_tarefas')) || []
+}
+
+export async function marcarNotificacaoTarefaVista(id) {
+  if (id == null || !(await temTokenAluno())) return
+  await rpcAlunoNotificacaoOpcional('aluno_marcar_notificacao_tarefa', { p_notificacao_id: id })
+}
+
+// Notificações são recursos opcionais durante a atualização gradual do banco.
+// Se a função não chegou ao Supabase, ignore-a nesta execução e tente de novo
+// após reiniciar/carregar o app com as migrations publicadas. As outras falhas
+// continuam sendo reportadas e somente PT401 encerra a sessão.
+const rpcNotificacaoAusente = new Set()
+async function rpcAlunoNotificacaoOpcional(nome, args) {
+  if (rpcNotificacaoAusente.has(nome)) return []
+  try {
+    return await rpcAluno(nome, args)
+  } catch (error) {
+    if (error?.codigo === 'migration_ausente') {
+      rpcNotificacaoAusente.add(nome)
+      console.warn(`Notificações desativadas até publicar a RPC ${nome} no Supabase.`)
+      return []
+    }
+    throw error
+  }
 }
 
 // opcoes.lancarErro = true: relança a falha em vez de devolver o objeto zerado (ver listarMissoesDoAluno).

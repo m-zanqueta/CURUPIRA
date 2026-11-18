@@ -9,6 +9,7 @@ import { listarAlunos, atualizarAluno, listarTurmas, listarProfessoresParaTurma,
 import { CORES, MEDALS, RARIDADE_CONFIG, CRITERIOS } from './dashboardConfig';
 import DashboardSidebar from './DashboardSidebar';
 import CadastrarProfessor from './CadastrarProfessor';
+import { LOGO_CURUPIRA } from '../constants/brand';
 
 const { width } = Dimensions.get('window');
 
@@ -2223,7 +2224,7 @@ export default function DashboardScreen({ professor, onLogout }) {
             <TouchableOpacity onPress={() => setMenuOpen(true)} style={s.hamburger}>
               <View style={s.hLine} /><View style={s.hLine} /><View style={s.hLine} />
             </TouchableOpacity>
-            <Image source={require('../assets/logo.png')} style={s.topLogo} resizeMode="contain" />
+            <Image source={LOGO_CURUPIRA} style={s.topLogo} resizeMode="contain" />
             <View>
               <Text style={s.pageTitle}>Seja bem-vindo(a), {professor?.nome || 'Professor(a)'}! 👋</Text>
               <Text style={s.pageSub}>{turmas.length} turmas · {alunos.length} alunos · Semana de {today}</Text>

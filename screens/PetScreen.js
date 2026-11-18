@@ -8,8 +8,8 @@ import {
   Text, ActivityIndicator, Surface, ProgressBar, Chip,
 } from 'react-native-paper'
 import { colors, fonts } from '../theme'
+import { LOGO_CURUPIRA, SLOGAN_CURUPIRA } from '../constants/brand'
 import { listarItensComprados, listarAcessoriosLoja, listarEquipados, atualizarEquipado, fazerCarinhoDiarioNoPet, consultarCalendarioCarinho } from '../services/storage'
-import IconeUI from '../components/IconeUI'
 import TextoContorno from '../components/TextoContorno'
 import PaginaCalendario from './PaginaCalendario'
 import PaginaTrilha from './PaginaTrilha'
@@ -151,9 +151,9 @@ function TelaSemPet({ onLogout }) {
       <StatusBar barStyle="light-content" backgroundColor={colors.green} />
 
       <View style={se.topo}>
-        <Image source={require('../assets/logo.png')} style={se.logo} resizeMode="contain" />
+        <Image source={LOGO_CURUPIRA} style={se.logo} resizeMode="contain" />
         <Text style={se.appNome}>CURUPIRA</Text>
-        <Text style={se.tagline}>Atividades extracurriculares gamificadas</Text>
+        <Text style={se.tagline}>{SLOGAN_CURUPIRA}</Text>
       </View>
 
       <View style={se.card}>
@@ -284,7 +284,7 @@ function ModalItens({ visible, titulo, itens, selecionado, cor, carregando, onSe
   )
 }
 
-export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, onConquistasAtualizadas }) {
+export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, onConquistasAtualizadas, destinoTrilha }) {
   // A tela do PET ocupa a página central; há duas páginas vazias de cada lado.
   const [pagina, setPagina] = useState(2)
   const [filtroConquistas, setFiltroConquistas] = useState('pendentes')
@@ -301,6 +301,12 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
   const carinhoLongRef = useRef(false)
   const carinhoTrava = useRef(false)
   const deslocamentoPaginas = useRef(new Animated.Value(-2 * W)).current
+  useEffect(() => {
+    if (!destinoTrilha?.chave) return
+    paginaRef.current = 1
+    setPagina(1)
+    Animated.spring(deslocamentoPaginas, { toValue: -W, speed: 16, bounciness: 3, useNativeDriver: true }).start()
+  }, [destinoTrilha?.chave, deslocamentoPaginas])
   function abrirConquistasFeitas() {
     setFiltroConquistas('feitas')
     paginaRef.current = 3
@@ -564,12 +570,14 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
   const chapeuStyle = { position:'absolute', width:PET_SIZE*cfg.chapeu.w, height:PET_SIZE*cfg.chapeu.w*0.6, top:PET_SIZE*cfg.chapeu.top, left:PET_SIZE*cfg.chapeu.left, zIndex:10 }
   const colarStyle  = { position:'absolute', width:PET_SIZE*cfg.colar.w,  height:PET_SIZE*cfg.colar.w*0.7,  top:PET_SIZE*cfg.colar.top,  left:PET_SIZE*cfg.colar.left,  zIndex:10 }
 
+  if (!turma?.pet) return <TelaSemPet onLogout={onLogout} />
+
   return (
     <View style={s.telaExterna} {...gestoHorizontal.panHandlers}>
     <View style={s.root}>
       <Animated.View style={[s.trilhaPaginas, { width:W*5, transform:[{ translateX:deslocamentoPaginas }] }]}>
       <PaginaCalendario width={W} petImage={turma?.pet} alunoId={aluno?.id} atualizacaoCarinho={atualizacaoCarinho} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} />
-      <PaginaTrilha width={W} petImage={turma?.pet} alunoId={aluno?.id} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} onAtualizado={async () => { await dados.aposProgresso?.(); onConquistasAtualizadas?.() }} />
+      <PaginaTrilha width={W} petImage={turma?.pet} alunoId={aluno?.id} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} onAtualizado={async () => { await dados.aposProgresso?.(); onConquistasAtualizadas?.() }} destinoMissao={destinoTrilha} />
       <View style={[s.paginaConteudo, { width:W }]}>
       <StatusBar barStyle={pagina === 1 || pagina === 3 ? 'dark-content' : 'light-content'} />
 
@@ -627,7 +635,7 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
               }}>
                 {/* Pet — URL do Supabase */}
                 <Image
-                  source={{ uri: turma.pet }}
+                  source={{ uri: turma?.pet }}
                   style={{ width:PET_SIZE, height:PET_SIZE, position:'absolute' }}
                   resizeMode="contain"
                 />
@@ -661,7 +669,7 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
               </TextoContorno>
             </View>
           </View>
-          <View style={s.xpBadge}><IconeUI nome="xp" size={26} /></View>
+          <View style={s.xpBadge}><Text style={s.xpBadgeTxt}>⭐</Text></View>
           {proxEst && (
             <View style={s.xpProx}>
               <TextoContorno size={12}>{`Faltam ${(proxEst.xpMin - xp).toLocaleString('pt-BR')} para ${proxEst.label}`}</TextoContorno>
