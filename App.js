@@ -103,6 +103,7 @@ function AppInterno() {
   const [turmaAluno,    setTurmaAluno]    = useState(null)
   const [progressoAluno,setProgressoAluno]= useState(null)
   const [notificacoesConquistas, setNotificacoesConquistas] = useState([])
+  const [abrirConquistasSolicitado, setAbrirConquistasSolicitado] = useState(0)
   const idsNotificacoes = useRef(new Set())
   const verificarConquistasRef = useRef(null)
   const fadeAnim = useRef(new Animated.Value(1)).current
@@ -442,6 +443,7 @@ function AppInterno() {
             onLogout={sairAluno}
             onLoja={() => navegarCom('loja')}
             onConquistasAtualizadas={() => verificarConquistasRef.current?.()}
+            abrirConquistasSolicitado={abrirConquistasSolicitado}
           />
         )}
 
@@ -461,7 +463,7 @@ function AppInterno() {
         )}
 
         {['pet', 'loja'].includes(tela) && aluno?.id !== 'loja' && (
-          <ConquistaToast notificacao={notificacoesConquistas[0]} onDispensar={dispensarConquista} />
+          <ConquistaToast notificacao={notificacoesConquistas[0]} onDispensar={dispensarConquista} onAbrirConquista={() => { setAbrirConquistasSolicitado(v => v + 1); if (tela !== 'pet') navegarCom('pet') }} />
         )}
 
       </SafeAreaProvider>

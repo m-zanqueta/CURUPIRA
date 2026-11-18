@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
-import { Animated, PanResponder, StyleSheet, View } from 'react-native'
+import { Animated, PanResponder, StyleSheet, TouchableOpacity, View } from 'react-native'
 import { Text } from 'react-native-paper'
 import { colors, fonts } from '../theme'
 
-export default function ConquistaToast({ notificacao, onDispensar }) {
+export default function ConquistaToast({ notificacao, onDispensar, onAbrirConquista }) {
   const x = useRef(new Animated.Value(0)).current
   const dispensarRef = useRef(onDispensar)
   dispensarRef.current = onDispensar
@@ -28,18 +28,21 @@ export default function ConquistaToast({ notificacao, onDispensar }) {
   if (!notificacao) return null
   return (
     <Animated.View {...gesto.panHandlers} style={[s.toast, { transform: [{ translateX: x }] }]}>
+      <TouchableOpacity style={s.conteudo} activeOpacity={0.8} onPress={() => { onAbrirConquista?.(); dispensarRef.current?.(notificacao.id) }} accessibilityRole="button" accessibilityLabel={`Abrir conquista ${notificacao.titulo}`}>
       <View style={s.icone}><Text style={s.emoji}>{notificacao.icone || '🏅'}</Text></View>
       <View style={s.textos}>
         <Text style={s.chamada}>CONQUISTA DESBLOQUEADA!</Text>
         <Text style={s.titulo} numberOfLines={1}>{notificacao.titulo}</Text>
         {!!notificacao.descricao && <Text style={s.descricao} numberOfLines={2}>{notificacao.descricao}</Text>}
       </View>
+      </TouchableOpacity>
     </Animated.View>
   )
 }
 
 const s = StyleSheet.create({
-  toast: { position: 'absolute', top: 48, left: 14, right: 14, zIndex: 9999, elevation: 20, minHeight: 82, borderRadius: 18, backgroundColor: colors.cream || '#F5F4D9', borderWidth: 2, borderColor: colors.green || '#009D25', padding: 12, flexDirection: 'row', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  toast: { position: 'absolute', top: 48, left: 14, right: 14, zIndex: 9999, elevation: 20, minHeight: 82, borderRadius: 18, backgroundColor: colors.cream || '#F5F4D9', borderWidth: 2, borderColor: colors.green || '#009D25', padding: 12, shadowColor: '#000', shadowOpacity: 0.22, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+  conteudo: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   icone: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#E5F5E7', alignItems: 'center', justifyContent: 'center', marginRight: 11 },
   emoji: { fontSize: 29 },
   textos: { flex: 1 },

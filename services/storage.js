@@ -6,6 +6,7 @@ const CHAVE_SESSAO_APP = 'curupira_sessao_app'
 // Token de sessão do aluno (emitido por login_aluno no Supabase). Fica separado
 // do objeto de sessão para nunca ser copiado junto com os dados do aluno.
 const CHAVE_TOKEN_ALUNO = 'curupira_token_aluno'
+const CHAVE_CACHE_AVATAR_ALUNO = 'curupira_avatar_aluno_cache'
 // Token de sessão de PROFESSOR/COORDENADOR/ADMIN (emitido por login_staff). O papel NUNCA é confiado ao JSON
 // da sessão local: cada RPC de staff valida o token no servidor e deriva papel e id dele.
 const CHAVE_TOKEN_STAFF = 'curupira_token_staff'
@@ -44,6 +45,7 @@ export async function limparSessaoApp() {
     ])
   }
   await AsyncStorage.removeItem(CHAVE_TOKEN_ALUNO)
+  await AsyncStorage.removeItem(CHAVE_CACHE_AVATAR_ALUNO)
   await AsyncStorage.removeItem(CHAVE_TOKEN_STAFF)
   await AsyncStorage.removeItem(CHAVE_SESSAO_APP)
 }
@@ -748,7 +750,22 @@ async function invocarPerfilAluno(body, aluno = false) {
 export async function carregarAvatarAluno() {
   const token = await obterTokenAluno()
   if (!token) return null
-  return invocarPerfilAluno({ operacao: 'visualizar', token }).then(r => r.url || null)
+  const url = await invocarPerfilAluno({ operacao: 'visualizar', token }).then(r => r.url || null)
+  if (url) await AsyncStorage.setItem(CHAVE_CACHE_AVATAR_ALUNO, JSON.stringify({ url, salvaEm: Date.now() })).catch(() => {})
+  else await AsyncStorage.removeItem(CHAVE_CACHE_AVATAR_ALUNO).catch(() => {})
+  return url
+}
+
+export async function obterAvatarAlunoCache() {
+  try {
+    const valor = await AsyncStorage.getItem(CHAVE_CACHE_AVATAR_ALUNO)
+    if (!valor) return null
+    const cache = JSON.parse(valor)
+    // URL assinada dura uma hora; aproveita o cache local por 50 min e renova em segundo plano.
+    if (typeof cache?.url === 'string' && Date.now() - Number(cache.salvaEm) < 50 * 60 * 1000) return cache.url
+    await AsyncStorage.removeItem(CHAVE_CACHE_AVATAR_ALUNO)
+  } catch {}
+  return null
 }
 
 export async function enviarAvatarAluno(imagem) {
@@ -786,6 +803,7 @@ export async function enviarAvatarAluno(imagem) {
     }
     throw new Error(mensagens[dados?.erro] || 'Não foi possível atualizar a foto. Tente novamente.')
   }
+  await AsyncStorage.setItem(CHAVE_CACHE_AVATAR_ALUNO, JSON.stringify({ url: dados.url, salvaEm: Date.now() })).catch(() => {})
   return dados.url
 }
 

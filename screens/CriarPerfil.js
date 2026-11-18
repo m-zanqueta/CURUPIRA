@@ -156,6 +156,7 @@ export default function CriarPerfil({ onVoltar, onCriado }) {
             {codigoSolicitado ? (
               <>
                 <Text style={styles.instrucaoCodigo}>Enviamos um código para {email}. Ele expira em 10 minutos.</Text>
+                <Text style={styles.avisoSpam}>Não encontrou? Confira também a caixa de spam.</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="Código de 6 números"
@@ -257,6 +258,7 @@ const styles = StyleSheet.create({
   checkLabel: { flex: 1, fontSize: 13, color: '#555', lineHeight: 20 },
   erro: { color: 'red', fontSize: 13, marginTop: 4 },
   instrucaoCodigo: { fontSize: 14, color: '#444', lineHeight: 21 },
+  avisoSpam: { fontSize: 13, color: '#666', lineHeight: 19, marginTop: -5 },
   acoesCodigo: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
   linkCodigo: { color: cores.verde, fontSize: 14, fontWeight: '600' },
   btnDesabilitado: { opacity: 0.65 },
