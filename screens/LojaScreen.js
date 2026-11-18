@@ -267,7 +267,7 @@ export default function LojaScreen({ onLogout, aluno, turma, onConquistasAtualiz
       <Appbar.Header style={[s.appBar, { backgroundColor: 'transparent' }]} statusBarHeight={Platform.OS === 'android' ? 0 : undefined}>
         <Appbar.BackAction onPress={onLogout} color="#fff" />
         <Appbar.Content title="Loja" titleStyle={s.appBarTitle} />
-        <Chip style={s.moedasChip} textStyle={s.moedasVal} icon={() => <Text style={{ fontSize: 14 }}>⭐</Text>} compact>
+        <Chip style={s.moedasChip} textStyle={s.moedasVal} icon={() => <Text style={{ fontSize: 14 }}>💰</Text>} compact>
           {saldo.toLocaleString('pt-BR')}
         </Chip>
       </Appbar.Header>

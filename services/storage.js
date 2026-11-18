@@ -801,6 +801,9 @@ async function invocarPerfilAluno(body, aluno = false) {
   if (resposta.error || !resposta.data?.ok) {
     let codigo = resposta.data?.erro
     try { const corpo = await resposta.error?.context?.json?.(); codigo ||= corpo?.erro } catch {}
+    if (body?.operacao === 'ranking' && codigo === 'pedido_invalido') {
+      throw new Error('O ranking ainda não foi publicado no Supabase. Avise o administrador para atualizar a função perfil-aluno.')
+    }
     const mensagens = {
       sessao_invalida: 'Sua sessão expirou. Entre novamente.',
       arquivo_grande: 'A imagem precisa ter no máximo 1 MB.',
@@ -817,6 +820,13 @@ export async function carregarAvatarAluno() {
   const token = await obterTokenAluno()
   if (!token) return null
   return invocarPerfilAluno({ operacao: 'visualizar', token }).then(r => r.url || null)
+}
+
+export async function listarRankingTurmaAluno() {
+  const token = await obterTokenAluno()
+  if (!token) throw new Error('Sua sessão expirou. Entre novamente.')
+  const resposta = await invocarPerfilAluno({ operacao: 'ranking', token })
+  return Array.isArray(resposta.ranking) ? resposta.ranking : []
 }
 
 export async function enviarAvatarAluno(imagem) {
@@ -1402,6 +1412,7 @@ export async function listarMissoesDoAluno(alunoId, opcoes = {}) {
         descricao: String(e?.descricao ?? ''),
         moedas: Number(e?.moedas) || 0,
         statusEnvio: (Array.isArray(m.etapas_status) ? m.etapas_status.find(s => Number(s?.etapa_ordem) === index + 1)?.status : null) || null,
+        corrigidaEm: (Array.isArray(m.etapas_status) ? m.etapas_status.find(s => Number(s?.etapa_ordem) === index + 1)?.corrigida_em : null) || null,
       })) : [],
       etapaAtual: Number(m.etapa_atual) || 0,
       xpAluno: Number(m.xp_aluno) || 0,

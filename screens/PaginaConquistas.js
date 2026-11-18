@@ -20,6 +20,7 @@ function MiniPet({ uri, emoji = '🏅', style }) {
 }
 
 const CORES = ['#FFE27A', '#C6F1C9', '#D8C3F0', '#FFD2A8']
+const TAMANHO_TITULO = 22
 
 function primeiroTexto(obj, chaves) {
   for (const k of chaves) {
@@ -115,8 +116,8 @@ export default function PaginaConquistas({ width, petImage, alunoId, ativa, filt
   return (
     <View style={[p.page, { width }]}>
       <View style={p.simpleHeader}>
-        <Text style={p.headerEyebrow}>MEDALHAS DA AVENTURA</Text>
         <Text style={p.simpleTitle}>Conquistas</Text>
+        <Text style={p.headerCount}>🏆 {feitas.length}/{lista.length} feitas</Text>
       </View>
 
       <View style={p.filters}>
@@ -154,11 +155,6 @@ export default function PaginaConquistas({ width, petImage, alunoId, ativa, filt
         </View>
       ) : (
         <ScrollView contentContainerStyle={p.courseContent} showsVerticalScrollIndicator={false}>
-          <View style={p.achievementBanner}>
-            <MiniPet uri={petImage} emoji="🏅" style={p.bannerPet} />
-            <Text style={p.bannerText}>{filtro === 'feitas' ? 'Você conquistou!' : 'Novos desafios!'}</Text>
-            <Text style={p.bannerCount}>{feitas.length}/{lista.length}</Text>
-          </View>
           {!visiveis.length ? <View style={p.emptyFilter}><Text style={p.emptyEmoji}>{filtro === 'feitas' ? '🌱' : '🎉'}</Text><Text style={p.centroTitulo}>{filtro === 'feitas' ? 'Ainda sem conquistas' : 'Tudo conquistado!'}</Text><Text style={p.centroTexto}>{filtro === 'feitas' ? 'Complete um desafio e sua medalha aparece aqui.' : 'Parabéns! Você já ganhou todas as medalhas.'}</Text></View> : null}
           {visiveis.map(item => (
             <View key={item.id} style={[p.badgeCard, !item.desbloqueada && p.badgeLocked]}>
@@ -184,8 +180,8 @@ export default function PaginaConquistas({ width, petImage, alunoId, ativa, filt
 const p = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.cream, overflow: 'hidden' },
   simpleHeader: { backgroundColor: colors.white, paddingTop: Platform.OS === 'android' ? 34 : 48, paddingBottom: 14, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: colors.border },
-  headerEyebrow: { color: colors.green, fontSize: 9, fontFamily: fonts.bold, letterSpacing: 1.4 },
-  simpleTitle: { color: '#171914', fontSize: 23, fontFamily: fonts.extrabold, marginTop: 3 },
+  simpleTitle: { color: '#171914', fontSize: TAMANHO_TITULO, fontFamily: fonts.extrabold, marginTop: 3 },
+  headerCount: { color: colors.green, fontSize: TAMANHO_TITULO, fontFamily: fonts.extrabold, marginTop: 3 },
   filters: { flexDirection: 'row', gap: 9, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 5, backgroundColor: colors.cream },
   filterButton: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 7, backgroundColor: colors.white, borderRadius: 16, borderWidth: 2, borderColor: colors.border, borderBottomWidth: 4 },
   filterButtonActive: { backgroundColor: '#FFF0B3', borderColor: '#E2B800', borderBottomColor: '#B98D00' },
@@ -195,10 +191,6 @@ const p = StyleSheet.create({
   filterTextActive: { color: '#3C2D00' },
   filterCount: { color: '#77786F', fontSize: 11, fontFamily: fonts.extrabold },
   courseContent: { padding: 18, paddingBottom: 78, gap: 14 },
-  achievementBanner: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.purple, borderRadius: 18, paddingHorizontal: 14, borderBottomWidth: 5, borderBottomColor: '#4D0D75' },
-  bannerPet: { width: 58, height: 58, fontSize: 38, textAlign: 'center' },
-  bannerText: { flex: 1, color: colors.white, fontSize: 18, fontFamily: fonts.extrabold },
-  bannerCount: { color: colors.yellow, fontSize: 20, fontFamily: fonts.extrabold },
   badgeCard: { minHeight: 102, flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: colors.white, padding: 12, borderRadius: 18, borderWidth: 1.5, borderColor: colors.border, borderBottomWidth: 5, borderBottomColor: '#D7D2BE' },
   badgeLocked: { backgroundColor: '#F7F7F3', opacity: 0.8 },
   badgeArt: { width: 72, height: 72, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(0,0,0,0.06)' },

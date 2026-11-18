@@ -119,7 +119,7 @@ function avisarSemCalibracao(cfg) {
 
 const ESTAGIOS = [
   { label: 'Filhote',              xpMin: 0    },
-  { label: 'Guardião',             xpMin: 500  },
+  { label: 'Jovem',                xpMin: 500  },
   { label: 'Espírito da Floresta', xpMin: 1000 },
 ]
 
@@ -594,7 +594,11 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
 
         {/* Header compacto */}
         <View style={s.header}>
-          <View style={{ width:48 }} />
+          <View style={s.xpIndividualBadge} accessibilityLabel={`${Number(dados.progresso?.xp ?? aluno?.xp) || 0} XP pessoal`}>
+            <Text style={s.xpIndividualIcon}>⭐</Text>
+            <Text style={s.xpIndividualText}>{Number(dados.progresso?.xp ?? aluno?.xp) || 0}</Text>
+          </View>
+          <View style={{ width:58 }} />
           <View style={s.headerCenter}>
             <View style={s.placaNome}>
               <Text style={s.placaTurma} numberOfLines={1} adjustsFontSizeToFit>{turma?.nome || 'Meu Pet'}</Text>
@@ -609,7 +613,7 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
               </View>
             </View>
           </View>
-          <View style={{ width:48 }} />
+          <View style={{ width:58 }} />
         </View>
 
         {/* Arena */}
@@ -741,7 +745,7 @@ const s = StyleSheet.create({
   fundoOverlay:     { position:'absolute', top:0, left:0, right:0, bottom:0, backgroundColor:'rgba(0,0,0,0.18)' },
 
   // Header
-  header:           { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:14, paddingTop:Platform.OS==='android'?12:4, paddingBottom:8 },
+  header:           { flexDirection:'row', alignItems:'center', justifyContent:'space-between', paddingHorizontal:14, paddingTop:Platform.OS==='android'?12:4, paddingBottom:8, position:'relative' },
   headerCenter:     { flex:1, alignItems:'center', gap:8, paddingHorizontal:8 },
   placaNome:        { alignItems:'center', maxWidth:'100%', backgroundColor:'#FFF8E1', borderWidth:3, borderColor:'#2E7D32', borderRadius:20, paddingHorizontal:20, paddingVertical:8, elevation:4 },
   placaTurma:       { fontSize:15, fontFamily:fonts.bold, color:'#5D4037', letterSpacing:1 },
@@ -780,6 +784,9 @@ const s = StyleSheet.create({
   gBtnBadge:        { position:'absolute', top:-10, right:-10, width:26, height:26, borderRadius:13, backgroundColor:'#FF3B5C', borderWidth:3, borderColor:'#1B1030', alignItems:'center', justifyContent:'center' },
   gBtnBadgeTxt:     { fontSize:13, color:'#fff', fontFamily:fonts.extrabold },
   xpWrap:           { marginHorizontal:22, marginTop:6, marginBottom:12 },
+  xpIndividualBadge: { position:'absolute', right:14, top:Platform.OS==='android'?20:12, zIndex:5, minWidth:58, minHeight:38, borderRadius:19, paddingHorizontal:9, backgroundColor:'#FFF0A8', borderWidth:2, borderColor:'#A67B00', flexDirection:'row', alignItems:'center', justifyContent:'center', gap:4 },
+  xpIndividualIcon:  { fontSize:16 },
+  xpIndividualText:  { color:'#3F3100', fontSize:13, fontFamily:fonts.extrabold },
   xpTrack:          { height:30, borderRadius:15, backgroundColor:'#1B1030', borderWidth:3.5, borderColor:'#1B1030', overflow:'hidden', justifyContent:'center', marginLeft:14 },
   xpFill:           { position:'absolute', left:0, top:0, bottom:0, borderRadius:12, backgroundColor:'#7CE82B', borderBottomWidth:4, borderBottomColor:'#3C9A00', overflow:'hidden' },
   xpGloss:          { position:'absolute', top:0, left:0, right:0, height:'45%', backgroundColor:'rgba(255,255,255,0.4)' },
