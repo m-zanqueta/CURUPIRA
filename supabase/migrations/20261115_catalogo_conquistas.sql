@@ -27,6 +27,15 @@ REVOKE ALL ON public.regras_conquistas FROM PUBLIC, anon, authenticated;
 ALTER TABLE public.regras_conquistas DROP CONSTRAINT IF EXISTS regras_conquistas_criterio_check;
 ALTER TABLE public.regras_conquistas DROP CONSTRAINT IF EXISTS regras_conquistas_parametros_check;
 UPDATE public.regras_conquistas SET ativa=false, criterio='xp_total', meta=1, missao_id=NULL WHERE codigo IS NULL;
+-- Converte em regra inativa qualquer critério legado que não pertence ao catálogo
+-- suportado. Mantemos os registros, mas evitamos que impeçam a validação do catálogo.
+UPDATE public.regras_conquistas
+SET ativa=false, criterio='xp_total', meta=1, missao_id=NULL
+WHERE criterio NOT IN (
+  'primeira_missao','total_missoes','acumular_xp','missao_especifica',
+  'xp_total','atividade_total','horta_caseira','primeira_trilha','login_seguidos',
+  'pet_jovem','trilhas_total','xp_semana'
+);
 
 ALTER TABLE public.conquistas ADD COLUMN IF NOT EXISTS regra_id bigint;
 ALTER TABLE public.conquistas ADD COLUMN IF NOT EXISTS descricao text;

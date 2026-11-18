@@ -44,7 +44,20 @@ Deno.serve(async (req: Request) => {
     if (contentType.startsWith('application/json')) {
       const body = await req.json()
       const token = body?.token
-      if (typeof token !== 'string' || token.length < 32 || token.length > 256 || body.operacao !== 'visualizar') return json(422, { ok: false, erro: 'pedido_invalido' })
+      if (typeof token !== 'string' || token.length < 32 || token.length > 256) return json(422, { ok: false, erro: 'pedido_invalido' })
+      if (body.operacao === 'ranking') {
+        const alunos = await rpc('aluno_ranking_turma', { p_token: token })
+        const ranking = await Promise.all((Array.isArray(alunos) ? alunos : []).map(async (aluno: { id: number; nome: string; xp: number; avatar_path?: string | null }) => {
+          const caminho = aluno.avatar_path
+          let foto: string | null = null
+          if (caminho && PATH.test(caminho) && caminho.startsWith(`${aluno.id}/`)) {
+            try { foto = await criarUrl(caminho) } catch { /* avatar ausente: mostra o ícone padrão */ }
+          }
+          return { id: aluno.id, nome: aluno.nome, xp: Number(aluno.xp) || 0, foto }
+        }))
+        return json(200, { ok: true, ranking })
+      }
+      if (body.operacao !== 'visualizar') return json(422, { ok: false, erro: 'pedido_invalido' })
       const perfil = await rpc('aluno_avatar_obter', { p_token: token })
       if (!perfil?.caminho) return json(200, { ok: true, url: null })
       if (!PATH.test(perfil.caminho) || !perfil.caminho.startsWith(`${perfil.aluno_id}/`)) return json(422, { ok: false, erro: 'pedido_invalido' })

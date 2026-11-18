@@ -2,6 +2,7 @@ import React from 'react';
 import { Image, Modal, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { colors, fonts } from '../theme';
 import { NAV } from './dashboardConfig';
+import { LOGO_CURUPIRA } from '../constants/brand';
 
 export default function DashboardSidebar({ visible, activeNav, professor, onNavigate, onClose, onLogout }) {
   return (
@@ -9,7 +10,7 @@ export default function DashboardSidebar({ visible, activeNav, professor, onNavi
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose} />
       <View style={styles.sidebar}>
         <View style={styles.logoRow}>
-          <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+          <Image source={LOGO_CURUPIRA} style={styles.logo} resizeMode="contain" />
           <Text style={styles.logoText}>CURUPIRA</Text>
         </View>
         {NAV.filter(item => !item.coordenadorOnly || professor?.tipo === 'coordenador').map(item => (
