@@ -312,6 +312,10 @@ function AppInterno() {
   }
 
   async function handleLoginAluno(alunoLogado) {
+    // Uma notificação de tarefa aberta na sessão anterior não deve mudar
+    // a página inicial do pet depois de um novo login.
+    setDestinoNotificacao(null)
+    setAbrirConquistasSolicitado(0)
     try {
       await salvarSessaoApp({ tipo: 'aluno', usuario: usuarioSemSenha(alunoLogado) })
     } catch (error) {
@@ -354,6 +358,8 @@ function AppInterno() {
   }
 
     async function handleEntrarTurma(alunoAtualizado, turma) {
+    setDestinoNotificacao(null)
+    setAbrirConquistasSolicitado(0)
     try {
       await salvarSessaoApp({ tipo: 'aluno', usuario: usuarioSemSenha(alunoAtualizado) })
     } catch (error) {
@@ -382,6 +388,8 @@ function AppInterno() {
     setAluno(null)
     setTurmaAluno(null)
     setProgressoAluno(null)
+    setDestinoNotificacao(null)
+    setAbrirConquistasSolicitado(0)
     setProfessor(null)
     limparSessaoApp().catch(error => console.error('Não foi possível limpar a sessão do aluno:', error))
     setTela('login')

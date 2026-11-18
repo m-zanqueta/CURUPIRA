@@ -101,8 +101,10 @@
           });
         }
 
+        var userAgent = window.navigator.userAgent || '';
+        var celular = /iphone|ipod|windows phone|iemobile|blackberry|opera mini|android.*mobile|mobile/i.test(userAgent);
         var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-        if (standalone) return;
+        if (standalone || !celular) return;
 
         var box = document.getElementById('pwa-install');
         var text = document.getElementById('pwa-install-text');
