@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { View, StyleSheet, TouchableOpacity, ScrollView, Image, Platform } from 'react-native'
+import { View, StyleSheet, TouchableOpacity, Pressable, ScrollView, Image, Platform, Modal } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import { Text, ActivityIndicator } from 'react-native-paper'
 import { colors, fonts } from '../theme'
-import { carregarAvatarAluno, obterAvatarAlunoCache, enviarAvatarAluno, listarTrilhasConcluidasAluno, salvarVitrineTrilhasAluno } from '../services/storage'
+import { carregarAvatarAluno, obterAvatarAlunoCache, enviarAvatarAluno, listarTrilhasConcluidasAluno, salvarVitrineTrilhasAluno, listarRankingTurmaAluno } from '../services/storage'
 
 // Página "Perfil" do aluno (página 4 do paginador do PetScreen).
 //
@@ -44,6 +44,20 @@ export default function PaginaPerfil({ width, aluno, turma, progresso, erroProgr
   const [carregandoVitrine, setCarregandoVitrine] = useState(false)
   const [salvandoVitrine, setSalvandoVitrine] = useState(false)
   const [erroVitrine, setErroVitrine] = useState('')
+  const [rankingVisivel, setRankingVisivel] = useState(false)
+  const [ranking, setRanking] = useState([])
+  const [carregandoRanking, setCarregandoRanking] = useState(false)
+  const [erroRanking, setErroRanking] = useState('')
+
+  async function abrirRanking() {
+    setRankingVisivel(true)
+    if (carregandoRanking) return
+    setCarregandoRanking(true)
+    setErroRanking('')
+    try { setRanking(await listarRankingTurmaAluno()) }
+    catch (e) { setErroRanking(e?.message || 'Não foi possível carregar o ranking.') }
+    finally { setCarregandoRanking(false) }
+  }
 
   async function carregarVitrine() {
     setCarregandoVitrine(true)
@@ -121,11 +135,24 @@ export default function PaginaPerfil({ width, aluno, turma, progresso, erroProgr
         <View style={p.profileHero}>
           <View style={p.profileTopLine}>
             <Text style={p.profilePageTitle}>Meu perfil</Text>
+            <TouchableOpacity onPress={abrirRanking} style={p.rankingButton} accessibilityRole="button" accessibilityLabel="Ver ranking de XP da turma">
+              <Text style={p.rankingButtonText}>🏆</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={escolherFoto} activeOpacity={0.82} style={p.avatarCircle} accessibilityRole="button" accessibilityLabel="Trocar foto do perfil">
-            {avatarUrl ? <Image source={{ uri: avatarUrl, cache: 'force-cache' }} style={p.avatarImage} resizeMode="cover" /> : <Text style={p.avatarGlyph}>🧑‍🌾</Text>}
-            {enviandoFoto ? <View style={p.avatarOverlay}><ActivityIndicator color={colors.white} /></View> : <View style={p.cameraBadge}><Text style={p.cameraGlyph}>📷</Text></View>}
-          </TouchableOpacity>
+          <Pressable
+            onPress={escolherFoto}
+            disabled={enviandoFoto}
+            style={({ pressed }) => [p.avatarCircle, pressed && !enviandoFoto && p.avatarPressed]}
+            hitSlop={16}
+            pressRetentionOffset={16}
+            collapsable={false}
+            accessibilityRole="button"
+            accessibilityLabel="Trocar foto do perfil"
+            accessibilityHint="Toque em qualquer parte do círculo para escolher uma foto"
+          >
+            {avatarUrl ? <Image pointerEvents="none" source={{ uri: avatarUrl, cache: 'force-cache' }} style={p.avatarImage} resizeMode="cover" /> : <Text pointerEvents="none" style={p.avatarGlyph}>🧑‍🌾</Text>}
+            {enviandoFoto ? <View pointerEvents="none" style={p.avatarOverlay}><ActivityIndicator color={colors.white} /></View> : <View pointerEvents="none" style={p.cameraBadge}><Text style={p.cameraGlyph}>📷</Text></View>}
+          </Pressable>
         </View>
 
         <View style={p.profileInfo}>
@@ -187,6 +214,21 @@ export default function PaginaPerfil({ width, aluno, turma, progresso, erroProgr
           </TouchableOpacity>
         </View>
       </ScrollView>
+      <Modal visible={rankingVisivel} transparent animationType="fade" onRequestClose={() => setRankingVisivel(false)}>
+        <View style={p.modalBackdrop}>
+          <View style={p.rankingModal}>
+            <View style={p.rankingHeading}><View><Text style={p.rankingTitle}>Ranking da turma</Text><Text style={p.rankingSubtitle}>Quem juntou mais XP?</Text></View><TouchableOpacity onPress={() => setRankingVisivel(false)} accessibilityRole="button" accessibilityLabel="Fechar ranking"><Text style={p.rankingClose}>×</Text></TouchableOpacity></View>
+            {carregandoRanking ? <ActivityIndicator color={colors.green} style={{ marginVertical: 28 }} /> : erroRanking ? <Text style={p.rankingEmpty}>{erroRanking}</Text> : ranking.length ? <ScrollView style={p.rankingList}>
+              {ranking.map((item, index) => <View key={item.id} style={p.rankingRow}>
+                <Text style={p.rankingPosition}>{index + 1}</Text>
+                {item.foto ? <Image source={{ uri: item.foto }} style={p.rankingAvatar} resizeMode="cover" /> : <View style={p.rankingAvatarFallback}><Text style={p.rankingAvatarEmoji}>🧑‍🌾</Text></View>}
+                <Text style={p.rankingName} numberOfLines={1}>{item.nome}</Text>
+                <Text style={p.rankingXp}>⭐ {item.xp}</Text>
+              </View>)}
+            </ScrollView> : <Text style={p.rankingEmpty}>Entre em uma turma para ver o ranking.</Text>}
+          </View>
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -194,16 +236,18 @@ export default function PaginaPerfil({ width, aluno, turma, progresso, erroProgr
 const p = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.cream, overflow: 'hidden' },
   profileScroll: { paddingBottom: 78, backgroundColor: colors.cream },
-  profileHero: { height: 174, backgroundColor: colors.green, paddingTop: Platform.OS === 'android' ? 34 : 48, alignItems: 'center' },
+  profileHero: { height: 174, backgroundColor: colors.green, paddingTop: Platform.OS === 'android' ? 34 : 48, alignItems: 'center', zIndex: 2, elevation: 2 },
   profileTopLine: { width: '100%', paddingHorizontal: 22, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   profilePageTitle: { color: colors.white, fontSize: 23, fontFamily: fonts.extrabold },
-  avatarCircle: { position: 'absolute', bottom: -46, width: 104, height: 104, borderRadius: 52, backgroundColor: '#E8EFE9', borderWidth: 5, borderColor: colors.white, alignItems: 'center', justifyContent: 'center', elevation: 5 },
+  rankingButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFD54A', borderWidth: 2, borderColor: '#A67B00' }, rankingButtonText: { fontSize: 22 },
+  avatarCircle: { position: 'absolute', bottom: -46, width: 104, height: 104, borderRadius: 52, backgroundColor: '#E8EFE9', borderWidth: 5, borderColor: colors.white, alignItems: 'center', justifyContent: 'center', elevation: 5, zIndex: 5 },
+  avatarPressed: { opacity: 0.82, transform: [{ scale: 0.97 }] },
   avatarImage: { width: '100%', height: '100%', borderRadius: 52 },
   avatarOverlay: { ...StyleSheet.absoluteFillObject, borderRadius: 52, backgroundColor: '#0008', alignItems: 'center', justifyContent: 'center' },
   cameraBadge: { position: 'absolute', right: -2, bottom: 0, width: 31, height: 31, borderRadius: 16, backgroundColor: colors.yellow, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.white },
   cameraGlyph: { fontSize: 15 },
   avatarGlyph: { color: '#79877B', fontSize: 58, fontFamily: fonts.regular, lineHeight: 66 },
-  profileInfo: { paddingTop: 52, paddingHorizontal: 18 },
+  profileInfo: { paddingTop: 52, paddingHorizontal: 18, zIndex: 1 },
   profileName: { textAlign: 'center', color: '#171914', fontSize: 26, fontFamily: fonts.extrabold, marginBottom: 4 },
   profileTurma: { textAlign: 'center', color: '#77786F', fontSize: 12, fontFamily: fonts.semibold, marginBottom: 14 },
   profileStats: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', backgroundColor: colors.white, borderRadius: 16, paddingVertical: 14, marginTop: 8, marginBottom: 16, borderWidth: 1, borderColor: colors.border },
@@ -236,4 +280,8 @@ const p = StyleSheet.create({
   logoutButton: { minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: colors.green, borderRadius: 16, borderBottomWidth: 5, borderBottomColor: '#08761F', marginTop: 16 },
   logoutEmoji: { fontSize: 22 },
   logoutText: { color: colors.white, fontSize: 18, fontFamily: fonts.extrabold },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  rankingModal: { width: '100%', maxWidth: 420, maxHeight: '78%', backgroundColor: colors.cream, borderRadius: 22, padding: 18, borderWidth: 2, borderColor: '#E2B800' },
+  rankingHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }, rankingTitle: { color: '#171914', fontSize: 21, fontFamily: fonts.extrabold }, rankingSubtitle: { color: '#74766D', fontSize: 12, fontFamily: fonts.semibold, marginTop: 2 }, rankingClose: { color: '#4F514B', fontSize: 30, lineHeight: 34, paddingHorizontal: 6 },
+  rankingList: { flexGrow: 0 }, rankingRow: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 9, marginBottom: 7, borderRadius: 14, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border }, rankingPosition: { width: 22, color: '#8B6900', fontSize: 16, fontFamily: fonts.extrabold, textAlign: 'center' }, rankingAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#E8EFE9' }, rankingAvatarFallback: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#E8EFE9', alignItems: 'center', justifyContent: 'center' }, rankingAvatarEmoji: { fontSize: 22 }, rankingName: { flex: 1, color: '#252720', fontSize: 14, fontFamily: fonts.bold }, rankingXp: { color: colors.green, fontSize: 13, fontFamily: fonts.extrabold }, rankingEmpty: { color: '#60615A', fontSize: 14, fontFamily: fonts.semibold, textAlign: 'center', paddingVertical: 22 },
 })

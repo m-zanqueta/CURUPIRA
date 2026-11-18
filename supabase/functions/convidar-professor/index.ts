@@ -5,6 +5,9 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-api-version, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Max-Age': '86400',
+  'Access-Control-Allow-Private-Network': 'true',
+  'Access-Control-Allow-Private-Network': 'true',
+  'Vary': 'Origin, Access-Control-Request-Headers, Access-Control-Request-Private-Network',
   'Content-Type': 'application/json; charset=utf-8',
 }
 
@@ -26,7 +29,7 @@ function gerarSenhaTemporaria() {
 }
 
 Deno.serve(async request => {
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: CORS })
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS })
   if (request.method !== 'POST') return resposta({ erro: 'Método não permitido.' }, 405)
 
   try {
@@ -49,6 +52,11 @@ Deno.serve(async request => {
 
     const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
     const senhaTemporaria = gerarSenhaTemporaria()
+    const { data: coordenador, error: identidadeErro } = await admin.rpc('coordenador_identidade_convite', { p_token: token })
+    if (identidadeErro || !coordenador?.email) {
+      console.error('Não foi possível consultar quem enviou o convite:', identidadeErro?.code || 'perfil_invalido')
+      return resposta({ erro: 'Não foi possível validar a conta do coordenador.' }, identidadeErro?.code === 'PT401' ? 401 : 500)
+    }
     const { error: criarErro } = await admin.rpc('coordenador_preparar_professor_convite', {
       p_token: token,
       p_nome: nome,
@@ -72,10 +80,11 @@ Deno.serve(async request => {
       body: JSON.stringify({
         personalizations: [{ to: [{ email }] }],
         from: { email: remetente, name: 'Curupira' },
+        reply_to: { email: coordenador.email, name: coordenador.nome || 'Coordenação Curupira' },
         subject: 'Seu acesso de professor ao Curupira',
         content: [
-          { type: 'text/plain', value: `Olá, ${nome}. Seu acesso de professor ao Curupira está pronto. E-mail: ${email}. Senha temporária: ${senhaTemporaria}. Ao entrar, você deverá cadastrar uma nova senha antes de usar o sistema. Se você não esperava este convite, ignore esta mensagem.` },
-          { type: 'text/html', value: `<div style="font-family:Arial,sans-serif;color:#20251f"><h2>Seu acesso ao Curupira</h2><p>Olá, ${nomeSeguro}.</p><p>Use estas credenciais para entrar no portal do professor:</p><p><strong>E-mail:</strong> ${escaparHtml(email)}<br><strong>Senha temporária:</strong> <code>${senhaTemporaria}</code></p><p>Por segurança, você deverá cadastrar uma nova senha assim que entrar, antes de usar o sistema.</p><p>Se você não esperava este convite, ignore esta mensagem.</p></div>` },
+          { type: 'text/plain', value: `Olá, ${nome}. ${coordenador.nome || 'A coordenação'} enviou seu convite para o Curupira. Para responder, escreva para ${coordenador.email}. Seu acesso de professor está pronto. E-mail: ${email}. Senha temporária: ${senhaTemporaria}. Ao entrar, você deverá cadastrar uma nova senha antes de usar o sistema. Se você não esperava este convite, ignore esta mensagem.` },
+          { type: 'text/html', value: `<div style="font-family:Arial,sans-serif;color:#20251f"><h2>Seu acesso ao Curupira</h2><p>Olá, ${nomeSeguro}.</p><p>${escaparHtml(coordenador.nome || 'A coordenação')} enviou seu convite. Para responder, use ${escaparHtml(coordenador.email)}.</p><p>Use estas credenciais para entrar no portal do professor:</p><p><strong>E-mail:</strong> ${escaparHtml(email)}<br><strong>Senha temporária:</strong> <code>${senhaTemporaria}</code></p><p>Por segurança, você deverá cadastrar uma nova senha assim que entrar, antes de usar o sistema.</p><p>Se você não esperava este convite, ignore esta mensagem.</p></div>` },
         ],
       }),
     })
