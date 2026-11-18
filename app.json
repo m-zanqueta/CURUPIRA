@@ -4,12 +4,12 @@
     "slug": "curupira",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/app-icon-selected.png",
     "splash": {
       "backgroundColor": "#090C0E"
     },
     "web": {
-      "favicon": "./assets/logo.png",
+      "favicon": "./assets/app-icon-selected.png",
       "bundler": "metro",
       "name": "Curupira",
       "shortName": "Curupira",

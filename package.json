@@ -6,7 +6,10 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "icone:1": "node scripts/selecionar-icone.cjs 1",
+    "icone:2": "node scripts/selecionar-icone.cjs 2",
+    "icone:3": "node scripts/selecionar-icone.cjs 3"
   },
   "dependencies": {
     "@expo-google-fonts/montserrat": "^0.4.2",

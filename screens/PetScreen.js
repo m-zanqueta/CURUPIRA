@@ -284,7 +284,7 @@ function ModalItens({ visible, titulo, itens, selecionado, cor, carregando, onSe
   )
 }
 
-export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, onConquistasAtualizadas, destinoTrilha }) {
+export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, onConquistasAtualizadas, destinoTrilha, abrirConquistasSolicitado = 0 }) {
   // A tela do PET ocupa a página central; há duas páginas vazias de cada lado.
   const [pagina, setPagina] = useState(2)
   const [filtroConquistas, setFiltroConquistas] = useState('pendentes')
@@ -313,6 +313,7 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
     setPagina(3)
     Animated.spring(deslocamentoPaginas, { toValue: -3 * W, speed: 16, bounciness: 3, useNativeDriver: true }).start()
   }
+  useEffect(() => { if (abrirConquistasSolicitado) abrirConquistasFeitas() }, [abrirConquistasSolicitado])
   const gestoHorizontal = useRef(PanResponder.create({
     onStartShouldSetPanResponder: () => false,
     onMoveShouldSetPanResponder: (_, gesto) =>
@@ -719,7 +720,7 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
       />
       </View>
       <PaginaConquistas width={W} petImage={turma?.pet} alunoId={aluno?.id} ativa={pagina === 3} filtro={filtroConquistas} onFiltroChange={setFiltroConquistas} />
-      <PaginaPerfil width={W} aluno={aluno} turma={turma} ativa={pagina === 4} progresso={dados.progresso} erroProgresso={dados.erroProgresso} onAtualizar={dados.recarregarProgresso} onVerConquistas={abrirConquistasFeitas} onSair={onLogout} />
+      <PaginaPerfil width={W} aluno={aluno} turma={turma} ativa={pagina === 4} progresso={dados.progresso} erroProgresso={dados.erroProgresso} onAtualizar={dados.recarregarProgresso} onSair={onLogout} />
       </Animated.View>
       <View pointerEvents="none" style={s.pageDots}>
         {[0, 1, 2, 3, 4].map(indice => (

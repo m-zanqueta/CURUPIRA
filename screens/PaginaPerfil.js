@@ -3,7 +3,7 @@ import { View, StyleSheet, TouchableOpacity, Pressable, ScrollView, Image, Platf
 import * as ImagePicker from 'expo-image-picker'
 import { Text, ActivityIndicator } from 'react-native-paper'
 import { colors, fonts } from '../theme'
-import { carregarAvatarAluno, enviarAvatarAluno, listarTrilhasConcluidasAluno, salvarVitrineTrilhasAluno, listarRankingTurmaAluno } from '../services/storage'
+import { carregarAvatarAluno, obterAvatarAlunoCache, enviarAvatarAluno, listarTrilhasConcluidasAluno, salvarVitrineTrilhasAluno, listarRankingTurmaAluno } from '../services/storage'
 
 // Página "Perfil" do aluno (página 4 do paginador do PetScreen).
 //
@@ -29,7 +29,7 @@ function numeroOuTraco(valor) {
   return valor === null || valor === undefined || !Number.isFinite(n) ? '—' : String(n)
 }
 
-export default function PaginaPerfil({ width, aluno, turma, progresso, erroProgresso, onAtualizar, onVerConquistas, onSair, ativa }) {
+export default function PaginaPerfil({ width, aluno, turma, progresso, erroProgresso, onAtualizar, onSair, ativa }) {
   const nome = String(progresso?.nome || aluno?.nome || '').trim()
   const temProgresso = !!progresso
   const missoes = temProgresso ? progresso.missoesAprovadas : null
@@ -73,7 +73,11 @@ export default function PaginaPerfil({ width, aluno, turma, progresso, erroProgr
   useEffect(() => {
     let ativo = true
     if (!ativa || !aluno?.id || aluno.id === 'loja') return () => { ativo = false }
-    carregarAvatarAluno().then(url => { if (ativo) setAvatarUrl(url) }).catch(e => { if (ativo) setErroFoto(e?.message || 'Não foi possível carregar sua foto.') })
+    obterAvatarAlunoCache().then(url => {
+      if (!ativo) return
+      if (url) { setAvatarUrl(url); return }
+      carregarAvatarAluno().then(novaUrl => { if (ativo) setAvatarUrl(novaUrl) }).catch(e => { if (ativo) setErroFoto(e?.message || 'Não foi possível carregar sua foto.') })
+    })
     carregarVitrine()
     return () => { ativo = false }
   }, [aluno?.id, ativa])
@@ -83,7 +87,7 @@ export default function PaginaPerfil({ width, aluno, turma, progresso, erroProgr
     try {
       const permissao = await ImagePicker.requestMediaLibraryPermissionsAsync()
       if (!permissao.granted) { setErroFoto('Permita o acesso às fotos para escolher sua imagem.'); return }
-      const resultado = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.8 })
+      const resultado = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.65 })
       if (resultado.canceled) return
       const imagem = resultado.assets?.[0]
       if (!imagem) return
@@ -146,7 +150,7 @@ export default function PaginaPerfil({ width, aluno, turma, progresso, erroProgr
             accessibilityLabel="Trocar foto do perfil"
             accessibilityHint="Toque em qualquer parte do círculo para escolher uma foto"
           >
-            {avatarUrl ? <Image pointerEvents="none" source={{ uri: avatarUrl }} style={p.avatarImage} resizeMode="cover" /> : <Text pointerEvents="none" style={p.avatarGlyph}>🧑‍🌾</Text>}
+            {avatarUrl ? <Image pointerEvents="none" source={{ uri: avatarUrl, cache: 'force-cache' }} style={p.avatarImage} resizeMode="cover" /> : <Text pointerEvents="none" style={p.avatarGlyph}>🧑‍🌾</Text>}
             {enviandoFoto ? <View pointerEvents="none" style={p.avatarOverlay}><ActivityIndicator color={colors.white} /></View> : <View pointerEvents="none" style={p.cameraBadge}><Text style={p.cameraGlyph}>📷</Text></View>}
           </Pressable>
         </View>
@@ -160,9 +164,9 @@ export default function PaginaPerfil({ width, aluno, turma, progresso, erroProgr
             <View style={p.statDivider} />
             <View style={p.profileStat}><Text style={p.profileStatValue}>{numeroOuTraco(missoes)}</Text><Text style={p.profileStatLabel}>{missoes === 1 ? 'trilha concluída' : 'trilhas concluídas'}</Text></View>
             <View style={p.statDivider} />
-            <TouchableOpacity onPress={onVerConquistas} activeOpacity={0.75} style={p.profileStat} accessibilityRole="button" accessibilityLabel={`${numeroOuTraco(conquistas)} conquistas. Ver conquistas feitas`}>
+            <View style={p.profileStat}>
               <Text style={p.profileStatValue}>{numeroOuTraco(conquistas)}</Text><Text style={p.profileStatLabel}>{conquistas === 1 ? 'conquista' : 'conquistas'}</Text>
-            </TouchableOpacity>
+            </View>
           </View>
 
           {erroProgresso ? (

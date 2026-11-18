@@ -105,6 +105,7 @@ function AppInterno() {
   const [progressoAluno,setProgressoAluno]= useState(null)
   const [notificacoesConquistas, setNotificacoesConquistas] = useState([])
   const [destinoNotificacao, setDestinoNotificacao] = useState(null)
+  const [abrirConquistasSolicitado, setAbrirConquistasSolicitado] = useState(0)
   const idsNotificacoes = useRef(new Set())
   const verificarConquistasRef = useRef(null)
   const fadeAnim = useRef(new Animated.Value(1)).current
@@ -141,6 +142,7 @@ function AppInterno() {
       setDestinoNotificacao({ missaoId: notificacao.missao_id, chave: notificacao.chave, criadoEm: Date.now() })
       navegarCom('pet')
     } else if (notificacao?.tipo === 'conquista') {
+      setAbrirConquistasSolicitado(v => v + 1)
       navegarCom('pet')
     }
   }, [dispensarConquista])
@@ -471,6 +473,7 @@ function AppInterno() {
             onLoja={() => navegarCom('loja')}
             onConquistasAtualizadas={() => verificarConquistasRef.current?.()}
             destinoTrilha={destinoNotificacao}
+            abrirConquistasSolicitado={abrirConquistasSolicitado}
           />
         )}
 
