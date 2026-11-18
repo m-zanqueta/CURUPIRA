@@ -15,3 +15,6 @@ verify_jwt = false
 
 [functions.perfil-aluno]
 verify_jwt = false
+
+[functions.imagens-admin]
+verify_jwt = false

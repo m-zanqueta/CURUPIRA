@@ -577,7 +577,7 @@ export default function PetScreen({ aluno, turma, progresso, onLogout, onLoja, o
     <View style={s.root}>
       <Animated.View style={[s.trilhaPaginas, { width:W*5, transform:[{ translateX:deslocamentoPaginas }] }]}>
       <PaginaCalendario width={W} petImage={turma?.pet} alunoId={aluno?.id} atualizacaoCarinho={atualizacaoCarinho} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} />
-      <PaginaTrilha width={W} petImage={turma?.pet} alunoId={aluno?.id} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} onAtualizado={async () => { await dados.aposProgresso?.(); onConquistasAtualizadas?.() }} destinoMissao={destinoTrilha} />
+      <PaginaTrilha width={W} petImage={turma?.pet} alunoId={aluno?.id} missoes={dados.missoes} estado={dados.estadoMissoes} erro={dados.erroMissoes} onRecarregar={dados.recarregarMissoes} onAtualizado={async () => { await dados.aposProgresso?.(); onConquistasAtualizadas?.() }} destinoMissao={destinoTrilha} ativa={pagina === 1} />
       <View style={[s.paginaConteudo, { width:W }]}>
       <StatusBar barStyle={pagina === 1 || pagina === 3 ? 'dark-content' : 'light-content'} />
 

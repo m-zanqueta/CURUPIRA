@@ -4,7 +4,8 @@ import * as ImagePicker from 'expo-image-picker'
 import { listarIconesMissoes, listarTarefasAdmin, salvarTarefaAdmin, removerMissaoStorage } from '../services/storage'
 import { colors, fonts } from '../theme'
 
-const VAZIA = { nome: '', descricao: '', moedas: '0', icone: '', etapas: [{ titulo: '', descricao: '', moedas: '0' }] }
+const VAZIA = { nome: '', descricao: '', moedas: '0', icone: '', imagensEstagio: [null, null, null, null, null], etapas: [{ titulo: '', descricao: '', moedas: '0' }] }
+const ROTULOS_ESTAGIO = ['0% · Solo', '25% · Semente', '50% · Broto', '75% · Árvore jovem', '100% · Árvore imensa']
 export default function AdminTarefasManager({ visible, onClose }) {
   const [tarefas, setTarefas] = useState([])
   const [icones, setIcones] = useState([])
@@ -37,6 +38,7 @@ export default function AdminTarefasManager({ visible, onClose }) {
       descricao: tarefa.descricao || '',
       moedas: String(tarefa.moedas ?? 0),
       icone: tarefa.icone || '',
+      imagensEstagio: Array.isArray(tarefa.imagensEstagio) && tarefa.imagensEstagio.length === 5 ? tarefa.imagensEstagio : [null, null, null, null, null],
       ativa: tarefa.ativa ?? true,
       etapas: Array.isArray(tarefa.etapas) && tarefa.etapas.length
         ? tarefa.etapas.map(etapa => ({ titulo: etapa.titulo || '', descricao: etapa.descricao || '', moedas: String(etapa.moedas ?? 0) }))
@@ -50,10 +52,12 @@ export default function AdminTarefasManager({ visible, onClose }) {
 
   async function salvar() {
     const moedas = Number(form.moedas)
+    const imagensEstagioValidas = Array.isArray(form.imagensEstagio) && form.imagensEstagio.length === 5 && form.imagensEstagio.every(imagem => (typeof imagem === 'string' && /^https:\/\//i.test(imagem)) || (imagem && typeof imagem === 'object' && imagem.uri))
     const etapasValidas = form.etapas.every(e => e.titulo.trim() && e.descricao.trim() && String(e.moedas ?? '').trim() !== '' && Number.isSafeInteger(Number(e.moedas)) && Number(e.moedas) >= 0 && Number(e.moedas) <= 100000)
     if (!form.nome.trim()) return setErro('Preencha o título da trilha.')
     if (!form.descricao.trim()) return setErro('Preencha a descrição da trilha.')
     if (!imagemInsignia && !/^https?:\/\//i.test(form.icone || '')) return setErro('Escolha uma imagem para a insígnia da trilha. Esse campo é obrigatório.')
+    if (!imagensEstagioValidas) return setErro('Escolha as 5 imagens de crescimento, dos estágios de 0% a 100%.')
     if (String(form.moedas).trim() === '' || !Number.isSafeInteger(moedas) || moedas < 0 || moedas > 100000) return setErro('Informe um bônus inteiro entre 0 e 100.000 moedas.')
     if (!form.etapas.length || !etapasValidas) return setErro('Preencha título, descrição e moedas inteiras entre 0 e 100.000 para cada tarefa.')
     setSalvando(true)
@@ -83,12 +87,26 @@ export default function AdminTarefasManager({ visible, onClose }) {
     } catch (e) { setErro(e?.message || 'Não foi possível abrir a galeria de imagens.') }
   }
 
+  async function escolherImagemEstagio(indice) {
+    try {
+      const permissao = await ImagePicker.requestMediaLibraryPermissionsAsync()
+      if (!permissao.granted) return setErro('Permita o acesso à galeria para escolher as imagens do bioma.')
+      const resultado = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [4, 3], quality: 0.8 })
+      if (resultado.canceled) return
+      const imagem = resultado.assets?.[0]
+      if (!imagem) return
+      if (imagem.fileSize && imagem.fileSize > 2 * 1024 * 1024) return setErro('Cada imagem de crescimento pode ter no máximo 2 MB.')
+      setForm(v => ({ ...v, imagensEstagio: v.imagensEstagio.map((atual, i) => i === indice ? imagem : atual) }))
+      setErro('')
+    } catch (e) { setErro(e?.message || 'Não foi possível abrir a galeria de imagens.') }
+  }
+
   async function excluirTarefa() {
     if (!form.id) return
     setSalvando(true)
     setErro('')
     try {
-      await removerMissaoStorage(form.id)
+      await removerMissaoStorage(form.id, [form.icone, ...(form.imagensEstagio || [])])
       setConfirmandoExclusao(false)
       setForm(VAZIA)
       setEditando(false)
@@ -118,6 +136,19 @@ export default function AdminTarefasManager({ visible, onClose }) {
         </TouchableOpacity>
         {!!imagemInsignia && <TouchableOpacity onPress={() => setImagemInsignia(null)}><Text style={s.remove}>Remover imagem nova</Text></TouchableOpacity>}
         <Text style={s.muted}>Obrigatório. PNG, JPEG, WEBP ou GIF até 2 MB. Também é possível adicionar uma insígnia ao editar trilhas antigas.</Text>
+        <Text style={s.label}>Imagens do crescimento do bioma *</Text>
+        <Text style={s.muted}>Envie 5 imagens. A cena muda conforme as tarefas forem concluídas: 0%, 25%, 50%, 75% e 100%.</Text>
+        <View style={s.ecoImageGrid}>{form.imagensEstagio.map((imagem, index) => {
+          const uri = typeof imagem === 'string' ? imagem : imagem?.uri
+          return <View key={index} style={s.ecoImageItem}>
+            <Text style={s.ecoImageLabel}>{ROTULOS_ESTAGIO[index]}</Text>
+            <TouchableOpacity style={s.ecoImagePicker} onPress={() => escolherImagemEstagio(index)} accessibilityRole="button" accessibilityLabel={`Escolher imagem do estágio ${ROTULOS_ESTAGIO[index]}`}>
+              {uri ? <Image source={{ uri }} style={s.ecoImagePreview} resizeMode="cover" /> : <Text style={s.ecoImagePlaceholder}>＋ Imagem</Text>}
+            </TouchableOpacity>
+            {!!imagem && typeof imagem === 'object' && <Text style={s.ecoImagePending}>Nova imagem selecionada</Text>}
+          </View>
+        })}</View>
+        <Text style={s.muted}>Obrigatórias. PNG, JPEG, WEBP ou GIF até 2 MB cada. Ao salvar, as imagens anteriores substituídas são removidas do Storage.</Text>
         <Text style={s.label}>Bônus ao concluir a trilha (moedas) *</Text><Text style={s.muted}>Recebido após a coordenação aprovar a trilha.</Text><TextInput value={form.moedas} onChangeText={moedas => setForm(v => ({ ...v, moedas }))} style={s.input} keyboardType="number-pad" />
         <Text style={s.label}>Tarefas da trilha</Text>
         {form.etapas.map((etapa, index) => <View key={index} style={s.stage}>
@@ -185,6 +216,7 @@ const s = StyleSheet.create({
   choices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 }, choice: { borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18 }, choiceActive: { borderColor: colors.green, backgroundColor: colors.greenLight }, choiceText: { color: colors.dark, fontFamily: fonts.regular },
   badgeChoice: { width: 104, minHeight: 92, borderWidth: 1, borderColor: colors.border, padding: 7, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 4 }, badgeChoiceImage: { width: 52, height: 52 }, badgePlaceholder: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.cream, borderWidth: 1, borderColor: colors.border },
   imagePicker: { minHeight: 94, padding: 10, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.green, backgroundColor: colors.cream, alignItems: 'center', justifyContent: 'center', gap: 6 }, imagePickerText: { color: colors.green, fontFamily: fonts.semibold }, badgePreview: { width: 72, height: 72 },
+  ecoImageGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8, marginTop: 8 }, ecoImageItem: { width: '48%', marginBottom: 5 }, ecoImageLabel: { color: colors.dark, fontSize: 12, fontFamily: fonts.semibold, marginBottom: 5 }, ecoImagePicker: { height: 116, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.green, backgroundColor: colors.cream, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, ecoImagePreview: { width: '100%', height: '100%' }, ecoImagePlaceholder: { color: colors.green, fontFamily: fonts.semibold }, ecoImagePending: { color: colors.green, fontSize: 10, fontFamily: fonts.semibold, marginTop: 4 },
   stage: { padding: 10, backgroundColor: '#f8f6df', borderRadius: 12, marginTop: 8, gap: 6 }, stageTitle: { fontFamily: fonts.semibold, color: colors.dark }, muted: { color: colors.muted, fontFamily: fonts.regular, marginTop: 5 }, error: { color: '#c0392b', fontFamily: fonts.semibold, marginTop: 10 },
   primary: { marginTop: 12, minHeight: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.green, padding: 11, borderRadius: 10 }, primaryText: { color: '#fff', fontFamily: fonts.bold }, secondary: { marginTop: 8, alignItems: 'center', padding: 10 }, secondaryText: { color: colors.green, fontFamily: fonts.semibold },
   deleteButton: { marginTop: 18, minHeight: 42, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#e3a5a5', borderRadius: 10, padding: 10 }, deleteText: { color: '#bd2727', fontFamily: fonts.bold },

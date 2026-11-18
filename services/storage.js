@@ -106,44 +106,76 @@ export async function excluirDadoAdmin(tabela, id) {
 export async function listarTarefasAdmin() {
   // Leitura por RPC (papel e escopo vêm do token; só o admin usa esta tela). Sem leitura direta da tabela.
   const lista = (await rpcStaff('staff_listar_missoes')) || []
-  return lista.map(({ vinculos, ...missao }) => missao)
+  return lista.map(({ vinculos, ...missao }) => ({
+    ...missao,
+    imagensEstagio: Array.isArray(missao.imagens_estagio) ? missao.imagens_estagio : [],
+  }))
 }
 
 // Trilha global: cada tarefa entrega moedas ao concluir e a trilha dá bônus após aprovação.
 // Nenhuma dessas recompensas altera o XP do aluno ou do PET.
 export async function salvarTarefaAdmin(tarefa) {
   const iconeAnterior = tarefa.icone ?? null
-  const imagemEnviada = tarefa.imagemInsignia ? await enviarImagemAdmin(tarefa.imagemInsignia, 'icones-missoes') : null
+  const imagensAntigas = Array.isArray(tarefa.imagensEstagio) ? tarefa.imagensEstagio.filter(url => typeof url === 'string') : []
+  const novasImagensEnviadas = []
+  let imagemEnviada = null
   const etapas = (tarefa.etapas || []).map(etapa => ({
     titulo: String(etapa.titulo || '').trim(),
     descricao: String(etapa.descricao || '').trim(),
     moedas: Number(etapa.moedas) || 0,
   }))
+  const imagensEstagio = []
   let resposta
-  try { resposta = await rpcStaff('staff_salvar_tarefa_global', {
-    p_missao_id: tarefa.id ?? null,
-    p_nome: String(tarefa.nome || '').trim(),
-    p_descricao: String(tarefa.descricao || '').trim(),
-    p_etapas: etapas,
-    p_moedas: Number(tarefa.moedas) || 0,
-    p_icone: imagemEnviada?.url || tarefa.icone || null,
-    p_ativa: tarefa.ativa ?? true,
-  }) } catch (error) {
+  try {
+    if (tarefa.imagemInsignia) imagemEnviada = await enviarImagemAdmin(tarefa.imagemInsignia, 'icones-missoes')
+    for (let i = 0; i < 5; i += 1) {
+      const imagem = tarefa.imagensEstagio?.[i]
+      if (imagem && typeof imagem === 'object' && imagem.uri) {
+        const enviada = await enviarImagemAdmin(imagem, 'estagios-missoes')
+        novasImagensEnviadas.push(enviada)
+        imagensEstagio.push(enviada.url)
+      } else if (typeof imagem === 'string' && /^https:\/\//i.test(imagem)) {
+        imagensEstagio.push(imagem)
+      } else {
+        throw new Error(`Escolha a imagem do estágio ${i * 25}%.`)
+      }
+    }
+
+    resposta = await rpcStaff('staff_salvar_tarefa_global', {
+      p_missao_id: tarefa.id ?? null,
+      p_nome: String(tarefa.nome || '').trim(),
+      p_descricao: String(tarefa.descricao || '').trim(),
+      p_etapas: etapas,
+      p_moedas: Number(tarefa.moedas) || 0,
+      p_icone: imagemEnviada?.url || tarefa.icone || null,
+      p_ativa: tarefa.ativa ?? true,
+      p_imagens_estagio: imagensEstagio,
+    })
+
+    const etapasSalvas = Array.isArray(resposta?.etapas) ? resposta.etapas : null
+    if (!etapasSalvas || etapasSalvas.length !== etapas.length || etapasSalvas.some((etapa, i) => Number(etapa?.moedas) !== etapas[i].moedas)) {
+      throw new Error('O banco não salvou as moedas por tarefa. Execute a migration 20261118_recompensas_por_tarefa_e_emoji_trilha.sql no Supabase e tente novamente.')
+    }
+    const imagensSalvas = Array.isArray(resposta?.imagens_estagio) ? resposta.imagens_estagio : null
+    if (!imagensSalvas || imagensSalvas.length !== 5 || imagensSalvas.some((url, i) => url !== imagensEstagio[i])) {
+      throw new Error('O banco ainda não salvou as imagens de crescimento. Aplique a migration 20261126_imagens_estagios_ecossistema.sql no Supabase.')
+    }
+  } catch (error) {
     if (imagemEnviada) await descartarImagemEnviada('icones-missoes', imagemEnviada.path)
+    for (const imagem of novasImagensEnviadas) await descartarImagemEnviada('estagios-missoes', imagem.path)
     throw error
   }
-  // Detecta migrations antigas que aceitam a RPC, mas ignoram o valor de moedas por tarefa.
-  const etapasSalvas = Array.isArray(resposta?.etapas) ? resposta.etapas : null
-  if (!etapasSalvas || etapasSalvas.length !== etapas.length || etapasSalvas.some((etapa, i) => Number(etapa?.moedas) !== etapas[i].moedas)) {
-    throw new Error('O banco não salvou as moedas por tarefa. Execute a migration 20261118_recompensas_por_tarefa_e_emoji_trilha.sql no Supabase e tente novamente.')
+
+  const urlNovaInsignia = imagemEnviada?.url || tarefa.icone || null
+  const urlsNovas = [urlNovaInsignia, ...imagensEstagio]
+  if (imagemEnviada && iconeAnterior !== urlNovaInsignia) {
+    const caminhoAntigo = caminhoImagemPublica(iconeAnterior)
+    if (caminhoAntigo?.startsWith('icones-missoes/')) await descartarImagemEnviada('icones-missoes', caminhoAntigo)
   }
-  if (imagemEnviada && /^https?:\/\//i.test(iconeAnterior || '')) {
-    const marcador = '/storage/v1/object/public/pets-images/'
-    const posicao = iconeAnterior.indexOf(marcador)
-    if (posicao >= 0) {
-      const caminhoAntigo = decodeURIComponent(iconeAnterior.slice(posicao + marcador.length).split(/[?#]/)[0])
-      if (caminhoAntigo.startsWith('icones-missoes/')) await descartarImagemEnviada('icones-missoes', caminhoAntigo)
-    }
+  for (const urlAntiga of imagensAntigas) {
+    if (urlsNovas.includes(urlAntiga)) continue
+    const caminhoAntigo = caminhoImagemPublica(urlAntiga)
+    if (caminhoAntigo?.startsWith('estagios-missoes/')) await descartarImagemEnviada('estagios-missoes', caminhoAntigo)
   }
   return resposta
 }
@@ -304,6 +336,13 @@ async function enviarImagemAdmin(imagem, pasta) {
 async function descartarImagemEnviada(pasta, caminho) {
   try { await chamarImagensAdmin({ operacao: 'remover', pasta, caminho }) }
   catch (e) { console.warn('Imagem órfã no Storage (não foi possível remover agora):', caminho, e?.codigo) }
+}
+
+function caminhoImagemPublica(url) {
+  const marcador = '/storage/v1/object/public/pets-images/'
+  if (!/^https?:\/\//i.test(url || '')) return null
+  const posicao = url.indexOf(marcador)
+  return posicao >= 0 ? decodeURIComponent(url.slice(posicao + marcador.length).split(/[?#]/)[0]) : null
 }
 
 export async function salvarPetAdmin(dados) {
@@ -509,8 +548,13 @@ export async function listarStatusMissoes() {
   return (await rpcStaff('staff_listar_status_missoes')) || [];
 }
 
-export async function removerMissaoStorage(id) {
+export async function removerMissaoStorage(id, imagens = []) {
   await rpcStaff('staff_excluir_missao', { p_missao_id: id })
+  for (const url of imagens || []) {
+    const caminho = caminhoImagemPublica(url)
+    if (caminho?.startsWith('estagios-missoes/')) await descartarImagemEnviada('estagios-missoes', caminho)
+    else if (caminho?.startsWith('icones-missoes/')) await descartarImagemEnviada('icones-missoes', caminho)
+  }
 }
 
 // ── Alunos ────────────────────────────────────────────────
@@ -1346,6 +1390,7 @@ export async function listarMissoesDoAluno(alunoId, opcoes = {}) {
       id: m.id,
       nome: m.nome,
       descricao: m.descricao,
+      imagensEstagio: Array.isArray(m.imagens_estagio) ? m.imagens_estagio : [],
       xp: m.xp,
       dificuldade: m.dificuldade,
       icone: m.icone,

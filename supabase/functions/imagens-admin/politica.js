@@ -5,11 +5,11 @@
 // Fluxo: cliente -> (anon key + token de sessão do Curupira) -> esta função -> RPC storage_autorizar_operacao (valida token, papel,
 // pasta, caminho, taxa e "em uso") -> só então o Storage é tocado, com o caminho GERADO AQUI (o cliente nunca escolhe o nome).
 
-export const PASTAS = ['pets', 'icones-missoes', 'acessorios']
+export const PASTAS = ['pets', 'icones-missoes', 'estagios-missoes', 'acessorios']
 export const TAMANHO_MAXIMO_BYTES = 2 * 1024 * 1024          // 2 MB por imagem
 export const MARGEM_CORPO_BYTES = 64 * 1024                  // cabeçalhos/campos do multipart
 const TIPOS = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' }   // SVG de propósito fora (XSS)
-export const REGEX_CAMINHO = /^(pets|icones-missoes|acessorios)\/[0-9]{13}-[a-f0-9]{16}\.(png|jpg|webp|gif)$/
+export const REGEX_CAMINHO = /^(pets|icones-missoes|estagios-missoes|acessorios)\/[0-9]{13}-[a-f0-9]{16}\.(png|jpg|webp|gif)$/
 
 const CORS = {
   'access-control-allow-origin': '*',          // o app é web/nativo; a autorização NÃO depende de origem (token + papel no servidor)
