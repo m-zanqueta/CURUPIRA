@@ -6,12 +6,17 @@ import {
 import { buscarUsuario } from '../services/storage'
 import { cores } from '../constants/cores'
 import { buscarAluno } from '../services/storage'
+import { LOGO_CURUPIRA, SLOGAN_CURUPIRA } from '../constants/brand'
+import RecuperarSenha from './RecuperarSenha'
 
 export default function Login({ onLogin, onCriarPerfil, onSouProfessor }) {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [mostrarSenha, setMostrarSenha] = useState(false)
   const [erro, setErro] = useState('')
+  const [recuperandoSenha, setRecuperandoSenha] = useState(false)
+
+  if (recuperandoSenha) return <RecuperarSenha papel="aluno" onVoltar={() => setRecuperandoSenha(false)} />
 
   function validarEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -57,12 +62,12 @@ export default function Login({ onLogin, onCriarPerfil, onSouProfessor }) {
         {/* Topo verde */}
         <View style={styles.topo}>
           <Image
-            source={require('../assets/logo.png')}
+            source={LOGO_CURUPIRA}
             style={styles.logo}
             resizeMode="contain"
           />
           <Text style={styles.topoNome}>CURUPIRA</Text>
-          <Text style={styles.tagline}>Atividades extracurriculares gamificadas</Text>
+          <Text style={styles.tagline}>{SLOGAN_CURUPIRA}</Text>
           <Text style={styles.portalAluno}>Portal do Aluno</Text>
         </View>
 
@@ -103,7 +108,7 @@ export default function Login({ onLogin, onCriarPerfil, onSouProfessor }) {
 
           {erro ? <Text style={styles.erro}>{erro}</Text> : null}
 
-          <TouchableOpacity>
+          <TouchableOpacity onPress={() => { setErro(''); setRecuperandoSenha(true) }}>
             <Text style={styles.esqueceu}>Esqueci minha senha</Text>
           </TouchableOpacity>
 

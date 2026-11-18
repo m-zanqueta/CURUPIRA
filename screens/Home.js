@@ -1,10 +1,11 @@
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native'
 import { cores } from '../constants/cores'
+import { LOGO_CURUPIRA } from '../constants/brand'
 
 export default function Home({ onVerPet }) {
   return (
     <View style={styles.container}>
-      <Image source={require('../assets/logo.png')} style={styles.logo} resizeMode="contain" />
+      <Image source={LOGO_CURUPIRA} style={styles.logo} resizeMode="contain" />
       <Text style={styles.titulo}>Bem-vindo ao Curupira!</Text>
       <Text style={styles.sub}>Acompanhe seu pet e suas missões</Text>
 

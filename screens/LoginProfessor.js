@@ -5,11 +5,16 @@ import {
 } from 'react-native'
 import { loginStaff } from '../services/storage'
 import { cores } from '../constants/cores'
+import { LOGO_CURUPIRA, SLOGAN_CURUPIRA } from '../constants/brand'
+import RecuperarSenha from './RecuperarSenha'
 
 export default function LoginProfessor({ onLogin, onAdminLogin, onSouAluno }) {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
+  const [recuperandoSenha, setRecuperandoSenha] = useState(false)
+
+  if (recuperandoSenha) return <RecuperarSenha papel="staff" onVoltar={() => setRecuperandoSenha(false)} />
 
   async function handleLogin() {
     const emailNormalizado = email.trim().toLowerCase()
@@ -43,11 +48,11 @@ export default function LoginProfessor({ onLogin, onAdminLogin, onSouAluno }) {
 
         <View style={styles.topo}>
           <Image
-            source={require('../assets/logo.png')}
+            source={LOGO_CURUPIRA}
             style={styles.logo}
             resizeMode="contain"
           />
-          <Text style={styles.tagline}>Atividades extracurriculares gamificadas</Text>
+          <Text style={styles.tagline}>{SLOGAN_CURUPIRA}</Text>
           <View style={styles.features}>
             <View style={styles.featureRow}>
               <View style={[styles.dot, { backgroundColor: cores.verde }]}>
@@ -100,7 +105,7 @@ export default function LoginProfessor({ onLogin, onAdminLogin, onSouAluno }) {
 
           {erro ? <Text style={styles.erro}>{erro}</Text> : null}
 
-          <TouchableOpacity>
+          <TouchableOpacity onPress={() => { setErro(''); setRecuperandoSenha(true) }}>
             <Text style={styles.esqueceu}>Esqueci minha senha</Text>
           </TouchableOpacity>
 

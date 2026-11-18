@@ -106,44 +106,76 @@ export async function excluirDadoAdmin(tabela, id) {
 export async function listarTarefasAdmin() {
   // Leitura por RPC (papel e escopo vêm do token; só o admin usa esta tela). Sem leitura direta da tabela.
   const lista = (await rpcStaff('staff_listar_missoes')) || []
-  return lista.map(({ vinculos, ...missao }) => missao)
+  return lista.map(({ vinculos, ...missao }) => ({
+    ...missao,
+    imagensEstagio: Array.isArray(missao.imagens_estagio) ? missao.imagens_estagio : [],
+  }))
 }
 
 // Trilha global: cada tarefa entrega moedas ao concluir e a trilha dá bônus após aprovação.
 // Nenhuma dessas recompensas altera o XP do aluno ou do PET.
 export async function salvarTarefaAdmin(tarefa) {
   const iconeAnterior = tarefa.icone ?? null
-  const imagemEnviada = tarefa.imagemInsignia ? await enviarImagemAdmin(tarefa.imagemInsignia, 'icones-missoes') : null
+  const imagensAntigas = Array.isArray(tarefa.imagensEstagio) ? tarefa.imagensEstagio.filter(url => typeof url === 'string') : []
+  const novasImagensEnviadas = []
+  let imagemEnviada = null
   const etapas = (tarefa.etapas || []).map(etapa => ({
     titulo: String(etapa.titulo || '').trim(),
     descricao: String(etapa.descricao || '').trim(),
     moedas: Number(etapa.moedas) || 0,
   }))
+  const imagensEstagio = []
   let resposta
-  try { resposta = await rpcStaff('staff_salvar_tarefa_global', {
-    p_missao_id: tarefa.id ?? null,
-    p_nome: String(tarefa.nome || '').trim(),
-    p_descricao: String(tarefa.descricao || '').trim(),
-    p_etapas: etapas,
-    p_moedas: Number(tarefa.moedas) || 0,
-    p_icone: imagemEnviada?.url || tarefa.icone || null,
-    p_ativa: tarefa.ativa ?? true,
-  }) } catch (error) {
+  try {
+    if (tarefa.imagemInsignia) imagemEnviada = await enviarImagemAdmin(tarefa.imagemInsignia, 'icones-missoes')
+    for (let i = 0; i < 5; i += 1) {
+      const imagem = tarefa.imagensEstagio?.[i]
+      if (imagem && typeof imagem === 'object' && imagem.uri) {
+        const enviada = await enviarImagemAdmin(imagem, 'estagios-missoes')
+        novasImagensEnviadas.push(enviada)
+        imagensEstagio.push(enviada.url)
+      } else if (typeof imagem === 'string' && /^https:\/\//i.test(imagem)) {
+        imagensEstagio.push(imagem)
+      } else {
+        throw new Error(`Escolha a imagem do estágio ${i * 25}%.`)
+      }
+    }
+
+    resposta = await rpcStaff('staff_salvar_tarefa_global', {
+      p_missao_id: tarefa.id ?? null,
+      p_nome: String(tarefa.nome || '').trim(),
+      p_descricao: String(tarefa.descricao || '').trim(),
+      p_etapas: etapas,
+      p_moedas: Number(tarefa.moedas) || 0,
+      p_icone: imagemEnviada?.url || tarefa.icone || null,
+      p_ativa: tarefa.ativa ?? true,
+      p_imagens_estagio: imagensEstagio,
+    })
+
+    const etapasSalvas = Array.isArray(resposta?.etapas) ? resposta.etapas : null
+    if (!etapasSalvas || etapasSalvas.length !== etapas.length || etapasSalvas.some((etapa, i) => Number(etapa?.moedas) !== etapas[i].moedas)) {
+      throw new Error('O banco não salvou as moedas por tarefa. Execute a migration 20261118_recompensas_por_tarefa_e_emoji_trilha.sql no Supabase e tente novamente.')
+    }
+    const imagensSalvas = Array.isArray(resposta?.imagens_estagio) ? resposta.imagens_estagio : null
+    if (!imagensSalvas || imagensSalvas.length !== 5 || imagensSalvas.some((url, i) => url !== imagensEstagio[i])) {
+      throw new Error('O banco ainda não salvou as imagens de crescimento. Aplique a migration 20261126_imagens_estagios_ecossistema.sql no Supabase.')
+    }
+  } catch (error) {
     if (imagemEnviada) await descartarImagemEnviada('icones-missoes', imagemEnviada.path)
+    for (const imagem of novasImagensEnviadas) await descartarImagemEnviada('estagios-missoes', imagem.path)
     throw error
   }
-  // Detecta migrations antigas que aceitam a RPC, mas ignoram o valor de moedas por tarefa.
-  const etapasSalvas = Array.isArray(resposta?.etapas) ? resposta.etapas : null
-  if (!etapasSalvas || etapasSalvas.length !== etapas.length || etapasSalvas.some((etapa, i) => Number(etapa?.moedas) !== etapas[i].moedas)) {
-    throw new Error('O banco não salvou as moedas por tarefa. Execute a migration 20261118_recompensas_por_tarefa_e_emoji_trilha.sql no Supabase e tente novamente.')
+
+  const urlNovaInsignia = imagemEnviada?.url || tarefa.icone || null
+  const urlsNovas = [urlNovaInsignia, ...imagensEstagio]
+  if (imagemEnviada && iconeAnterior !== urlNovaInsignia) {
+    const caminhoAntigo = caminhoImagemPublica(iconeAnterior)
+    if (caminhoAntigo?.startsWith('icones-missoes/')) await descartarImagemEnviada('icones-missoes', caminhoAntigo)
   }
-  if (imagemEnviada && /^https?:\/\//i.test(iconeAnterior || '')) {
-    const marcador = '/storage/v1/object/public/pets-images/'
-    const posicao = iconeAnterior.indexOf(marcador)
-    if (posicao >= 0) {
-      const caminhoAntigo = decodeURIComponent(iconeAnterior.slice(posicao + marcador.length).split(/[?#]/)[0])
-      if (caminhoAntigo.startsWith('icones-missoes/')) await descartarImagemEnviada('icones-missoes', caminhoAntigo)
-    }
+  for (const urlAntiga of imagensAntigas) {
+    if (urlsNovas.includes(urlAntiga)) continue
+    const caminhoAntigo = caminhoImagemPublica(urlAntiga)
+    if (caminhoAntigo?.startsWith('estagios-missoes/')) await descartarImagemEnviada('estagios-missoes', caminhoAntigo)
   }
   return resposta
 }
@@ -222,6 +254,30 @@ export async function convidarProfessorPorEmail({ nome, email }) {
   return resposta.data
 }
 
+async function chamarRecuperacaoSenha(body) {
+  let resposta
+  try { resposta = await supabase.functions.invoke('recuperar-senha', { body }) }
+  catch {
+    throw Object.assign(new Error('Não foi possível conectar ao serviço de recuperação. Tente novamente.'), { codigo: 'rede' })
+  }
+  if (resposta.error || !resposta.data?.ok) {
+    let dados = resposta.data
+    if (!dados?.erro) {
+      try { dados = await resposta.error?.context?.json?.() } catch {}
+    }
+    throw Object.assign(new Error(dados?.erro || 'Não foi possível concluir a recuperação. Tente novamente.'), { codigo: dados?.codigo || 'falha' })
+  }
+  return resposta.data
+}
+
+export async function solicitarRecuperacaoSenha(email, papel) {
+  return chamarRecuperacaoSenha({ operacao: 'enviar', email: String(email || '').trim().toLowerCase(), papel })
+}
+
+export async function confirmarRecuperacaoSenha(email, papel, codigo, senha) {
+  return chamarRecuperacaoSenha({ operacao: 'confirmar', email: String(email || '').trim().toLowerCase(), papel, codigo: String(codigo || '').trim(), senha })
+}
+
 // ── Imagens (pets-images) — TODA escrita/remoção passa pela Edge Function "imagens-admin" ─────────────────
 // O app NÃO grava nem apaga no Storage com a chave anon (sem fallback: se a função falhar, a operação falha com a mensagem do servidor).
 // O servidor valida token + papel admin + tipo REAL do arquivo + tamanho e GERA o nome do objeto; o app só recebe o caminho e a URL pública.
@@ -280,6 +336,13 @@ async function enviarImagemAdmin(imagem, pasta) {
 async function descartarImagemEnviada(pasta, caminho) {
   try { await chamarImagensAdmin({ operacao: 'remover', pasta, caminho }) }
   catch (e) { console.warn('Imagem órfã no Storage (não foi possível remover agora):', caminho, e?.codigo) }
+}
+
+function caminhoImagemPublica(url) {
+  const marcador = '/storage/v1/object/public/pets-images/'
+  if (!/^https?:\/\//i.test(url || '')) return null
+  const posicao = url.indexOf(marcador)
+  return posicao >= 0 ? decodeURIComponent(url.slice(posicao + marcador.length).split(/[?#]/)[0]) : null
 }
 
 export async function salvarPetAdmin(dados) {
@@ -485,8 +548,13 @@ export async function listarStatusMissoes() {
   return (await rpcStaff('staff_listar_status_missoes')) || [];
 }
 
-export async function removerMissaoStorage(id) {
+export async function removerMissaoStorage(id, imagens = []) {
   await rpcStaff('staff_excluir_missao', { p_missao_id: id })
+  for (const url of imagens || []) {
+    const caminho = caminhoImagemPublica(url)
+    if (caminho?.startsWith('estagios-missoes/')) await descartarImagemEnviada('estagios-missoes', caminho)
+    else if (caminho?.startsWith('icones-missoes/')) await descartarImagemEnviada('icones-missoes', caminho)
+  }
 }
 
 // ── Alunos ────────────────────────────────────────────────
@@ -733,6 +801,9 @@ async function invocarPerfilAluno(body, aluno = false) {
   if (resposta.error || !resposta.data?.ok) {
     let codigo = resposta.data?.erro
     try { const corpo = await resposta.error?.context?.json?.(); codigo ||= corpo?.erro } catch {}
+    if (body?.operacao === 'ranking' && codigo === 'pedido_invalido') {
+      throw new Error('O ranking ainda não foi publicado no Supabase. Avise o administrador para atualizar a função perfil-aluno.')
+    }
     const mensagens = {
       sessao_invalida: 'Sua sessão expirou. Entre novamente.',
       arquivo_grande: 'A imagem precisa ter no máximo 1 MB.',
@@ -749,6 +820,13 @@ export async function carregarAvatarAluno() {
   const token = await obterTokenAluno()
   if (!token) return null
   return invocarPerfilAluno({ operacao: 'visualizar', token }).then(r => r.url || null)
+}
+
+export async function listarRankingTurmaAluno() {
+  const token = await obterTokenAluno()
+  if (!token) throw new Error('Sua sessão expirou. Entre novamente.')
+  const resposta = await invocarPerfilAluno({ operacao: 'ranking', token })
+  return Array.isArray(resposta.ranking) ? resposta.ranking : []
 }
 
 export async function enviarAvatarAluno(imagem) {
@@ -844,8 +922,9 @@ async function rpcAluno(nome, args = {}) {
   const { data, error } = await supabase.rpc(nome, { p_token: token, ...args })
   if (error) {
     const e = erroNuvem(error)
-    // migration_ausente com token: a migration foi desfeita no banco; o token não vale mais.
-    if (e.codigo === 'sessao_invalida' || e.codigo === 'migration_ausente') {
+    // Só a resposta PT401 invalida a sessão. Uma RPC ausente (404/PGRST202)
+    // significa que o banco ainda não recebeu essa migration; não encerre o login.
+    if (e.codigo === 'sessao_invalida') {
       await AsyncStorage.removeItem(CHAVE_TOKEN_ALUNO).catch(() => {})
       ouvinteSessaoInvalida?.()
     }
@@ -1321,6 +1400,7 @@ export async function listarMissoesDoAluno(alunoId, opcoes = {}) {
       id: m.id,
       nome: m.nome,
       descricao: m.descricao,
+      imagensEstagio: Array.isArray(m.imagens_estagio) ? m.imagens_estagio : [],
       xp: m.xp,
       dificuldade: m.dificuldade,
       icone: m.icone,
@@ -1332,6 +1412,7 @@ export async function listarMissoesDoAluno(alunoId, opcoes = {}) {
         descricao: String(e?.descricao ?? ''),
         moedas: Number(e?.moedas) || 0,
         statusEnvio: (Array.isArray(m.etapas_status) ? m.etapas_status.find(s => Number(s?.etapa_ordem) === index + 1)?.status : null) || null,
+        corrigidaEm: (Array.isArray(m.etapas_status) ? m.etapas_status.find(s => Number(s?.etapa_ordem) === index + 1)?.corrigida_em : null) || null,
       })) : [],
       etapaAtual: Number(m.etapa_atual) || 0,
       xpAluno: Number(m.xp_aluno) || 0,
@@ -1400,12 +1481,41 @@ export async function listarConquistasDoAluno(alunoId, opcoes = {}) {
 
 export async function listarNotificacoesConquistasAluno() {
   if (!(await temTokenAluno())) return []
-  return (await rpcAluno('aluno_notificacoes_conquistas')) || []
+  return (await rpcAlunoNotificacaoOpcional('aluno_notificacoes_conquistas')) || []
 }
 
 export async function marcarNotificacaoConquistaVista(id) {
   if (id == null || !(await temTokenAluno())) return
-  await rpcAluno('aluno_marcar_notificacao_conquista', { p_notificacao_id: id })
+  await rpcAlunoNotificacaoOpcional('aluno_marcar_notificacao_conquista', { p_notificacao_id: id })
+}
+
+export async function listarNotificacoesTarefasAluno() {
+  if (!(await temTokenAluno())) return []
+  return (await rpcAlunoNotificacaoOpcional('aluno_notificacoes_tarefas')) || []
+}
+
+export async function marcarNotificacaoTarefaVista(id) {
+  if (id == null || !(await temTokenAluno())) return
+  await rpcAlunoNotificacaoOpcional('aluno_marcar_notificacao_tarefa', { p_notificacao_id: id })
+}
+
+// Notificações são recursos opcionais durante a atualização gradual do banco.
+// Se a função não chegou ao Supabase, ignore-a nesta execução e tente de novo
+// após reiniciar/carregar o app com as migrations publicadas. As outras falhas
+// continuam sendo reportadas e somente PT401 encerra a sessão.
+const rpcNotificacaoAusente = new Set()
+async function rpcAlunoNotificacaoOpcional(nome, args) {
+  if (rpcNotificacaoAusente.has(nome)) return []
+  try {
+    return await rpcAluno(nome, args)
+  } catch (error) {
+    if (error?.codigo === 'migration_ausente') {
+      rpcNotificacaoAusente.add(nome)
+      console.warn(`Notificações desativadas até publicar a RPC ${nome} no Supabase.`)
+      return []
+    }
+    throw error
+  }
 }
 
 // opcoes.lancarErro = true: relança a falha em vez de devolver o objeto zerado (ver listarMissoesDoAluno).

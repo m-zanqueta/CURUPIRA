@@ -5,6 +5,7 @@ import {
 } from 'react-native'
 import { solicitarCodigoCadastroAluno, confirmarCadastroAluno } from '../services/storage'
 import { cores } from '../constants/cores'
+import { LOGO_CURUPIRA, SLOGAN_CURUPIRA } from '../constants/brand'
 
 export default function CriarPerfil({ onVoltar, onCriado }) {
   const [usuario, setUsuario] = useState('')
@@ -92,12 +93,12 @@ export default function CriarPerfil({ onVoltar, onCriado }) {
       <View style={styles.sucessoContainer}>
         <View style={styles.sucessoTopo}>
           <Image
-            source={require('../assets/logo.png')}
+            source={LOGO_CURUPIRA}
             style={styles.logo}
             resizeMode="contain"
           />
           <Text style={styles.sucessoAppNome}>CURUPIRA</Text>
-          <Text style={styles.sucessoTagline}>Atividades extracurriculares gamificadas</Text>
+          <Text style={styles.sucessoTagline}>{SLOGAN_CURUPIRA}</Text>
         </View>
         <View style={styles.sucessoCard}>
           <Text style={styles.sucessoBadge}>🎖️ Nova conquista desbloqueada!</Text>
@@ -135,12 +136,12 @@ export default function CriarPerfil({ onVoltar, onCriado }) {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.topo}>
           <Image
-            source={require('../assets/logo.png')}
+            source={LOGO_CURUPIRA}
             style={styles.logo}
             resizeMode="contain"
           />
           <Text style={styles.topoNome}>CURUPIRA</Text>
-          <Text style={styles.tagline}>Atividades extracurriculares gamificadas</Text>
+          <Text style={styles.tagline}>{SLOGAN_CURUPIRA}</Text>
           <Text style={styles.portalLabel}>Criar Perfil</Text>
         </View>
 
